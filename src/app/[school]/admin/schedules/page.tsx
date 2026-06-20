@@ -83,7 +83,7 @@ export default async function AdminSchedulesPage({
 
           <Link
             href={`/${school}/admin/schedules/new`}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
           >
             + New Schedule
           </Link>
@@ -93,6 +93,10 @@ export default async function AdminSchedulesPage({
           {!schedules || schedules.length === 0 ? (
             <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-8 text-center">
               <h3 className="text-lg font-semibold">No schedules yet</h3>
+              <p className="mt-2 text-sm text-slate-400">
+                Create your first schedule template to begin building the school
+                calendar.
+              </p>
             </div>
           ) : (
             schedules.map((schedule) => (
@@ -124,17 +128,10 @@ export default async function AdminSchedulesPage({
 
                 <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-800 pt-4">
                   <Link
-                    href={`/${school}/admin/schedules/${schedule.id}/periods`}
-                    className="rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-100 hover:bg-slate-700"
-                  >
-                    Manage Periods
-                  </Link>
-
-                  <Link
                     href={`/${school}/admin/schedules/${schedule.id}/edit`}
-                    className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                    className="cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
                   >
-                    Edit
+                    Edit Schedule
                   </Link>
 
                   <form action={deleteSchedule}>
@@ -146,7 +143,7 @@ export default async function AdminSchedulesPage({
 
                     <button
                       type="submit"
-                      className="rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
+                      className="cursor-pointer rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
                     >
                       Delete
                     </button>

@@ -36,24 +36,16 @@ function SortablePeriodRow({
   updatePeriod: (index: number, field: keyof Omit<Period, "id">, value: string) => void;
   removePeriod: (index: number) => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: period.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: period.id });
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
       className={`rounded-xl border border-slate-800 bg-slate-950 p-4 ${
         isDragging ? "opacity-70 ring-2 ring-blue-500" : ""
       }`}
@@ -64,10 +56,15 @@ function SortablePeriodRow({
           {...attributes}
           {...listeners}
           className="cursor-grab rounded-lg border border-slate-700 px-3 py-2 text-slate-400 hover:bg-slate-800 active:cursor-grabbing"
-          aria-label="Drag period"
         >
           ☰
         </button>
+
+        <input
+          type="hidden"
+          name="period_id"
+          value={period.id}
+        />
 
         <input
           name="period_name"
@@ -105,21 +102,33 @@ function SortablePeriodRow({
   );
 }
 
-export default function ScheduleForm({
+export default function ScheduleEditForm({
   school,
-  createSchedule,
+  schedule,
+  initialPeriods,
+  action,
 }: {
   school: string;
-  createSchedule: (formData: FormData) => void;
+  schedule: {
+    schedule_name: string;
+    schedule_type: string | null;
+    active: boolean;
+  };
+  initialPeriods: Period[];
+  action: (formData: FormData) => void;
 }) {
-  const [periods, setPeriods] = useState<Period[]>([
-    {
-      id: crypto.randomUUID(),
-      name: "Period 1",
-      start_time: "",
-      end_time: "",
-    },
-  ]);
+  const [periods, setPeriods] = useState<Period[]>(
+    initialPeriods.length > 0
+      ? initialPeriods
+      : [
+          {
+            id: crypto.randomUUID(),
+            name: "Period 1",
+            start_time: "",
+            end_time: "",
+          },
+        ]
+  );
 
   const sensors = useSensors(useSensor(PointerSensor));
 
@@ -127,7 +136,7 @@ export default function ScheduleForm({
     setPeriods([
       ...periods,
       {
-        id: crypto.randomUUID(),
+        id: `new-${crypto.randomUUID()}`,
         name: `Period ${periods.length + 1}`,
         start_time: "",
         end_time: "",
@@ -162,25 +171,31 @@ export default function ScheduleForm({
 
   return (
     <form
-      action={createSchedule}
+      action={action}
       className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6"
     >
       <div className="space-y-5">
         <input
           name="schedule_name"
           required
-          placeholder="Schedule Name, example: Rally Day"
+          defaultValue={schedule.schedule_name}
+          placeholder="Schedule Name"
           className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3"
         />
 
         <input
           name="schedule_type"
-          placeholder="Schedule Type, example: Rally, Regular, Early Out"
+          defaultValue={schedule.schedule_type || ""}
+          placeholder="Schedule Type"
           className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3"
         />
 
         <label className="flex items-center gap-3">
-          <input type="checkbox" name="active" defaultChecked />
+          <input
+            type="checkbox"
+            name="active"
+            defaultChecked={schedule.active}
+          />
           Active
         </label>
 
@@ -227,9 +242,9 @@ export default function ScheduleForm({
 
         <button
           type="submit"
-          className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 font-semibold"
+          className="cursor-pointerrounded-lg bg-blue-600 px-4 py-2 font-semibold"
         >
-          Create Schedule
+          Save Changes
         </button>
       </div>
     </form>

@@ -53,6 +53,7 @@ export default async function SchoolAdminPage({
     { label: "Manage Resources", href: `/${school}/admin/resources` },
     { label: "Manage Schedules", href: `/${school}/admin/schedules` },
     { label: "School Settings", href: `/${school}/admin/settings` },
+    { label: "Manage Calendar", href: `/${school}/admin/calendar`},
   ];
 
   return (
