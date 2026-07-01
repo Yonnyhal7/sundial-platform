@@ -6,7 +6,7 @@ type Period = {
   name: string;
   start_time: string;
   end_time: string;
-  sort_order: number;
+  sort_order: number | null;
 };
 
 type CalendarDay = {
@@ -15,11 +15,27 @@ type CalendarDay = {
   is_school_day: boolean;
   label: string | null;
   schedule_id: string | null;
+  schedule:
+    | {
+        id: string;
+        schedule_name: string;
+        schedule_type: string | null;
+      }
+    | {
+        id: string;
+        schedule_name: string;
+        schedule_type: string | null;
+      }[]
+    | null;
 };
 
 function getTodayDateString() {
   const now = new Date();
-  return now.toISOString().slice(0, 10);
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function formatTime(time: string) {
@@ -48,35 +64,45 @@ export default async function KioskPage({
     .rpc("get_school_by_subdomain", {
       subdomain_input: school,
     })
-    .single<{ id: string; name: string }>();
+    .single<{ id: string; name: string; primary_color: string | null }>();
 
   if (!schoolData) return null;
 
   const { data: calendarDay } = await supabase
     .from("calendar_days")
-    .select("id, date, is_school_day, label, schedule_id")
+    .select(
+      `
+      id,
+      date,
+      is_school_day,
+      label,
+      schedule_id,
+      schedule:schedules (
+        id,
+        schedule_name,
+        schedule_type
+      )
+    `
+    )
     .eq("school_id", schoolData.id)
     .eq("date", today)
     .maybeSingle<CalendarDay>();
 
-  let scheduleName = "No Schedule Assigned";
+  const assignedSchedule = Array.isArray(calendarDay?.schedule)
+    ? calendarDay?.schedule[0]
+    : calendarDay?.schedule;
+  const scheduleName = assignedSchedule?.schedule_name || "No Schedule Assigned";
+  const scheduleType = assignedSchedule?.schedule_type || "";
+  const dayType = scheduleType ? `${scheduleName} (${scheduleType})` : scheduleName;
   let periods: Period[] = [];
 
   if (calendarDay?.schedule_id && calendarDay.is_school_day !== false) {
-    const { data: scheduleData } = await supabase
-      .from("schedules")
-      .select("id, name")
-      .eq("id", calendarDay.schedule_id)
-      .eq("school_id", schoolData.id)
-      .maybeSingle<{ id: string; name: string }>();
-
-    scheduleName = scheduleData?.name || "No Schedule Assigned";
-
     const { data: periodData } = await supabase
       .from("periods")
       .select("id, name, start_time, end_time, sort_order")
       .eq("schedule_id", calendarDay.schedule_id)
-      .order("sort_order");
+      .order("sort_order", { ascending: true })
+      .order("start_time", { ascending: true });
 
     periods = periodData || [];
   }
@@ -104,7 +130,8 @@ export default async function KioskPage({
   return (
     <KioskDisplay
       schoolName={schoolData.name}
-      dayType={calendarDay?.label || scheduleName}
+      schoolPrimaryColor={schoolData.primary_color || "#2563eb"}
+      dayType={dayType}
       periods={periods.map((period) => ({
         id: period.id,
         name: period.name,
@@ -112,6 +139,7 @@ export default async function KioskPage({
         endTime: formatTime(period.end_time),
         rawStartTime: period.start_time,
         rawEndTime: period.end_time,
+        sortOrder: period.sort_order,
       }))}
       events={
         upcomingEvents?.map((event) => ({

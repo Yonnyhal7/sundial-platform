@@ -1,8 +1,11 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,15 +15,251 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  color-scheme: dark;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+:fullscreen .school-menu-bar {
+  display: none;
+}
+
+.school-public-theme [class~="bg-neutral-950"] {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.dark .school-public-theme [class~="bg-neutral-950"] {
+  background: #000000;
+  color: #ffffff;
+}
+
+.school-public-theme [class~="bg-neutral-900"] {
+  background: #ffffff;
+}
+
+.dark .school-public-theme [class~="bg-neutral-900"] {
+  background: #242424;
+}
+
+.school-public-theme [class~="bg-neutral-800"] {
+  background: #f8fafc;
+}
+
+.dark .school-public-theme [class~="bg-neutral-800"] {
+  background: #181818;
+}
+
+.school-public-theme [class~="border-neutral-800"],
+.school-public-theme [class~="border-neutral-700"] {
+  border-color: #e2e8f0;
+}
+
+.dark .school-public-theme [class~="border-neutral-800"],
+.dark .school-public-theme [class~="border-neutral-700"] {
+  border-color: #3a3a3a;
+}
+
+.school-public-theme [class~="text-neutral-300"] {
+  color: #475569;
+}
+
+.school-public-theme [class~="text-neutral-400"],
+.school-public-theme [class~="text-neutral-500"] {
+  color: #64748b;
+}
+
+.dark .school-public-theme [class~="text-neutral-300"] {
+  color: #d4d4d4;
+}
+
+.dark .school-public-theme [class~="text-neutral-400"],
+.dark .school-public-theme [class~="text-neutral-500"] {
+  color: #a3a3a3;
+}
+
+.admin-theme {
+  --admin-bg: #f8fafc;
+  --admin-surface: #ffffff;
+  --admin-surface-muted: #f1f5f9;
+  --admin-border: #cbd5e1;
+  --admin-text: #0f172a;
+  --admin-muted: #475569;
+  --admin-subtle: #64748b;
+  background: var(--admin-bg);
+  color: var(--admin-text);
+}
+
+.dark .admin-theme {
+  --admin-bg: #000000;
+  --admin-surface: #242424;
+  --admin-surface-muted: #181818;
+  --admin-border: #3a3a3a;
+  --admin-text: #ffffff;
+  --admin-muted: #d4d4d4;
+  --admin-subtle: #a3a3a3;
+}
+
+.admin-theme main,
+.admin-theme [class~="bg-slate-950"] {
+  background: var(--admin-bg);
+  color: var(--admin-text);
+}
+
+.admin-theme main.calendar-admin-page {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.dark .admin-theme main.calendar-admin-page {
+  background: #000000;
+  color: #ffffff;
+}
+
+.admin-theme [class~="bg-slate-900/70"],
+.admin-theme [class~="bg-slate-950"],
+.admin-theme [class~="bg-neutral-900"] {
+  background: var(--admin-surface);
+}
+
+.admin-theme input,
+.admin-theme textarea,
+.admin-theme select,
+.admin-theme [class~="bg-slate-950"]:is(input, textarea, select),
+.admin-theme [class~="bg-slate-950"]:has(input) {
+  background: var(--admin-surface-muted);
+  color: var(--admin-text);
+}
+
+.admin-theme [class~="border-slate-800"],
+.admin-theme [class~="border-slate-700"],
+.admin-theme [class~="border-neutral-800"] {
+  border-color: var(--admin-border);
+}
+
+.admin-theme [class~="text-white"],
+.admin-theme [class~="text-slate-200"] {
+  color: var(--admin-text);
+}
+
+.admin-theme [class~="text-slate-300"],
+.admin-theme [class~="text-neutral-300"] {
+  color: var(--admin-muted);
+}
+
+.admin-theme [class~="text-slate-400"],
+.admin-theme [class~="text-slate-500"],
+.admin-theme [class~="text-neutral-500"] {
+  color: var(--admin-subtle);
+}
+
+.admin-theme [class~="bg-blue-600"],
+.admin-theme [class~="hover:bg-blue-500"]:hover {
+  background: var(--school-primary);
+  color: #ffffff;
+}
+
+.admin-theme [class~="focus:border-blue-500"]:focus,
+.admin-theme [class~="ring-blue-500"] {
+  border-color: var(--school-primary);
+  --tw-ring-color: var(--school-primary);
+}
+
+.admin-theme [class~="hover:bg-slate-900"]:hover,
+.admin-theme [class~="hover:bg-slate-800"]:hover,
+.admin-theme [class~="hover:bg-neutral-800"]:hover {
+  background: var(--admin-surface-muted);
+}
+
+.kiosk-theme {
+  --kiosk-bg: #f7f8fb;
+  --kiosk-text: #07152f;
+  --kiosk-surface: #ffffff;
+  --kiosk-muted: #64748b;
+  --kiosk-border: #e2e8f0;
+  background: var(--kiosk-bg);
+  color: var(--kiosk-text);
+}
+
+.dark .kiosk-theme {
+  --kiosk-bg: #000000;
+  --kiosk-text: #f8fafc;
+  --kiosk-surface: #242424;
+  --kiosk-muted: #bdbdbd;
+  --kiosk-border: #3a3a3a;
+}
+
+.kiosk-theme [class~="bg-[#f7f8fb]"],
+.kiosk-theme[class~="bg-[#f7f8fb]"] {
+  background: var(--kiosk-bg);
+}
+
+.dark .kiosk-theme,
+.dark .kiosk-theme [class~="bg-[#f7f8fb]"],
+.dark .kiosk-theme[class~="bg-[#f7f8fb]"] {
+  background: #000000;
+}
+
+.kiosk-theme [class~="text-[#07152f]"],
+.kiosk-theme[class~="text-[#07152f]"] {
+  color: var(--kiosk-text);
+}
+
+.kiosk-theme [class~="bg-white"] {
+  background: var(--kiosk-surface);
+}
+
+.dark .kiosk-theme [class~="bg-white"] {
+  background: #242424;
+}
+
+.dark .kiosk-theme [class*="shadow-"] {
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.35);
+}
+
+.kiosk-theme [class~="border-slate-200"],
+.kiosk-theme [class~="border-slate-300"] {
+  border-color: var(--kiosk-border);
+}
+
+.kiosk-theme [class~="text-slate-500"],
+.kiosk-theme [class~="text-slate-600"] {
+  color: var(--kiosk-muted);
+}
+
+.kiosk-theme [class~="text-amber-500"] {
+  color: var(--school-primary);
+}
+
+.kiosk-theme [class~="bg-amber-400"],
+.kiosk-theme [class~="bg-amber-100"],
+.kiosk-theme [class~="hover:bg-amber-300"]:hover {
+  background: color-mix(in srgb, var(--school-primary) 18%, transparent);
+  color: var(--kiosk-text);
+}
+
+.dark .kiosk-theme [class~="bg-amber-100"] {
+  background: color-mix(in srgb, var(--school-primary) 28%, #242424);
+  color: var(--kiosk-text);
+}
+
+.dark .kiosk-theme [class~="bg-amber-400"],
+.dark .kiosk-theme [class~="hover:bg-amber-300"]:hover {
+  background: color-mix(in srgb, var(--school-primary) 80%, #242424);
+  color: #ffffff;
+}
+
+.kiosk-theme [class~="border-amber-400"] {
+  border-color: var(--school-primary);
+}
+
+.kiosk-theme svg circle[stroke="#f5b400"] {
+  stroke: var(--school-primary);
 }

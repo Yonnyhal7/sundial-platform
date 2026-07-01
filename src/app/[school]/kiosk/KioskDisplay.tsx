@@ -1,6 +1,13 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
+import {
+  formatCountdownDuration,
+  getTodayScheduleState,
+  sortPeriodsByScheduleOrder,
+  type SchedulePeriod,
+} from "@/lib/scheduleTime";
 
 type Period = {
   id: string;
@@ -9,6 +16,7 @@ type Period = {
   endTime: string;
   rawStartTime: string;
   rawEndTime: string;
+  sortOrder: number | null;
 };
 
 type EventItem = {
@@ -24,6 +32,7 @@ type Announcement = {
 
 type KioskDisplayProps = {
   schoolName: string;
+  schoolPrimaryColor: string;
   schoolLogoUrl?: string;
   dayType: string;
   periods: Period[];
@@ -31,6 +40,10 @@ type KioskDisplayProps = {
   announcement?: Announcement | null;
   isNoSchool?: boolean;
   noSchoolLabel?: string;
+};
+
+type KioskStyle = CSSProperties & {
+  "--school-primary": string;
 };
 
 function formatClock(date: Date) {
@@ -58,83 +71,9 @@ function getAmPm(date: Date) {
   return date.getHours() >= 12 ? "PM" : "AM";
 }
 
-function timeToDate(time: string, baseDate: Date) {
-  const [hours, minutes] = time.split(":").map(Number);
-  const date = new Date(baseDate);
-
-  date.setHours(hours, minutes, 0, 0);
-
-  return date;
-}
-
-function formatCountdown(milliseconds: number) {
-  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function getPeriodState(periods: Period[], now: Date) {
-  let currentPeriod: Period | null = null;
-  let nextPeriod: Period | null = null;
-  let countdownLabel: "TIME REMAINING" | "STARTS IN" = "TIME REMAINING";
-  let countdown = "0:00";
-  let progressPercent = 0;
-
-  for (let i = 0; i < periods.length; i++) {
-    const period = periods[i];
-    const start = timeToDate(period.rawStartTime, now);
-    const end = timeToDate(period.rawEndTime, now);
-
-    if (now >= start && now <= end) {
-      currentPeriod = period;
-      nextPeriod = periods[i + 1] ?? null;
-      countdownLabel = "TIME REMAINING";
-      countdown = formatCountdown(end.getTime() - now.getTime());
-
-      const total = end.getTime() - start.getTime();
-      const elapsed = now.getTime() - start.getTime();
-
-      progressPercent = total > 0 ? (elapsed / total) * 100 : 0;
-
-      return {
-        currentPeriod,
-        nextPeriod,
-        countdownLabel,
-        countdown,
-        progressPercent,
-      };
-    }
-
-    if (now < start) {
-      currentPeriod = period;
-      nextPeriod = period;
-      countdownLabel = "STARTS IN";
-      countdown = formatCountdown(start.getTime() - now.getTime());
-      progressPercent = 0;
-
-      return {
-        currentPeriod,
-        nextPeriod,
-        countdownLabel,
-        countdown,
-        progressPercent,
-      };
-    }
-  }
-
-  return {
-    currentPeriod,
-    nextPeriod,
-    countdownLabel,
-    countdown,
-    progressPercent,
-  };
-}
-
 export default function KioskDisplay({
   schoolName,
+  schoolPrimaryColor,
   schoolLogoUrl,
   dayType,
   periods,
@@ -144,37 +83,41 @@ export default function KioskDisplay({
   noSchoolLabel = "Enjoy your day",
 }: KioskDisplayProps) {
   const [now, setNow] = useState<Date | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
-    setNow(new Date());
+    const timeout = window.setTimeout(() => {
+      setNow(new Date());
+    }, 0);
 
     const interval = window.setInterval(() => {
       setNow(new Date());
     }, 1000);
 
-    return () => window.clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
-    };
-
-    handleFullscreenChange();
-
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-
     return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      window.clearTimeout(timeout);
+      window.clearInterval(interval);
     };
   }, []);
 
-  async function enterFullscreen() {
-    if (!document.fullscreenElement) {
-      await document.documentElement.requestFullscreen();
-    }
-  }
+  const schedulePeriods = useMemo<SchedulePeriod[]>(
+    () =>
+      periods.map((period) => ({
+        id: period.id,
+        name: period.name,
+        start_time: period.rawStartTime,
+        end_time: period.rawEndTime,
+        sort_order: period.sortOrder,
+      })),
+    [periods]
+  );
+
+  const sortedPeriods = useMemo(() => {
+    const byId = new Map(periods.map((period) => [period.id, period]));
+
+    return sortPeriodsByScheduleOrder(schedulePeriods)
+      .map((period) => byId.get(period.id))
+      .filter((period): period is Period => Boolean(period));
+  }, [periods, schedulePeriods]);
 
   const periodState = useMemo(() => {
     if (!now) {
@@ -183,12 +126,27 @@ export default function KioskDisplay({
         nextPeriod: null,
         countdownLabel: "TIME REMAINING" as const,
         countdown: "0:00",
+        completedPeriodIds: [] as string[],
         progressPercent: 0,
+        isDayComplete: false,
       };
     }
 
-    return getPeriodState(periods, now);
-  }, [periods, now]);
+    const state = getTodayScheduleState(schedulePeriods, now);
+    const byId = new Map(sortedPeriods.map((period) => [period.id, period]));
+
+    return {
+      currentPeriod: state.currentPeriod ? byId.get(state.currentPeriod.id) ?? null : null,
+      nextPeriod: state.nextPeriod ? byId.get(state.nextPeriod.id) ?? null : null,
+      countdownLabel: state.countdownLabel.toUpperCase() as "TIME REMAINING" | "STARTS IN" | "SCHOOL DAY COMPLETE",
+      countdown: state.countdownTarget
+        ? formatCountdownDuration(state.countdownTarget.getTime() - now.getTime())
+        : "0:00",
+      completedPeriodIds: state.completedPeriodIds,
+      progressPercent: state.progressPercent,
+      isDayComplete: state.status === "after_school",
+    };
+  }, [now, schedulePeriods, sortedPeriods]);
 
   if (!now) {
     return null;
@@ -196,6 +154,10 @@ export default function KioskDisplay({
 
   const currentPeriod = periodState.currentPeriod;
   const nextPeriod = periodState.nextPeriod;
+  const currentPeriodTitle = periodState.isDayComplete
+    ? "School Day Complete"
+    : currentPeriod?.name ?? "No Active Period";
+  const countdownIsLong = periodState.countdown.includes("hr");
 
   const radius = 155;
   const circumference = 2 * Math.PI * radius;
@@ -204,7 +166,10 @@ export default function KioskDisplay({
 
   if (isNoSchool) {
     return (
-      <main className="flex h-[99dvh] w-screen items-center justify-center bg-[#f7f8fb] p-6 text-[#07152f]">
+      <main
+        className="kiosk-theme flex h-[99dvh] w-screen items-center justify-center bg-[#f7f8fb] p-6 text-[#07152f]"
+        style={{ "--school-primary": schoolPrimaryColor } as KioskStyle}
+      >
         <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
           <h1 className="text-[clamp(3rem,7vw,7rem)] font-extrabold">
             No School Today
@@ -214,20 +179,15 @@ export default function KioskDisplay({
           </p>
         </div>
 
-        {!isFullscreen && (
-          <button
-            onClick={enterFullscreen}
-            className="fixed bottom-6 right-6 z-50 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-bold text-[#07152f] shadow-lg transition hover:bg-amber-300"
-          >
-            Enter Full Screen
-          </button>
-        )}
       </main>
     );
   }
 
   return (
-    <main className="h-[99dvh] w-screen overflow-hidden bg-[#f7f8fb] text-[#07152f]">
+    <main
+      className="kiosk-theme h-[99dvh] w-screen overflow-hidden bg-[#f7f8fb] text-[#07152f]"
+      style={{ "--school-primary": schoolPrimaryColor } as KioskStyle}
+    >
       <div className="flex h-full w-full flex-col px-[1.25vw] py-[1dvh]">
         <header className="grid h-[11dvh] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-[1vw]">
           <div className="flex min-w-0 items-center gap-[1vw]">
@@ -274,7 +234,7 @@ export default function KioskDisplay({
               </p>
 
               <h2 className="mt-[1.6dvh] text-center text-[clamp(2.5rem,4vw,5rem)] font-extrabold leading-tight tracking-tight">
-                {currentPeriod?.name ?? "No Active Period"}
+                {currentPeriodTitle}
               </h2>
 
               {currentPeriod && (
@@ -313,14 +273,21 @@ export default function KioskDisplay({
                   <p className="text-[clamp(0.85rem,1.15vw,1.25rem)] font-semibold uppercase tracking-wide text-slate-500">
                     {periodState.countdownLabel}
                   </p>
-                  <p className="mt-[1.1dvh] text-[clamp(2.75rem,4.2vw,5rem)] font-extrabold leading-none tracking-tight">
+                  <p
+                    className={[
+                      "mt-[1.1dvh] max-w-[82%] text-center font-extrabold leading-none tracking-tight",
+                      countdownIsLong
+                        ? "text-[clamp(2rem,2.7vw,3.4rem)]"
+                        : "text-[clamp(2.75rem,4.2vw,5rem)]",
+                    ].join(" ")}
+                  >
                     {periodState.countdown}
                   </p>
                 </div>
               </div>
 
               <div className="mt-auto w-full border-t border-slate-200 pt-[1.8dvh]">
-                <div className="mx-auto grid max-w-[760px] grid-cols-[1fr_auto_1fr] items-center gap-[1.8vw]">
+                <div className="mx-auto grid max-w-[780px] grid-cols-[1fr_auto_1fr] items-center gap-[1.8vw]">
                   <div className="flex items-center justify-end gap-[0.9vw]">
                     <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center rounded-full border-[0.25dvh] border-amber-400 text-[1.8dvh]">
                       ◷
@@ -352,29 +319,26 @@ export default function KioskDisplay({
                   </div>
                 </div>
               </div>
-
-              {!isFullscreen && (
-                <button
-                  onClick={enterFullscreen}
-                  className="fixed bottom-6 right-6 z-50 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-bold text-[#07152f] shadow-lg transition hover:bg-amber-300"
-                >
-                  Enter Full Screen
-                </button>
-              )}
             </div>
           </div>
 
           <div className="grid min-h-0 grid-rows-[1.5fr_0.9fr_0.8fr] gap-[1vw]">
             <Card title="Today’s Schedule">
-              <div className="space-y-[0.25dvh]">
-                {periods.map((period) => {
+              <div
+                className="grid min-h-0 flex-1 gap-[0.25dvh]"
+                style={{
+                  gridTemplateRows: `repeat(${Math.max(sortedPeriods.length, 1)}, minmax(0, 1fr))`,
+                }}
+              >
+                {sortedPeriods.map((period) => {
                   const isCurrent = period.id === currentPeriod?.id;
+                  const isComplete = periodState.completedPeriodIds.includes(period.id);
 
                   return (
                     <div
                       key={period.id}
                       className={[
-                        "grid grid-cols-[3.4vw_1fr_2.4vw] items-center rounded-xl px-[1.2vw] py-[0.8dvh] text-[clamp(0.8rem,1.05vw,1.25rem)]",
+                        "grid min-h-0 grid-cols-[minmax(5.6rem,0.8fr)_minmax(7.5rem,1fr)_2rem] items-center gap-[0.6vw] rounded-lg px-[0.9vw] py-[0.35dvh] text-[clamp(0.72rem,0.92vw,1.08rem)] leading-tight",
                         isCurrent
                           ? "bg-amber-100 text-[#07152f]"
                           : "border-b border-slate-200",
@@ -391,8 +355,8 @@ export default function KioskDisplay({
                         {period.startTime} – {period.endTime}
                       </div>
 
-                      <div className="text-right text-[clamp(0.95rem,1.4vw,1.6rem)] font-bold text-green-500">
-                        {!isCurrent && "✓"}
+                      <div className="text-right text-[clamp(0.85rem,1.1vw,1.35rem)] font-bold text-green-500">
+                        {isComplete && "✓"}
                       </div>
                     </div>
                   );
@@ -450,7 +414,7 @@ export default function KioskDisplay({
         </section>
 
         <footer className="-mx-[1.25vw] -mb-[1dvh] flex h-[5.25dvh] shrink-0 items-center justify-center bg-gradient-to-r from-amber-300 to-amber-400 text-[clamp(1rem,1.35vw,1.55rem)] font-extrabold">
-          Go Eagles!
+          Go Suns!
         </footer>
       </div>
     </main>
@@ -465,7 +429,7 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-0 overflow-hidden rounded-3xl border border-slate-200 bg-white p-[1.45vw] shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
+    <div className="flex min-h-0 flex-col overflow-visible rounded-3xl border border-slate-200 bg-white p-[1.2vw] shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
       <h3 className="mb-[0.9dvh] text-[clamp(0.95rem,1.3vw,1.55rem)] font-extrabold uppercase tracking-wide text-amber-500">
         {title}
       </h3>

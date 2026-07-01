@@ -70,7 +70,7 @@ export default async function ResourcesPage({
                   href={resource.file_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-lg border border-neutral-700 px-4 py-2 text-sm font-semibold text-white"
+                  className="rounded-lg border border-neutral-700 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-white dark:hover:bg-[#181818]"
                 >
                   Open File
                 </a>

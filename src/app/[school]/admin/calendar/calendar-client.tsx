@@ -26,6 +26,44 @@ type Period = {
   sort_order: number;
 };
 
+function chipClassFor(value: string, fallback: "regular" | "note" = "note") {
+  const text = value.toLowerCase();
+
+  if (text.includes("brown")) {
+    return "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200";
+  }
+
+  if (text.includes("gold")) {
+    return "bg-yellow-100 text-yellow-900 dark:bg-yellow-500/20 dark:text-yellow-200";
+  }
+
+  if (text.includes("no school")) {
+    return "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200";
+  }
+
+  if (text.includes("rally")) {
+    return "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200";
+  }
+
+  if (text.includes("early out")) {
+    return "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200";
+  }
+
+  if (
+    text.includes("assembly") ||
+    text.includes("special") ||
+    text.includes("special schedule")
+  ) {
+    return "bg-orange-100 text-orange-800 dark:bg-orange-500/20 dark:text-orange-200";
+  }
+
+  if (fallback === "regular") {
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200";
+  }
+
+  return "bg-slate-100 text-slate-700 dark:bg-[#181818] dark:text-[#d4d4d4]";
+}
+
 export default function CalendarClient({
   schedules,
   calendarDays,
@@ -116,17 +154,17 @@ export default function CalendarClient({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
         <div className="mb-5 flex items-center justify-between">
           <button
             type="button"
             onClick={previousMonth}
-            className="cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+            className="cursor-pointer rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-[#3a3a3a] dark:text-[#d4d4d4] dark:hover:bg-[#181818]"
           >
             ← Previous
           </button>
 
-          <h2 className="text-xl font-semibold">
+          <h2 className="text-xl font-semibold text-slate-950 dark:text-white">
             {currentDate.toLocaleString("default", {
               month: "long",
               year: "numeric",
@@ -136,13 +174,13 @@ export default function CalendarClient({
           <button
             type="button"
             onClick={nextMonth}
-            className="cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+            className="cursor-pointer rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-[#3a3a3a] dark:text-[#d4d4d4] dark:hover:bg-[#181818]"
           >
             Next →
           </button>
         </div>
 
-        <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold text-slate-400">
+        <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold text-slate-500 dark:text-[#a3a3a3]">
           <div>Sun</div>
           <div>Mon</div>
           <div>Tue</div>
@@ -180,26 +218,37 @@ export default function CalendarClient({
                 }}
                 className={`min-h-28 cursor-pointer rounded-xl border p-3 text-left transition ${
                   isSelected
-                    ? "border-blue-500 bg-blue-500/10"
-                    : "border-slate-800 bg-slate-950 hover:bg-slate-900"
+                    ? "border-blue-500 bg-blue-50 text-blue-900 shadow-sm dark:border-blue-400 dark:bg-blue-500/15 dark:text-blue-100"
+                    : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white dark:hover:bg-[#202020]"
                 }`}
               >
-                <div className="font-semibold text-white">{day}</div>
+                <div className="font-semibold">{day}</div>
 
                 {assignedSchedule && (
-                  <div className="mt-2 rounded-lg bg-green-500/15 px-2 py-1 text-xs font-medium text-green-300">
+                  <div
+                    className={`mt-2 rounded-xl px-2 py-1 text-xs font-medium ${chipClassFor(
+                      `${assignedSchedule.schedule_name} ${
+                        assignedSchedule.schedule_type || ""
+                      }`,
+                      "regular"
+                    )}`}
+                  >
                     {assignedSchedule.schedule_name}
                   </div>
                 )}
 
                 {calendarDay?.label && (
-                  <div className="mt-1 line-clamp-2 text-xs text-slate-400">
+                  <div
+                    className={`mt-1 line-clamp-2 rounded-xl px-2 py-1 text-xs font-medium ${chipClassFor(
+                      calendarDay.label
+                    )}`}
+                  >
                     {calendarDay.label}
                   </div>
                 )}
 
                 {calendarDay && calendarDay.is_school_day === false && (
-                  <div className="mt-2 rounded-lg bg-red-500/15 px-2 py-1 text-xs font-medium text-red-300">
+                  <div className="mt-2 rounded-xl bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700 dark:bg-rose-500/20 dark:text-rose-200">
                     No School
                   </div>
                 )}
@@ -209,11 +258,11 @@ export default function CalendarClient({
         </div>
       </section>
 
-      <aside className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-        <h2 className="text-xl font-semibold">Assign Schedule</h2>
+      <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
+        <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Assign Schedule</h2>
 
         {!selectedDate ? (
-          <p className="mt-3 text-sm text-slate-400">
+          <p className="mt-3 text-sm text-slate-500 dark:text-[#a3a3a3]">
             Select a date on the calendar to assign a schedule.
           </p>
         ) : (
@@ -221,16 +270,16 @@ export default function CalendarClient({
             <input type="hidden" name="date" value={selectedDate} />
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">
                 Selected Date
               </label>
-              <div className="rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-slate-200">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white">
                 {new Date(`${selectedDate}T00:00:00`).toLocaleDateString()}
               </div>
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">
                 Schedule
               </label>
               <select
@@ -238,7 +287,7 @@ export default function CalendarClient({
                 value={selectedScheduleId}
                 onChange={(e) => setSelectedScheduleId(e.target.value)}
                 disabled={!isSchoolDay}
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white"
               >
                 <option value="">No schedule</option>
                 {schedules.map((schedule) => (
@@ -250,18 +299,18 @@ export default function CalendarClient({
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-300">
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">
                 Optional Note / Event Name
               </label>
               <input
                 name="label"
                 defaultValue={selectedCalendarDay?.label || ""}
                 placeholder="Example: Homecoming Rally"
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white dark:placeholder:text-[#a3a3a3]"
               />
             </div>
 
-            <label className="flex items-center gap-3">
+            <label className="flex items-center gap-3 text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">
                 <input
                     type="checkbox"
                     name="is_school_day"
@@ -278,19 +327,19 @@ export default function CalendarClient({
             </label>
 
             {!isSchoolDay && (
-            <div className="rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-200">
+            <div className="rounded-xl border border-rose-200 bg-rose-100 p-4 text-sm font-medium text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/20 dark:text-rose-200">
                 This date will be marked as No School. No bell schedule will be shown.
             </div>
             )}
 
             {isSchoolDay && selectedSchedule && (
-              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-                <h3 className="text-sm font-semibold text-slate-200">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-[#3a3a3a] dark:bg-[#181818]">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
                   {selectedSchedule.schedule_name}
                 </h3>
 
                 {selectedSchedule.schedule_type && (
-                  <p className="mt-1 text-xs text-slate-400">
+                  <p className="mt-1 text-xs text-slate-500 dark:text-[#a3a3a3]">
                     {selectedSchedule.schedule_type}
                   </p>
                 )}
@@ -300,12 +349,12 @@ export default function CalendarClient({
                     {selectedSchedulePeriods.map((period) => (
                       <div
                         key={period.id}
-                        className="flex items-center justify-between rounded-lg border border-slate-800 px-3 py-2 text-sm"
+                        className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
                       >
-                        <span className="font-medium text-slate-200">
+                        <span className="font-medium text-slate-900 dark:text-white">
                           {period.name}
                         </span>
-                        <span className="text-slate-400">
+                        <span className="text-slate-500 dark:text-[#a3a3a3]">
                           {formatTime(period.start_time)} -{" "}
                           {formatTime(period.end_time)}
                         </span>
@@ -313,7 +362,7 @@ export default function CalendarClient({
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-3 text-sm text-slate-500">
+                  <p className="mt-3 text-sm text-slate-500 dark:text-[#a3a3a3]">
                     No periods have been added to this schedule yet.
                   </p>
                 )}
