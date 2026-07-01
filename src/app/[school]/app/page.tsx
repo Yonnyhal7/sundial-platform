@@ -11,6 +11,7 @@ type School = {
   id: string;
   name: string;
   primary_color: string | null;
+  logo_url?: string | null;
 };
 
 type CalendarDay = {
@@ -128,15 +129,31 @@ export default async function MobileAppHome({
   const greeting = getGreeting();
 
   return (
-    <main className="space-y-7">
-      <header className="flex items-center justify-between gap-3">
+    <main className="space-y-[clamp(1.25rem,3.2vw,1.75rem)]">
+      <header className="relative flex items-center justify-between gap-[clamp(0.75rem,2.2vw,1rem)]">
         <button
           type="button"
           aria-label="Open menu"
-          className="grid h-16 w-16 place-items-center rounded-[1.35rem] border border-slate-200 bg-white text-slate-950 shadow-[0_10px_24px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white"
+          className="grid h-[clamp(3rem,8vw,4rem)] w-[clamp(3rem,8vw,4rem)] place-items-center rounded-[clamp(0.9rem,2.4vw,1.35rem)] border border-slate-200 bg-white text-slate-950 shadow-[0_10px_24px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white"
         >
-          <MenuIcon className="h-7 w-7" />
+          <MenuIcon className="h-[clamp(1.25rem,3vw,1.75rem)] w-[clamp(1.25rem,3vw,1.75rem)]" />
         </button>
+
+        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          {schoolData?.logo_url ? (
+            // Prefer explicit logo URL when available
+            <img
+              src={schoolData.logo_url}
+              alt={`${schoolData.name} logo`}
+              className="h-[clamp(2rem,6vw,2.5rem)] w-[clamp(2rem,6vw,2.5rem)] object-contain"
+            />
+          ) : (
+            // Fallback to initials avatar
+            <div className="grid h-[clamp(2rem,6vw,2.5rem)] w-[clamp(2rem,6vw,2.5rem)] place-items-center rounded-[0.5rem] bg-[var(--school-primary)] text-white font-black">
+              {getInitials(schoolData.name)}
+            </div>
+          )}
+        </div>
 
         {/* <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-16 w-16 shrink-0 place-items-center rounded-[1.35rem] bg-[var(--school-primary)] text-base font-black text-white shadow-lg shadow-slate-900/10">
@@ -155,23 +172,23 @@ export default async function MobileAppHome({
         <button
           type="button"
           aria-label="Notifications"
-          className="grid h-16 w-16 place-items-center rounded-[1.35rem] border border-slate-200 bg-white text-slate-950 shadow-[0_10px_24px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white"
+          className="grid h-[clamp(3rem,8vw,4rem)] w-[clamp(3rem,8vw,4rem)] place-items-center rounded-[clamp(0.9rem,2.4vw,1.35rem)] border border-slate-200 bg-white text-slate-950 shadow-[0_10px_24px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white"
         >
-          <BellIcon className="h-7 w-7" />
+          <BellIcon className="h-[clamp(1.25rem,3vw,1.75rem)] w-[clamp(1.25rem,3vw,1.75rem)]" />
         </button>
       </header>
 
-      <section className="pt-10 text-center">
-        <p className="text-[1.7rem] font-medium leading-tight text-[var(--school-primary)]">
+      <section className="pt-[clamp(2rem,5vw,2.75rem)] text-center">
+        <p className="text-[clamp(1.25rem,3.5vw,1.7rem)] font-medium leading-tight text-[var(--school-primary)]">
           {greeting},
         </p>
-        <h1 className="mt-2 text-[2.55rem] font-black leading-none tracking-tight text-slate-950 dark:text-white">
+        <h1 className="mt-[clamp(0.5rem,1.5vw,0.75rem)] text-[clamp(1.75rem,5.4vw,2.65rem)] font-black leading-none tracking-tight text-slate-950 dark:text-white">
           {schoolData.name}
         </h1>
-        <p className="mt-6 text-base font-black text-slate-500 dark:text-[#a3a3a3]">
+        <p className="mt-[clamp(1.25rem,3vw,1.5rem)] text-[clamp(0.95rem,2.2vw,1.1rem)] font-black text-slate-500 dark:text-[#a3a3a3]">
           {todayLabel}
         </p>
-        <div className="mx-auto mt-7 h-0.5 w-14 rounded-full bg-[var(--school-primary)]" />
+        <div className="mx-auto mt-[clamp(1.25rem,3vw,1.5rem)] h-0.5 w-[clamp(3.5rem,10vw,3.75rem)] rounded-full bg-[var(--school-primary)]" />
       </section>
 
       <AppScheduleDashboard

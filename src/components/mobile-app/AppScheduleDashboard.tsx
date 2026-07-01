@@ -70,41 +70,41 @@ export default function AppScheduleDashboard({
 
   return (
     <>
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white px-6 py-8 text-center shadow-[0_12px_32px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424]">
+      <section className="rounded-[clamp(1.1rem,3.2vw,1.75rem)] border border-slate-200 bg-white px-[clamp(1rem,4vw,1.5rem)] py-[clamp(1.25rem,4.5vw,2rem)] text-center shadow-[0_12px_32px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424]">
         <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--school-primary)]">
           Current Period
         </p>
-        <h2 className="mt-4 text-[2rem] font-black leading-tight tracking-tight text-slate-950 dark:text-white">
+        <h2 className="mt-4 text-[clamp(1.35rem,4vw,2rem)] font-black leading-tight tracking-tight text-slate-950 dark:text-white">
           {currentTitle}
         </h2>
         {activePeriod && (
-          <p className="mt-4 text-lg font-semibold text-slate-500 dark:text-[#a3a3a3]">
+          <p className="mt-4 text-[clamp(0.95rem,2.2vw,1.1rem)] font-semibold text-slate-500 dark:text-[#a3a3a3]">
             {formatPeriodTime(activePeriod.start_time)} -{" "}
             {formatPeriodTime(activePeriod.end_time)}
           </p>
         )}
 
-        <div className="mt-7 flex justify-center">
+        <div className="mt-[clamp(1.25rem,3.5vw,1.75rem)] flex justify-center">
           <div
-            className="grid h-44 w-44 place-items-center rounded-full p-3"
+            className="grid h-[clamp(10rem,38vw,12.5rem)] w-[clamp(10rem,38vw,12.5rem)] place-items-center rounded-full p-[clamp(0.7rem,2.3vw,0.85rem)]"
             style={{ background }}
           >
             <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white text-center dark:bg-[#242424]">
               <p className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-[#a3a3a3]">
                 {scheduleState.countdownLabel}
               </p>
-              <p className="mt-3 text-[2.35rem] font-black leading-none tracking-tight text-slate-950 dark:text-white">
+              <p className="mt-3 text-[clamp(1.5rem,5vw,2.35rem)] font-black leading-none tracking-tight text-slate-950 dark:text-white">
                 {countdown}
               </p>
             </div>
           </div>
         </div>
 
-        <div className="mt-8 border-t border-slate-200 pt-6 dark:border-[#3a3a3a]">
-          <div className="mx-auto grid max-w-[520px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-7 text-left sm:gap-20">
-            <div className="flex min-w-0 items-center justify-end gap-2">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-2 border-[var(--school-primary)] text-[var(--school-primary)]">
-                <SmallClockIcon className="h-3.5 w-3.5" />
+        <div className="mt-[clamp(1.5rem,4vw,2rem)] border-t border-slate-200 pt-[clamp(1.25rem,3.5vw,1.5rem)] dark:border-[#3a3a3a]">
+          <div className="mx-auto grid max-w-[clamp(20rem,78vw,32.5rem)] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-[clamp(1rem,3.4vw,1.75rem)] text-left sm:gap-20">
+            <div className="flex min-w-0 items-center justify-end gap-[clamp(0.5rem,1.8vw,0.75rem)]">
+              <div className="grid h-[clamp(2.25rem,5.5vw,2.75rem)] w-[clamp(2.25rem,5.5vw,2.75rem)] shrink-0 place-items-center rounded-full border-2 border-[var(--school-primary)] text-[var(--school-primary)]">
+                <SmallClockIcon className="h-[clamp(0.9rem,2.3vw,1.25rem)] w-[clamp(0.9rem,2.3vw,1.25rem)]" />
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-[#a3a3a3]">
@@ -118,15 +118,15 @@ export default function AppScheduleDashboard({
 
             <div className="h-12 w-px bg-slate-300 dark:bg-[#3a3a3a]" />
 
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center text-[var(--school-primary)]">
-                <SmallCalendarIcon className="h-5 w-5" />
+            <div className="flex min-w-0 items-center gap-[clamp(0.25rem,0.8vw,0.5rem)]">
+              <div className="grid h-[clamp(2.25rem,5.5vw,2.75rem)] w-[clamp(2.25rem,5.5vw,2.75rem)] shrink-0 place-items-center text-[var(--school-primary)]">
+                <SmallCalendarIcon className="h-[clamp(1rem,2.5vw,1.25rem)] w-[clamp(1rem,2.5vw,1.25rem)]" />
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-[#a3a3a3]">
                   Day Type
                 </p>
-                <p className="text-[10px] mt-1 text-sm font-black leading-tight text-slate-950 dark:text-white">
+                <p className="text-[10px] mt-0 text-sm font-black leading-tight text-slate-950 dark:text-white">
                   {todayScheduleLabel}
                 </p>
               </div>
@@ -135,22 +135,14 @@ export default function AppScheduleDashboard({
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_12px_32px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424]">
-        <div className="flex items-center justify-between gap-3 px-6 py-5">
-          <h2 className="min-w-0 text-sm font-black uppercase tracking-wide text-slate-500 dark:text-[#a3a3a3]">
+      <section className="overflow-hidden rounded-[clamp(1.1rem,3.2vw,1.75rem)] border border-slate-200 bg-white shadow-[0_12px_32px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424]">
+        <div className="px-[clamp(0.9rem,3.6vw,1.5rem)] py-[clamp(0.9rem,2.6vw,1.25rem)]">
+          <h2 className="min-w-0 text-[clamp(0.9rem,2.2vw,1.1rem)] font-black uppercase tracking-wide text-slate-500 dark:text-[#a3a3a3] break-words whitespace-normal">
             Today&apos;s Schedule
           </h2>
-          <Link
-            href={`/${school}/app/schedule`}
-            className="flex shrink-0 items-center gap-1.5 text-xs font-black uppercase text-[var(--school-primary)]"
-          >
-            View Full Schedule
-            <ChevronRightIcon className="h-4 w-4" />
-          </Link>
         </div>
-
         {sortedPeriods.length === 0 || noSchool ? (
-          <p className="mx-6 mb-6 rounded-2xl bg-slate-50 p-4 text-sm font-medium text-slate-500 dark:bg-[#181818] dark:text-[#a3a3a3]">
+          <p className="mx-[clamp(1rem,4vw,1.5rem)] mb-[clamp(1rem,3vw,1.5rem)] rounded-[clamp(1rem,2.8vw,1.25rem)] bg-slate-50 p-[clamp(0.9rem,2.6vw,1rem)] text-sm font-medium text-slate-500 dark:bg-[#181818] dark:text-[#a3a3a3]">
             No periods are scheduled for today.
           </p>
         ) : (
@@ -163,14 +155,14 @@ export default function AppScheduleDashboard({
               return (
                 <div
                   key={period.id}
-                  className={`grid grid-cols-[3.5rem_minmax(0,1fr)_auto_auto] items-center gap-3 border-t border-slate-200 px-5 py-4 transition dark:border-[#3a3a3a] ${
+                  className={`grid grid-cols-[clamp(3rem,7vw,3.5rem)_minmax(0,1fr)_auto_auto] items-center gap-[clamp(0.75rem,2.2vw,1rem)] border-t border-slate-200 px-[clamp(1rem,4vw,1.25rem)] py-[clamp(0.9rem,2.8vw,1rem)] transition dark:border-[#3a3a3a] ${
                     current
                       ? "bg-[color-mix(in_srgb,var(--school-primary)_16%,white)] dark:bg-[color-mix(in_srgb,var(--school-primary)_20%,#242424)]"
                       : "bg-white dark:bg-[#242424]"
                   }`}
                 >
                   <div
-                    className={`grid h-12 w-12 place-items-center rounded-full border text-lg font-black ${
+                    className={`grid h-[clamp(2.5rem,6vw,3rem)] w-[clamp(2.5rem,6vw,3rem)] place-items-center rounded-full border text-[clamp(0.95rem,2.4vw,1.1rem)] font-black ${
                       complete
                         ? "border-[color-mix(in_srgb,var(--school-primary)_45%,white)] text-[var(--school-primary)]"
                         : current
@@ -186,10 +178,10 @@ export default function AppScheduleDashboard({
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-lg font-black leading-tight text-slate-950 dark:text-white">
+                    <p className="truncate text-[clamp(0.95rem,2.4vw,1.1rem)] font-black leading-tight text-slate-950 dark:text-white">
                       {period.name}
                     </p>
-                    <p className="mt-1 text-base font-semibold leading-tight text-slate-500 dark:text-[#a3a3a3]">
+                    <p className="mt-1 text-[clamp(0.85rem,2.1vw,1rem)] font-semibold leading-tight text-slate-500 dark:text-[#a3a3a3]">
                       {formatPeriodTime(period.start_time)} -{" "}
                       {formatPeriodTime(period.end_time)}
                     </p>
@@ -202,12 +194,23 @@ export default function AppScheduleDashboard({
                   )}
                   {!current && <span />}
 
-                  <ChevronRightIcon className="h-6 w-6 text-slate-950 dark:text-white" />
+                  <ChevronRightIcon className="h-[clamp(1.1rem,2.8vw,1.5rem)] w-[clamp(1.1rem,2.8vw,1.5rem)] text-slate-950 dark:text-white" />
                 </div>
               );
             })}
           </div>
         )}
+
+        <div className="px-[clamp(0.9rem,3.6vw,1.5rem)] py-[clamp(0.75rem,2vw,1rem)]">
+          <Link
+            href={`/${school}/app/schedule`}
+            className="inline-flex items-center gap-[clamp(0.25rem,0.8vw,0.5rem)] text-[clamp(0.8rem,1.9vw,0.95rem)] font-black uppercase text-[var(--school-primary)]"
+            aria-label="View full schedule"
+          >
+            View Full Schedule
+            <ChevronRightIcon className="h-[clamp(0.9rem,2.4vw,1.25rem)] w-[clamp(0.9rem,2.4vw,1.25rem)]" />
+          </Link>
+        </div>
       </section>
     </>
   );
