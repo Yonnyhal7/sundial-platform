@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
-import WeeklyScheduleClient from "@/components/mobile-app/WeeklyScheduleClient";
+import CalendarScheduleClient, {
+  type CalendarScheduleDay,
+} from "@/components/mobile-app/CalendarScheduleClient";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   sortPeriodsByScheduleOrder,
@@ -42,26 +44,55 @@ function formatDate(date: Date) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function getWeekDates() {
-  const today = new Date();
-  const start = new Date(today);
-  const day = start.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  start.setDate(start.getDate() + mondayOffset);
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
 
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-    return date;
-  });
+  return next;
+}
+
+function getMonthGridDates(baseDate: Date) {
+  const firstOfMonth = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+  const lastOfMonth = new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+  const gridStart = addDays(firstOfMonth, -firstOfMonth.getDay());
+  const gridEnd = addDays(lastOfMonth, 6 - lastOfMonth.getDay());
+  const dates: Date[] = [];
+
+  for (let cursor = new Date(gridStart); cursor <= gridEnd; cursor = addDays(cursor, 1)) {
+    dates.push(new Date(cursor));
+  }
+
+  return dates;
+}
+
+function getMonthQuery(date: Date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+
+  return `${yyyy}-${mm}`;
+}
+
+function getBaseMonth(month?: string) {
+  if (month && /^\d{4}-\d{2}$/.test(month)) {
+    const [year, monthNumber] = month.split("-").map(Number);
+
+    return new Date(year, monthNumber - 1, 1);
+  }
+
+  const today = new Date();
+
+  return new Date(today.getFullYear(), today.getMonth(), 1);
 }
 
 export default async function MobileSchedulePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ school: string }>;
+  searchParams: Promise<{ month?: string }>;
 }) {
   const { school } = await params;
+  const { month } = await searchParams;
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
@@ -72,9 +103,11 @@ export default async function MobileSchedulePage({
     notFound();
   }
 
-  const weekDates = getWeekDates();
-  const startDate = formatDate(weekDates[0]);
-  const endDate = formatDate(weekDates[6]);
+  const todayDate = new Date();
+  const baseMonth = getBaseMonth(month);
+  const monthDates = getMonthGridDates(baseMonth);
+  const startDate = formatDate(monthDates[0]);
+  const endDate = formatDate(monthDates[monthDates.length - 1]);
 
   const { data: calendarDays } = await supabase
     .from("calendar_days")
@@ -127,9 +160,14 @@ export default async function MobileSchedulePage({
     );
   }
 
-  const days = weekDates.map((date) => {
+  const calendarDayByDate = new Map(
+    (calendarDays || []).map((calendarDay) => [calendarDay.date, calendarDay])
+  );
+  const today = formatDate(todayDate);
+  const currentMonth = baseMonth.getMonth();
+  const days: CalendarScheduleDay[] = monthDates.map((date) => {
     const dateKey = formatDate(date);
-    const calendarDay = calendarDays?.find((dayItem) => dayItem.date === dateKey);
+    const calendarDay = calendarDayByDate.get(dateKey);
     const assignedSchedule = Array.isArray(calendarDay?.schedule)
       ? calendarDay?.schedule[0]
       : calendarDay?.schedule;
@@ -139,13 +177,19 @@ export default async function MobileSchedulePage({
 
     return {
       date: dateKey,
-      weekday: date.toLocaleDateString("en-US", { weekday: "short" }),
-      label: date.toLocaleDateString("en-US", { day: "numeric" }),
-      scheduleName: calendarDay?.is_school_day === false
-        ? calendarDay.label || "No School"
-        : assignedSchedule?.schedule_name || calendarDay?.label || "No Schedule",
+      dayNumber: date.toLocaleDateString("en-US", { day: "numeric" }),
+      inCurrentMonth: date.getMonth() === currentMonth,
+      isToday: dateKey === today,
+      weekdayLabel: date.toLocaleDateString("en-US", { weekday: "long" }),
+      longDateLabel: date.toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
+      isSchoolDay: calendarDay?.is_school_day ?? null,
+      scheduleName: assignedSchedule?.schedule_name || null,
       scheduleType: assignedSchedule?.schedule_type || null,
-      isSchoolDay: calendarDay?.is_school_day !== false,
+      label: calendarDay?.label || null,
       periods: sortPeriodsByScheduleOrder(periods),
     };
   });
@@ -154,25 +198,31 @@ export default async function MobileSchedulePage({
     <main className="space-y-5">
       <header>
         <p className="text-sm font-bold text-[var(--school-primary)]">
-          Weekly Schedule
+          Schedule
         </p>
         <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950 dark:text-white">
-          This Week
+          Schedule
         </h1>
         <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
-          {weekDates[0].toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          })}{" "}
-          -{" "}
-          {weekDates[6].toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          })}
+          Tap a date to view that day&apos;s schedule
         </p>
       </header>
 
-      <WeeklyScheduleClient days={days} />
+      <CalendarScheduleClient
+        key={getMonthQuery(baseMonth)}
+        monthLabel={baseMonth.toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        })}
+        previousMonthHref={`/${school}/app/schedule?month=${getMonthQuery(
+          new Date(baseMonth.getFullYear(), baseMonth.getMonth() - 1, 1)
+        )}`}
+        nextMonthHref={`/${school}/app/schedule?month=${getMonthQuery(
+          new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 1)
+        )}`}
+        today={today}
+        days={days}
+      />
     </main>
   );
 }

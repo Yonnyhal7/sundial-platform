@@ -53,7 +53,7 @@ export default async function AdminEventsPage({
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
+    <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-8 flex items-center justify-between">
           <div>

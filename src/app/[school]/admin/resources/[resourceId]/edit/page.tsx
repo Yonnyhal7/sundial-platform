@@ -67,7 +67,7 @@ export default async function EditResourcePage({
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
+    <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="mb-8 text-3xl font-bold">Edit Resource</h1>
 

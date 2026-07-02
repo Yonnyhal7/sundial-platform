@@ -12,6 +12,12 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#f8fafc",
     icons: [
       {
+        src: "/sundial-icon.png",
+        sizes: "1024x1536",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
         src: "/favicon.ico",
         sizes: "any",
         type: "image/x-icon",

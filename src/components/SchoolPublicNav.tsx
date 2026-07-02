@@ -11,8 +11,23 @@ type SchoolPublicNavProps = {
 export default function SchoolPublicNav({ school }: SchoolPublicNavProps) {
   const pathname = usePathname();
 
-  if (pathname === `/${school}/app` || pathname.startsWith(`/${school}/app/`)) {
+  if (
+    pathname === `/${school}/app` ||
+    pathname.startsWith(`/${school}/app/`) ||
+    pathname === `/${school}/admin` ||
+    pathname.startsWith(`/${school}/admin/`)
+  ) {
     return null;
+  }
+
+  if (pathname === `/${school}/kiosk` || pathname.startsWith(`/${school}/kiosk/`)) {
+    return (
+      <nav className="school-menu-bar border-b border-slate-200 bg-white px-6 py-3 dark:border-neutral-800 dark:bg-black">
+        <div className="flex items-center justify-end">
+          <KioskMenuControls />
+        </div>
+      </nav>
+    );
   }
 
   const navItems = [

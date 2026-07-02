@@ -58,7 +58,7 @@ function SortablePeriodRow({
         isDragging ? "opacity-70 ring-2 ring-blue-500" : ""
       }`}
     >
-      <div className="grid gap-4 sm:grid-cols-[40px_1fr_160px_160px_auto]">
+      <div className="grid gap-4 sm:grid-cols-[40px_minmax(0,1fr)] xl:grid-cols-[40px_minmax(0,1fr)_minmax(8rem,10rem)_minmax(8rem,10rem)_auto]">
         <button
           type="button"
           {...attributes}

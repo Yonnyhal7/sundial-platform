@@ -86,10 +86,11 @@ body {
 }
 
 .admin-theme {
+  --admin-sidebar-width: clamp(13.75rem, 18vw, 17.5rem);
   --admin-bg: #f8fafc;
   --admin-surface: #ffffff;
   --admin-surface-muted: #f1f5f9;
-  --admin-border: #cbd5e1;
+  --admin-border: #e2e8f0;
   --admin-text: #0f172a;
   --admin-muted: #475569;
   --admin-subtle: #64748b;
@@ -97,14 +98,44 @@ body {
   color: var(--admin-text);
 }
 
+.admin-theme main {
+  overflow-x: clip;
+}
+
+.admin-theme * {
+  min-width: 0;
+}
+
+.admin-theme main > .mx-auto[class~="max-w-6xl"] {
+  max-width: min(96rem, 100%);
+}
+
 .dark .admin-theme {
   --admin-bg: #000000;
   --admin-surface: #242424;
-  --admin-surface-muted: #181818;
+  --admin-surface-muted: #2f2f2f;
   --admin-border: #3a3a3a;
-  --admin-text: #ffffff;
+  --admin-text: #f8fafc;
   --admin-muted: #d4d4d4;
   --admin-subtle: #a3a3a3;
+}
+
+.admin-sidebar {
+  background: #2f3136;
+}
+
+.dark .admin-sidebar {
+  background: #18181b;
+}
+
+.admin-theme .admin-sidebar,
+.admin-theme .admin-sidebar *,
+.admin-theme .admin-sidebar [class~="text-white"],
+.admin-theme .admin-sidebar [class~="text-white/90"],
+.admin-theme .admin-sidebar [class~="text-white/85"],
+.admin-theme .admin-sidebar [class~="text-slate-300"],
+.admin-theme .admin-sidebar [class~="text-slate-400"] {
+  color: #ffffff;
 }
 
 .admin-theme main,
@@ -113,18 +144,38 @@ body {
   color: var(--admin-text);
 }
 
+.dark .admin-theme [class~="dark:bg-slate-950"] {
+  background: #000000;
+}
+
+.dark .admin-theme [class~="dark:bg-slate-900"] {
+  background: #242424;
+}
+
+.dark .admin-theme [class~="dark:bg-slate-800"] {
+  background: #2f2f2f;
+}
+
+.dark .admin-theme [class~="dark:hover:bg-slate-800"]:hover,
+.dark .admin-theme [class~="dark:hover:bg-slate-700"]:hover {
+  background: #333333;
+}
+
+.dark .admin-theme [class~="dark:border-slate-700"] {
+  border-color: #3a3a3a;
+}
+
 .admin-theme main.calendar-admin-page {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--admin-bg);
+  color: var(--admin-text);
 }
 
 .dark .admin-theme main.calendar-admin-page {
-  background: #000000;
-  color: #ffffff;
+  background: var(--admin-bg);
+  color: var(--admin-text);
 }
 
 .admin-theme [class~="bg-slate-900/70"],
-.admin-theme [class~="bg-slate-950"],
 .admin-theme [class~="bg-neutral-900"] {
   background: var(--admin-surface);
 }
@@ -164,6 +215,50 @@ body {
 .admin-theme [class~="hover:bg-blue-500"]:hover {
   background: var(--school-primary);
   color: #ffffff;
+}
+
+.admin-theme [class~="bg-blue-50"],
+.admin-theme [class~="bg-blue-500/15"] {
+  background: color-mix(in srgb, var(--school-primary) 14%, transparent);
+}
+
+.dark .admin-theme [class~="dark:bg-blue-500/15"] {
+  background: color-mix(in srgb, var(--school-primary) 22%, transparent);
+}
+
+.admin-theme [class~="text-blue-600"],
+.admin-theme [class~="text-blue-500"],
+.admin-theme [class~="text-blue-900"],
+.admin-theme [class~="text-blue-100"] {
+  color: var(--school-primary);
+}
+
+.dark .admin-theme [class~="dark:text-blue-100"] {
+  color: color-mix(in srgb, var(--school-primary) 42%, white);
+}
+
+.admin-theme [class~="border-blue-500"],
+.admin-theme [class~="border-blue-600"],
+.admin-theme [class~="border-blue-400"] {
+  border-color: var(--school-primary);
+}
+
+.dark .admin-theme [class~="dark:border-blue-400"] {
+  border-color: var(--school-primary);
+}
+
+.admin-theme [class~="bg-green-500/15"],
+.admin-theme [class~="bg-emerald-100"] {
+  background: color-mix(in srgb, var(--school-primary) 14%, transparent);
+}
+
+.admin-theme [class~="text-green-300"],
+.admin-theme [class~="text-emerald-800"] {
+  color: var(--school-primary);
+}
+
+.admin-theme [class~="ring-green-500/30"] {
+  --tw-ring-color: color-mix(in srgb, var(--school-primary) 35%, transparent);
 }
 
 .admin-theme [class~="focus:border-blue-500"]:focus,

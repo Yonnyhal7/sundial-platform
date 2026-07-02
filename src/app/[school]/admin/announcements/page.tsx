@@ -51,7 +51,7 @@ export default async function AdminAnnouncementsPage({
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
+    <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
@@ -68,7 +68,7 @@ export default async function AdminAnnouncementsPage({
         </div>
 
         <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold">Manage Announcements</h2>
               <p className="mt-1 text-sm text-slate-400">
@@ -79,9 +79,10 @@ export default async function AdminAnnouncementsPage({
             
             <Link
                 href={`/${school}/admin/announcements/new`}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                className="inline-flex w-fit max-w-full items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium leading-tight text-white hover:bg-blue-500 sm:shrink-0"
                 >
-                + New Announcement
+                <span className="hidden sm:inline">+ New Announcement</span>
+                <span className="sm:hidden">+ New</span>
             </Link>
             
           </div>

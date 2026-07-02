@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  getThemeStorageKey,
+  type Theme,
+  type ThemeScope,
+} from "@/lib/themeScope";
 
-type Theme = "light" | "dark";
-
-function getPreferredTheme(): Theme {
+function getPreferredTheme(storageKey: string): Theme {
   if (typeof window === "undefined") {
     return "light";
   }
 
-  const savedTheme = window.localStorage.getItem("theme");
+  const savedTheme = window.localStorage.getItem(storageKey);
 
   if (savedTheme === "light" || savedTheme === "dark") {
     return savedTheme;
@@ -63,16 +66,20 @@ function SunIcon() {
 }
 
 export default function ThemeToggle({
+  scope,
   className = "",
 }: {
+  scope: ThemeScope;
   className?: string;
 }) {
   const [theme, setTheme] = useState<Theme | null>(null);
+  const storageKey = getThemeStorageKey(scope);
 
   useEffect(() => {
-    const preferredTheme = getPreferredTheme();
+    const preferredTheme = getPreferredTheme(storageKey);
 
     applyTheme(preferredTheme);
+    document.documentElement.dataset.themeScope = scope;
 
     const timeout = window.setTimeout(() => {
       setTheme(preferredTheme);
@@ -81,7 +88,7 @@ export default function ThemeToggle({
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     function handleSystemThemeChange(event: MediaQueryListEvent) {
-      if (window.localStorage.getItem("theme")) {
+      if (window.localStorage.getItem(storageKey)) {
         return;
       }
 
@@ -97,15 +104,16 @@ export default function ThemeToggle({
       window.clearTimeout(timeout);
       mediaQuery.removeEventListener("change", handleSystemThemeChange);
     };
-  }, []);
+  }, [scope, storageKey]);
 
   const isDark = theme === "dark";
   const nextTheme = isDark ? "light" : "dark";
 
   function toggleTheme() {
     setTheme(nextTheme);
-    window.localStorage.setItem("theme", nextTheme);
+    window.localStorage.setItem(storageKey, nextTheme);
     applyTheme(nextTheme);
+    document.documentElement.dataset.themeScope = scope;
   }
 
   return (

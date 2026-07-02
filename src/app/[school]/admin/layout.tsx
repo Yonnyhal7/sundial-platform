@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
-import ThemeToggle from "@/components/ThemeToggle";
+import AdminSidebar from "@/components/AdminSidebar";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type AdminLayoutProps = {
@@ -13,10 +12,12 @@ type School = {
   id: string;
   name: string;
   primary_color: string | null;
+  secondary_color: string | null;
 };
 
 type AdminStyle = CSSProperties & {
   "--school-primary": string;
+  "--school-secondary": string;
 };
 
 export default async function AdminLayout({
@@ -37,34 +38,23 @@ export default async function AdminLayout({
   }
 
   const primaryColor = schoolData.primary_color || "#2563eb";
+  const secondaryColor = schoolData.secondary_color || "#64748b";
 
   return (
     <div
-      className="admin-theme min-h-screen"
-      style={{ "--school-primary": primaryColor } as AdminStyle}
+      className="admin-theme min-h-screen bg-slate-50 dark:bg-black"
+      style={
+        {
+          "--school-primary": primaryColor,
+          "--school-secondary": secondaryColor,
+        } as AdminStyle
+      }
     >
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 px-6 py-3 backdrop-blur dark:border-[#3a3a3a] dark:bg-black/90">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-          <Link
-            href={`/${school}/admin`}
-            className="min-w-0 text-sm font-semibold text-slate-900 hover:text-[var(--school-primary)] dark:text-white"
-          >
-            {schoolData.name} Admin
-          </Link>
+      <AdminSidebar school={school} />
 
-          <div className="flex items-center gap-3">
-            <Link
-              href={`/${school}`}
-              className="hidden rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-[var(--school-primary)] hover:text-[var(--school-primary)] dark:border-[#3a3a3a] dark:text-[#d4d4d4] sm:inline-flex"
-            >
-              View Site
-            </Link>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
-
-      {children}
+      <div className="min-h-screen bg-slate-50 pt-[142px] dark:bg-black sm:pt-[132px] lg:pl-[var(--admin-sidebar-width)] lg:pt-0">
+        {children}
+      </div>
     </div>
   );
 }

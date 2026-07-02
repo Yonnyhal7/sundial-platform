@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import ThemeProvider from "@/components/ThemeProvider";
+import ThemeRouteSync from "@/components/ThemeRouteSync";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -33,6 +34,7 @@ export default function RootLayout({
         <ThemeProvider />
       </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <ThemeRouteSync />
         {children}
       </body>
     </html>

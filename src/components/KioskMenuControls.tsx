@@ -27,6 +27,7 @@ export default function KioskMenuControls() {
   }
 
   const showFullscreenButton = pathname.includes("/kiosk");
+  const themeScope = showFullscreenButton ? "kiosk" : "site";
 
   async function enterFullscreen() {
     if (!document.fullscreenElement) {
@@ -45,7 +46,7 @@ export default function KioskMenuControls() {
           Full Screen
         </button>
       )}
-      <ThemeToggle />
+      <ThemeToggle scope={themeScope} />
     </div>
   );
 }
