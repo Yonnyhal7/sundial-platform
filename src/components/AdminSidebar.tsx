@@ -6,6 +6,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 
 type AdminSidebarProps = {
   school: string;
+  canManageUsers?: boolean;
 };
 
 type IconProps = {
@@ -51,14 +52,6 @@ function MegaphoneIcon(props: IconProps) {
   );
 }
 
-function UsersIcon(props: IconProps) {
-  return (
-    <IconShell {...props}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8.5 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM15.5 11a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3.5 19a5 5 0 0 1 10 0v1h-10v-1ZM13.5 20h7v-.8a4.2 4.2 0 0 0-5.2-4.1" />
-    </IconShell>
-  );
-}
-
 function UserIcon(props: IconProps) {
   return (
     <IconShell {...props}>
@@ -84,7 +77,7 @@ function PlaceholderIcon(props: IconProps) {
   );
 }
 
-export default function AdminSidebar({ school }: AdminSidebarProps) {
+export default function AdminSidebar({ school, canManageUsers = false }: AdminSidebarProps) {
   const pathname = usePathname();
   const iconClass = "h-5 w-5 shrink-0";
 
@@ -117,16 +110,18 @@ export default function AdminSidebar({ school }: AdminSidebarProps) {
     },
     {
       label: "Athletics",
+      href: `/${school}/admin/athletics`,
       icon: <PlaceholderIcon className={iconClass} />,
     },
-    {
-      label: "Clubs",
-      icon: <UsersIcon className={iconClass} />,
-    },
-    {
-      label: "Users",
-      icon: <UserIcon className={iconClass} />,
-    },
+    ...(canManageUsers
+      ? [
+          {
+            label: "Users",
+            href: `/${school}/admin/users`,
+            icon: <UserIcon className={iconClass} />,
+          },
+        ]
+      : []),
     {
       label: "Settings",
       href: `/${school}/admin/settings`,

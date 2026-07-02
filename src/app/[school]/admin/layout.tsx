@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
+import { canManageUsers, type AdminProfile } from "@/lib/adminUsers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type AdminLayoutProps = {
@@ -39,6 +40,17 @@ export default async function AdminLayout({
 
   const primaryColor = schoolData.primary_color || "#2563eb";
   const secondaryColor = schoolData.secondary_color || "#64748b";
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase
+        .from("users")
+        .select("id, role, school_id, is_active")
+        .eq("id", user.id)
+        .maybeSingle<AdminProfile>()
+    : { data: null };
+  const showUsersNav = canManageUsers(profile, schoolData.id);
 
   return (
     <div
@@ -50,7 +62,7 @@ export default async function AdminLayout({
         } as AdminStyle
       }
     >
-      <AdminSidebar school={school} />
+      <AdminSidebar school={school} canManageUsers={showUsersNav} />
 
       <div className="min-h-screen bg-slate-50 pt-[142px] dark:bg-black sm:pt-[132px] lg:pl-[var(--admin-sidebar-width)] lg:pt-0">
         {children}

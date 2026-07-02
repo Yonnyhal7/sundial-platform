@@ -51,7 +51,7 @@ export default async function MobileResourcesPage({
   const quickLinks = [
     { title: "Resources", label: "Helpful links", href: `/${school}/app/resources`, icon: BookIcon },
     { title: "Clubs", label: "Student life", href: `/${school}/app/more`, icon: CalendarIcon },
-    { title: "Athletics", label: "Teams and games", href: `/${school}/app/events`, icon: BellIcon },
+    { title: "Athletics", label: "Teams and games", href: `/${school}/app/athletics`, icon: BellIcon },
     { title: "Counseling", label: "Support", href: `/${school}/app/more`, icon: MapPinIcon },
     { title: "Bell Schedule", label: "Period times", href: `/${school}/app/bell`, icon: BellIcon },
     { title: "Contact", label: "School info", href: `/${school}/app/more`, icon: MapPinIcon },

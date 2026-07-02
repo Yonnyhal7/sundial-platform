@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isSchoolAdminRole, isSuperAdminRole, normalizeAdminRole } from "@/lib/adminUsers";
 import { notFound, redirect } from "next/navigation";
 
 function getLocalDateString(date: Date) {
@@ -75,8 +76,8 @@ export default async function SchoolAdminPage({
   }
 
   const allowed =
-    profile.role === "SuperAdmin" ||
-    (["SchoolAdmin", "Editor"].includes(profile.role) &&
+    isSuperAdminRole(profile.role) ||
+    ((isSchoolAdminRole(profile.role) || normalizeAdminRole(profile.role) === "editor") &&
       profile.school_id === schoolData.id);
 
   if (!allowed) {

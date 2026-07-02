@@ -49,6 +49,7 @@ export default async function MobileMorePage({
   const items = [
     { title: "Bell Schedule", href: `/${school}/app/bell`, icon: BellIcon },
     { title: "Weekly Schedule", href: `/${school}/app/schedule`, icon: CalendarIcon },
+    { title: "Athletics", href: `/${school}/app/athletics`, icon: BellIcon },
     { title: "Resources", href: `/${school}/app/resources`, icon: BookIcon },
     { title: "Public Website", href: `/${school}`, icon: HomeIcon },
   ];
