@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function EditAnnouncementPage({
@@ -17,6 +18,8 @@ export default async function EditAnnouncementPage({
     .single<{ id: string; name: string }>();
 
   if (!schoolData) notFound();
+  const schoolId = schoolData.id;
+  await requireAdminSectionAccess(schoolId, "announcements", school);
 
   const { data: announcement } = await supabase
     .from("announcements")
@@ -32,7 +35,11 @@ export default async function EditAnnouncementPage({
   async function updateAnnouncement(formData: FormData) {
     "use server";
 
-    const supabase = await createSupabaseServerClient();
+    const { supabase } = await requireAdminSectionAccess(
+      schoolId,
+      "announcements",
+      school
+    );
 
     const title = String(formData.get("title") || "");
     const body = String(formData.get("body") || "");
@@ -108,7 +115,7 @@ export default async function EditAnnouncementPage({
 
             <button
               type="submit"
-              className="rounded-lg bg-blue-600 px-4 py-2"
+              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2"
             >
               Save Changes
             </button>

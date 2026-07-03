@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ResourceFileUpload from "./resource-file-upload";
 export default async function EditResourcePage({
@@ -21,6 +22,7 @@ export default async function EditResourcePage({
   }
 
   const schoolId = schoolData.id;
+  await requireAdminSectionAccess(schoolId, "resources", school);
 
   const { data: resource } = await supabase
     .from("resources")
@@ -36,7 +38,11 @@ export default async function EditResourcePage({
   async function updateResource(formData: FormData) {
     "use server";
 
-    const supabase = await createSupabaseServerClient();
+    const { supabase } = await requireAdminSectionAccess(
+      schoolId,
+      "resources",
+      school
+    );
 
     const title = String(formData.get("title") || "");
     const description = String(formData.get("description") || "");
@@ -120,7 +126,7 @@ export default async function EditResourcePage({
 
             <button
               type="submit"
-              className="rounded-lg bg-blue-600 px-4 py-2"
+              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2"
             >
               Save Changes
             </button>

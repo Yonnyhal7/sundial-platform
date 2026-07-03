@@ -134,12 +134,6 @@ export default async function AdminUsersPage({
             <h1 className="mt-1 text-3xl font-bold">Users</h1>
           </div>
 
-          <Link
-            href={`/${school}/admin`}
-            className="w-fit rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900"
-          >
-            Back to Admin
-          </Link>
         </div>
 
         <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
@@ -147,13 +141,13 @@ export default async function AdminUsersPage({
             <div>
               <h2 className="text-lg font-semibold">Manage Users</h2>
               <p className="mt-1 text-sm text-slate-400">
-                Add staff access and control which admin sections they can use.
+                Add admin access and control which admin sections users can use.
               </p>
             </div>
 
             <Link
               href={`/${school}/admin/users/new`}
-              className="inline-flex w-fit items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+              className="inline-flex w-fit cursor-pointer items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
             >
               + New User
             </Link>
@@ -221,7 +215,7 @@ export default async function AdminUsersPage({
                             <input type="hidden" name="user_id" value={user.id} />
                             <button
                               type="submit"
-                              className="rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
+                              className="cursor-pointer rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
                             >
                               Deactivate
                             </button>

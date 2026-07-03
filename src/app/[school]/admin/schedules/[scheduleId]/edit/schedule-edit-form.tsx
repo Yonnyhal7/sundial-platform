@@ -242,7 +242,7 @@ export default function ScheduleEditForm({
 
         <button
           type="submit"
-          className="cursor-pointerrounded-lg bg-blue-600 px-4 py-2 font-semibold"
+          className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 font-semibold"
         >
           Save Changes
         </button>

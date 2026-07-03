@@ -1,5 +1,6 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 export {
   formatUserRole,
   getPermissionLabel,
@@ -47,14 +48,6 @@ export function canEditTargetUser({
 export async function requireUserManager(school: string) {
   const supabase = await createSupabaseServerClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect(`/${school}/login`);
-  }
-
   const { data: schoolData } = await supabase
     .rpc("get_school_by_subdomain", { subdomain_input: school })
     .single<AdminSchool>();
@@ -63,15 +56,7 @@ export async function requireUserManager(school: string) {
     notFound();
   }
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, role, school_id, is_active")
-    .eq("id", user.id)
-    .single<AdminProfile>();
+  const adminUser = await requireAdminSectionAccess(schoolData.id, "users", school);
 
-  if (!profile || !canManageUsers(profile, schoolData.id)) {
-    redirect(`/${school}/admin`);
-  }
-
-  return { supabase, schoolData, profile };
+  return { supabase: adminUser.supabase, schoolData, profile: adminUser.profile };
 }

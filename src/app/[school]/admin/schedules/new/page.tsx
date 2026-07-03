@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ScheduleForm from "./schedule-form";
 
@@ -21,11 +22,16 @@ export default async function NewSchedulePage({
   }
 
   const schoolId = schoolData.id;
+  await requireAdminSectionAccess(schoolId, "schedules", school);
 
   async function createSchedule(formData: FormData) {
     "use server";
 
-    const supabase = await createSupabaseServerClient();
+    const { supabase } = await requireAdminSectionAccess(
+      schoolId,
+      "schedules",
+      school
+    );
 
     const scheduleName = String(formData.get("schedule_name") || "");
     const scheduleType = String(formData.get("schedule_type") || "");

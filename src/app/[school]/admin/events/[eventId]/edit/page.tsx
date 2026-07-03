@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function EditEventPage({
@@ -20,6 +21,8 @@ export default async function EditEventPage({
     notFound();
   }
   const schoolId = schoolData.id;
+  await requireAdminSectionAccess(schoolId, "events", school);
+
   const { data: event } = await supabase
     .from("events")
     .select("*")
@@ -34,7 +37,11 @@ export default async function EditEventPage({
   async function updateEvent(formData: FormData) {
     "use server";
 
-    const supabase = await createSupabaseServerClient();
+    const { supabase } = await requireAdminSectionAccess(
+      schoolId,
+      "events",
+      school
+    );
 
     const title = String(formData.get("title") || "");
     const description = String(formData.get("description") || "");
@@ -135,7 +142,7 @@ export default async function EditEventPage({
 
             <button
               type="submit"
-              className="rounded-lg bg-blue-600 px-4 py-2"
+              className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2"
             >
               Save Changes
             </button>

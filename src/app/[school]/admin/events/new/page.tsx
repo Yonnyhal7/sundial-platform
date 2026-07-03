@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function NewEventPage({
@@ -21,11 +22,16 @@ export default async function NewEventPage({
   }
 
   const schoolId = schoolData.id;
+  await requireAdminSectionAccess(schoolId, "events", school);
 
   async function createEvent(formData: FormData) {
     "use server";
 
-    const supabase = await createSupabaseServerClient();
+    const { supabase } = await requireAdminSectionAccess(
+      schoolId,
+      "events",
+      school
+    );
 
     const title = String(formData.get("title") || "");
     const description = String(formData.get("description") || "");
@@ -161,7 +167,7 @@ export default async function NewEventPage({
 
             <button
               type="submit"
-              className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+              className="cursor-pointer rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500"
             >
               Create Event
             </button>

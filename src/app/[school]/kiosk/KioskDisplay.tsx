@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
+import SportIcon from "@/components/SportIcon";
 import {
   formatCountdownDuration,
   getTodayScheduleState,
@@ -25,6 +27,17 @@ type EventItem = {
   date: string;
 };
 
+type GameItem = {
+  id: string;
+  title: string;
+  teamName: string;
+  opponent: string;
+  time: string;
+  location: string;
+  sportIcon: string;
+  sportIconColor: string | null;
+};
+
 type Announcement = {
   title: string;
   body: string;
@@ -37,6 +50,8 @@ type KioskDisplayProps = {
   dayType: string;
   periods: Period[];
   events: EventItem[];
+  games: GameItem[];
+  athleticsHref: string;
   announcement?: Announcement | null;
   isNoSchool?: boolean;
   noSchoolLabel?: string;
@@ -78,11 +93,15 @@ export default function KioskDisplay({
   dayType,
   periods,
   events,
+  games,
+  athleticsHref,
   announcement,
   isNoSchool = false,
   noSchoolLabel = "Enjoy your day",
 }: KioskDisplayProps) {
   const [now, setNow] = useState<Date | null>(null);
+  const [activeInfoCard, setActiveInfoCard] = useState<"events" | "games">("events");
+  const [rotationReset, setRotationReset] = useState(0);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -98,6 +117,14 @@ export default function KioskDisplay({
       window.clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setActiveInfoCard((current) => (current === "events" ? "games" : "events"));
+    }, 10000);
+
+    return () => window.clearInterval(interval);
+  }, [rotationReset]);
 
   const schedulePeriods = useMemo<SchedulePeriod[]>(
     () =>
@@ -322,7 +349,7 @@ export default function KioskDisplay({
             </div>
           </div>
 
-          <div className="grid min-h-0 grid-rows-[1.5fr_0.9fr_0.8fr] gap-[1vw]">
+          <div className="grid min-h-0 grid-rows-[1.35fr_1.05fr_0.8fr] gap-[1vw]">
             <Card title="Today’s Schedule">
               <div
                 className="grid min-h-0 flex-1 gap-[0.25dvh]"
@@ -364,21 +391,30 @@ export default function KioskDisplay({
               </div>
             </Card>
 
-            <Card title="Upcoming Events">
-              <div className="space-y-[0.9dvh]">
+            <Card
+              title={activeInfoCard === "events" ? "Upcoming Events" : "Today's Games"}
+            >
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <div
+                  className={[
+                    "grid h-full w-[200%] grid-cols-2 transition-transform duration-500 ease-in-out",
+                    activeInfoCard === "events" ? "translate-x-0" : "-translate-x-1/2",
+                  ].join(" ")}
+                >
+                  <div className="flex min-h-0 flex-col justify-center pr-[0.6vw]">
                 {events.slice(0, 2).map((event) => (
                   <div
                     key={event.id}
-                    className="flex items-center gap-[1vw] border-b border-slate-200 pb-[0.9dvh] last:border-b-0"
+                    className="flex min-h-0 items-center gap-[1vw] border-b border-slate-200 py-[0.85dvh] first:pt-0 last:border-b-0 last:pb-0"
                   >
-                    <div className="text-[clamp(1.4rem,2.2vw,2.7rem)] text-amber-500">
+                    <div className="shrink-0 text-[clamp(1.25rem,1.9vw,2.25rem)] leading-none text-amber-500">
                       ▦
                     </div>
-                    <div>
-                      <p className="text-[clamp(0.95rem,1.35vw,1.65rem)] font-extrabold">
+                    <div className="min-w-0">
+                      <p className="truncate text-[clamp(0.95rem,1.28vw,1.5rem)] font-extrabold leading-tight">
                         {event.title}
                       </p>
-                      <p className="text-[clamp(0.8rem,1.05vw,1.2rem)] font-semibold text-amber-500">
+                      <p className="mt-[0.25dvh] text-[clamp(0.75rem,0.98vw,1.1rem)] font-semibold leading-tight text-amber-500">
                         {event.date}
                       </p>
                     </div>
@@ -390,6 +426,64 @@ export default function KioskDisplay({
                     No Upcoming Events
                   </p>
                 )}
+                  </div>
+                  <div className="flex min-h-0 flex-col justify-center pl-[0.6vw]">
+                {games.slice(0, 3).map((game) => (
+                  <div
+                    key={game.id}
+                    className="flex min-h-0 items-center gap-[0.8vw] border-b border-slate-200 py-[0.55dvh] first:pt-0 last:border-b-0 last:pb-0"
+                  >
+                    <div className="grid h-[3.8dvh] w-[3.8dvh] shrink-0 place-items-center rounded-xl bg-amber-100 text-[clamp(0.65rem,0.85vw,1rem)] font-extrabold text-amber-500">
+                      <SportIcon
+                        icon={game.sportIcon}
+                        color={game.sportIconColor}
+                        className="h-[2dvh] w-[2dvh]"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[clamp(0.85rem,1.08vw,1.25rem)] font-extrabold leading-tight">
+                        {game.title}
+                      </p>
+                      <p className="mt-[0.15dvh] truncate text-[clamp(0.68rem,0.85vw,0.98rem)] font-semibold leading-tight text-slate-500">
+                        {game.time} | {game.location}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+
+                {games.length > 3 && (
+                  <Link
+                    href={athleticsHref}
+                    className="mt-[0.55dvh] text-[clamp(0.7rem,0.85vw,0.95rem)] font-extrabold text-amber-500"
+                  >
+                    + {games.length - 3} more games today
+                  </Link>
+                )}
+
+                {games.length === 0 && (
+                  <p className="text-[clamp(0.95rem,1.25vw,1.5rem)] font-semibold text-slate-500">
+                    No games today
+                  </p>
+                )}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-[0.65dvh] flex shrink-0 justify-center gap-[0.35vw]">
+                {(["events", "games"] as const).map((card) => (
+                  <button
+                    key={card}
+                    type="button"
+                    aria-label={`Show ${card}`}
+                    onClick={() => {
+                      setActiveInfoCard(card);
+                      setRotationReset((current) => current + 1);
+                    }}
+                    className={[
+                      "h-[0.75dvh] w-[0.75dvh] rounded-full transition",
+                      activeInfoCard === card ? "bg-amber-500" : "bg-slate-300",
+                    ].join(" ")}
+                  />
+                ))}
               </div>
             </Card>
 
@@ -424,15 +518,20 @@ export default function KioskDisplay({
 function Card({
   title,
   children,
+  action,
 }: {
   title: string;
   children: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-0 flex-col overflow-visible rounded-3xl border border-slate-200 bg-white p-[1.2vw] shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
-      <h3 className="mb-[0.9dvh] text-[clamp(0.95rem,1.3vw,1.55rem)] font-extrabold uppercase tracking-wide text-amber-500">
-        {title}
-      </h3>
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-[1.2vw] shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
+      <div className="mb-[0.9dvh] flex shrink-0 items-center justify-between gap-[1vw]">
+        <h3 className="text-[clamp(0.95rem,1.3vw,1.55rem)] font-extrabold uppercase tracking-wide text-amber-500">
+          {title}
+        </h3>
+        {action}
+      </div>
       {children}
     </div>
   );

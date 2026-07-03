@@ -1,6 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 import UserAccessForm from "@/components/admin/UserAccessForm";
 import {
+  filterSavablePermissionIds,
+  getOrSeedAdminPermissions,
+  type PermissionRow,
+} from "@/lib/adminDefaultPermissions";
+import {
   canEditTargetUser,
   getPermissionLabel,
   isSuperAdminRole,
@@ -8,13 +13,6 @@ import {
   PRIORITY_PERMISSION_LABELS,
   requireUserManager,
 } from "@/lib/adminUsers";
-
-type PermissionRow = {
-  id: string;
-  key: string | null;
-  label: string | null;
-  description: string | null;
-};
 
 type EditableUser = {
   id: string;
@@ -54,14 +52,14 @@ export default async function EditUserPage({
   const { school, userId } = await params;
   const { supabase, schoolData, profile } = await requireUserManager(school);
 
-  const [{ data: targetUser }, { data: permissions }, { data: userPermissions }] =
+  const [{ data: targetUser }, permissions, { data: userPermissions }] =
     await Promise.all([
       supabase
         .from("users")
         .select("id, full_name, first_name, last_name, email, role, school_id, is_active")
         .eq("id", userId)
         .single<EditableUser>(),
-      supabase.from("permissions").select("id, key, label, description").returns<PermissionRow[]>(),
+      getOrSeedAdminPermissions(),
       supabase
         .from("user_permissions")
         .select("permission_id")
@@ -78,7 +76,7 @@ export default async function EditUserPage({
   }
 
   const selectedPermissionIds = new Set((userPermissions || []).map((row) => row.permission_id));
-  const permissionRows = sortPermissions(permissions || []);
+  const permissionRows = sortPermissions(permissions);
 
   async function updateUser(formData: FormData) {
     "use server";
@@ -88,9 +86,9 @@ export default async function EditUserPage({
     const lastName = String(formData.get("last_name") || "").trim();
     const fullName = [firstName, lastName].filter(Boolean).join(" ");
     const email = String(formData.get("email") || "").trim().toLowerCase();
-    const role = String(formData.get("role") || "staff").trim();
+    const role = String(formData.get("role") || "editor").trim();
     const isActive = formData.get("is_active") === "on";
-    const permissionIds = formData
+    const submittedPermissionIds = formData
       .getAll("permission_ids")
       .map((value) => String(value))
       .filter(Boolean);
@@ -143,6 +141,11 @@ export default async function EditUserPage({
       return;
     }
 
+    const permissionIds = await filterSavablePermissionIds({
+      role,
+      permissionIds: submittedPermissionIds,
+    });
+
     if (permissionIds.length > 0) {
       const { error: permissionError } = await supabase.from("user_permissions").insert(
         permissionIds.map((permissionId) => ({
@@ -178,7 +181,7 @@ export default async function EditUserPage({
             first_name: targetUser.first_name,
             last_name: targetUser.last_name,
             email: targetUser.email,
-            role: targetUser.role || "staff",
+            role: targetUser.role || "editor",
             is_active: targetUser.is_active,
             permission_ids: Array.from(selectedPermissionIds),
           }}

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 
 export async function updateScheduleAction(
   school: string,
@@ -10,7 +10,11 @@ export async function updateScheduleAction(
   existingPeriodIds: string[],
   formData: FormData
 ) {
-  const supabase = await createSupabaseServerClient();
+  const { supabase } = await requireAdminSectionAccess(
+    schoolId,
+    "schedules",
+    school
+  );
 
   const scheduleName = String(formData.get("schedule_name") || "");
   const scheduleType = String(formData.get("schedule_type") || "");

@@ -1,9 +1,8 @@
-export type AdminRole = "school_admin" | "editor" | "staff";
+export type AdminRole = "school_admin" | "editor";
 
 export const MANAGEABLE_USER_ROLES: { value: AdminRole; label: string }[] = [
   { value: "school_admin", label: "Administrator" },
   { value: "editor", label: "Editor" },
-  { value: "staff", label: "Staff" },
 ];
 
 export const PRIORITY_PERMISSION_LABELS = [

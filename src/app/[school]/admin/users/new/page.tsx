@@ -1,13 +1,11 @@
 import { redirect } from "next/navigation";
 import UserAccessForm from "@/components/admin/UserAccessForm";
+import {
+  filterSavablePermissionIds,
+  getOrSeedAdminPermissions,
+  type PermissionRow,
+} from "@/lib/adminDefaultPermissions";
 import { getPermissionLabel, MANAGEABLE_USER_ROLES, PRIORITY_PERMISSION_LABELS, requireUserManager } from "@/lib/adminUsers";
-
-type PermissionRow = {
-  id: string;
-  key: string | null;
-  label: string | null;
-  description: string | null;
-};
 
 function sortPermissions(permissions: PermissionRow[]) {
   return [...permissions].sort((a, b) => {
@@ -30,18 +28,9 @@ export default async function NewUserPage({
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
-  const { supabase, schoolData } = await requireUserManager(school);
+  const { schoolData } = await requireUserManager(school);
 
-  const { data: permissions, error: permissionsError } = await supabase
-    .from("permissions")
-    .select("id, key, label, description")
-    .returns<PermissionRow[]>();
-
-  if (permissionsError) {
-    console.error("Permissions error:", JSON.stringify(permissionsError, null, 2));
-  }
-
-  const permissionRows = sortPermissions(permissions || []);
+  const permissionRows = sortPermissions(await getOrSeedAdminPermissions());
 
   async function createUser(formData: FormData) {
     "use server";
@@ -51,9 +40,9 @@ export default async function NewUserPage({
     const lastName = String(formData.get("last_name") || "").trim();
     const fullName = [firstName, lastName].filter(Boolean).join(" ");
     const email = String(formData.get("email") || "").trim().toLowerCase();
-    const role = String(formData.get("role") || "staff").trim();
+    const role = String(formData.get("role")).trim();
     const isActive = formData.get("is_active") === "on";
-    const permissionIds = formData
+    const submittedPermissionIds = formData
       .getAll("permission_ids")
       .map((value) => String(value))
       .filter(Boolean);
@@ -81,6 +70,13 @@ export default async function NewUserPage({
       console.error("Create user error:", JSON.stringify(error, null, 2));
       return;
     }
+
+    const permissionIds = await filterSavablePermissionIds({
+      role,
+      permissionIds: submittedPermissionIds,
+    });
+
+    await supabase.from("user_permissions").delete().eq("user_id", createdUser.id);
 
     if (permissionIds.length > 0) {
       const { error: permissionError } = await supabase.from("user_permissions").insert(
@@ -111,7 +107,7 @@ export default async function NewUserPage({
           cancelHref={`/${school}/admin/users`}
           submitLabel="Save User"
           permissions={permissionRows}
-          initialValues={{ role: "staff", is_active: true }}
+          initialValues={{ role: "editor", is_active: true }}
         />
       </div>
     </main>

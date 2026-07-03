@@ -35,7 +35,7 @@ type UserAccessFormProps = {
 
 function getRoleDefaults(role: string, permissions: UserAccessPermission[]) {
   if (role === "school_admin") {
-    return permissions.map((permission) => permission.id);
+    return [];
   }
 
   if (role === "editor") {
@@ -70,6 +70,10 @@ export default function UserAccessForm({
       sensitive: isUsersPermission(permission) || isAnalyticsPermission(permission),
     }));
   }, [permissions]);
+  const editorPermissionGroups = useMemo(
+    () => permissionGroups.filter((permission) => !isUsersPermission(permission)),
+    [permissionGroups]
+  );
 
   function handleRoleChange(nextRole: string) {
     setRole(nextRole);
@@ -161,45 +165,53 @@ export default function UserAccessForm({
 
       <section className="mt-8 border-t border-slate-800 pt-6">
         <h2 className="text-lg font-semibold">Permissions</h2>
-        <p className="mt-1 text-sm text-slate-400">
-          Defaults are applied when the role changes, but you can customize before saving.
-        </p>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {permissionGroups.map((permission) => (
-            <label
-              key={permission.id}
-              className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3"
-            >
-              <input
-                name="permission_ids"
-                type="checkbox"
-                value={permission.id}
-                checked={selectedPermissionIds.has(permission.id)}
-                onChange={(event) => togglePermission(permission.id, event.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-slate-600"
-              />
-              <span className="min-w-0 text-sm text-slate-300">
-                <span className="block font-medium">{permission.label}</span>
-                {permission.description && (
-                  <span className="mt-1 block text-xs text-slate-500">
-                    {permission.description}
-                  </span>
-                )}
-                {permission.sensitive && (
-                  <span className="mt-2 inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-500/25">
-                    Admin access
-                  </span>
-                )}
-              </span>
-            </label>
-          ))}
-        </div>
-
-        {permissions.length === 0 && (
-          <p className="mt-4 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-400">
-            No permissions have been configured yet.
+        {role === "school_admin" || role === "super_admin" ? (
+          <p className="mt-4 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-300">
+            Administrators have full access.
           </p>
+        ) : (
+          <>
+            <p className="mt-1 text-sm text-slate-400">
+              Choose the admin sections this editor can access.
+            </p>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {editorPermissionGroups.map((permission) => (
+                <label
+                  key={permission.id}
+                  className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3"
+                >
+                  <input
+                    name="permission_ids"
+                    type="checkbox"
+                    value={permission.id}
+                    checked={selectedPermissionIds.has(permission.id)}
+                    onChange={(event) => togglePermission(permission.id, event.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-slate-600"
+                  />
+                  <span className="min-w-0 text-sm text-slate-300">
+                    <span className="block font-medium">{permission.label}</span>
+                    {permission.description && (
+                      <span className="mt-1 block text-xs text-slate-500">
+                        {permission.description}
+                      </span>
+                    )}
+                    {permission.sensitive && (
+                      <span className="mt-2 inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-500/25">
+                        Admin access
+                      </span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {editorPermissionGroups.length === 0 && (
+              <p className="mt-4 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-400">
+                No editor permissions have been configured yet.
+              </p>
+            )}
+          </>
         )}
       </section>
 
@@ -212,7 +224,7 @@ export default function UserAccessForm({
         </Link>
         <button
           type="submit"
-          className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+          className="cursor-pointer rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500"
         >
           {submitLabel}
         </button>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { formatGameDateTime, getSportIconLabel } from "@/lib/athletics";
+import SportIcon from "@/components/SportIcon";
+import { formatGameDateTime } from "@/lib/athletics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type School = {
@@ -12,6 +13,7 @@ type Sport = {
   id: string;
   name: string;
   icon: string | null;
+  icon_color: string | null;
 };
 
 type Team = {
@@ -71,14 +73,31 @@ export default async function MobileAthleticsPage({
     notFound();
   }
 
-  const [{ data: sports }, { data: teams }, { data: games }] = await Promise.all([
-    supabase
+  const sportsResultWithColor = await supabase
+    .from("sports")
+    .select("id, name, icon, icon_color")
+    .eq("school_id", schoolData.id)
+    .eq("is_active", true)
+    .order("name", { ascending: true })
+    .returns<Sport[]>();
+  let sports = sportsResultWithColor.data as Sport[] | null;
+
+  if (sportsResultWithColor.error?.code === "42703") {
+    const fallbackSportsResult = await supabase
       .from("sports")
       .select("id, name, icon")
       .eq("school_id", schoolData.id)
       .eq("is_active", true)
       .order("name", { ascending: true })
-      .returns<Sport[]>(),
+      .returns<Omit<Sport, "icon_color">[]>();
+
+    sports = (fallbackSportsResult.data || []).map((sport) => ({
+      ...sport,
+      icon_color: null,
+    }));
+  }
+
+  const [{ data: teams }, { data: games }] = await Promise.all([
     supabase
       .from("teams")
       .select("id, sport_id, name, level, gender")
@@ -150,7 +169,7 @@ export default async function MobileAthleticsPage({
               >
                 <div className="flex gap-3">
                   <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--school-primary)_12%,white)] text-sm font-black text-[var(--school-primary)] dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,#242424)]">
-                    {getSportIconLabel(sport?.icon)}
+                    <SportIcon icon={sport?.icon} color={sport?.icon_color} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-black text-slate-950 dark:text-white">
@@ -201,7 +220,7 @@ export default async function MobileAthleticsPage({
                 className="flex items-center gap-3 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
               >
                 <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-sm font-black text-slate-600 dark:bg-[#181818] dark:text-[#d4d4d4]">
-                  {getSportIconLabel(sport?.icon)}
+                  <SportIcon icon={sport?.icon} color={sport?.icon_color} className="h-5 w-5" />
                 </div>
                 <div>
                   <h3 className="font-black text-slate-950 dark:text-white">

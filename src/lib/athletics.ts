@@ -25,6 +25,8 @@ export const TEAM_LEVEL_OPTIONS = [
 
 export const TEAM_GENDER_OPTIONS = ["Boys", "Girls", "Coed"] as const;
 
+export const DEFAULT_SPORT_ICON_COLOR = "#2563eb";
+
 const SPORT_ICON_LABELS: Record<string, string> = {
   football: "FB",
   baseball: "BB",
@@ -52,6 +54,14 @@ export function formatSportIconName(icon: string | null | undefined) {
 
 export function getSportIconLabel(icon: string | null | undefined) {
   return SPORT_ICON_LABELS[icon || "generic"] || SPORT_ICON_LABELS.generic;
+}
+
+export function normalizeSportIconColor(color: string | null | undefined) {
+  const trimmed = (color || "").trim();
+
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed)
+    ? trimmed
+    : DEFAULT_SPORT_ICON_COLOR;
 }
 
 export function buildTeamDisplayName({

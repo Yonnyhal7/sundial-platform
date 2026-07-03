@@ -1,5 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function NewAnnouncementPage({
@@ -20,10 +21,16 @@ export default async function NewAnnouncementPage({
     notFound();
   }
   const schoolId = schoolData.id;
+  await requireAdminSectionAccess(schoolId, "announcements", school);
+
   async function createAnnouncement(formData: FormData) {
     "use server";
 
-    const supabase = await createSupabaseServerClient();
+    const { supabase } = await requireAdminSectionAccess(
+      schoolId,
+      "announcements",
+      school
+    );
 
     const title = String(formData.get("title") || "");
     const body = String(formData.get("body") || "");
@@ -117,7 +124,7 @@ export default async function NewAnnouncementPage({
 
             <button
               type="submit"
-              className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+              className="cursor-pointer rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500"
             >
               Create Announcement
             </button>

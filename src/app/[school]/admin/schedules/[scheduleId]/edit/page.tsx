@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ScheduleEditForm from "./schedule-edit-form";
 import { updateScheduleAction } from "./actions";
@@ -22,6 +23,7 @@ export default async function EditSchedulePage({
   }
 
   const schoolId = schoolData.id;
+  await requireAdminSectionAccess(schoolId, "schedules", school);
 
   const { data: schedule } = await supabase
     .from("schedules")

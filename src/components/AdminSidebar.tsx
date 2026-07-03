@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "@/components/ThemeToggle";
+import type { AdminPermissionKey } from "@/lib/auth/adminPermissions";
 
 type AdminSidebarProps = {
   school: string;
-  canManageUsers?: boolean;
+  allowedPermissionKeys?: AdminPermissionKey[];
 };
 
 type IconProps = {
@@ -60,15 +61,6 @@ function UserIcon(props: IconProps) {
   );
 }
 
-function SettingsIcon(props: IconProps) {
-  return (
-    <IconShell {...props}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="m19 13.2.95 1.7-2 3.45-1.95-.05a7.3 7.3 0 0 1-1.55.9L13.45 21h-3.9l-1-1.8a7.3 7.3 0 0 1-1.55-.9l-1.95.05-2-3.45.95-1.7a7.2 7.2 0 0 1 0-1.8l-.95-1.7 2-3.45 1.95.05a7.3 7.3 0 0 1 1.55-.9l1-1.8h3.9l1 1.8a7.3 7.3 0 0 1 1.55.9l1.95-.05 2 3.45-.95 1.7a7.2 7.2 0 0 1 0 1.8Z" />
-    </IconShell>
-  );
-}
-
 function PlaceholderIcon(props: IconProps) {
   return (
     <IconShell {...props}>
@@ -77,9 +69,14 @@ function PlaceholderIcon(props: IconProps) {
   );
 }
 
-export default function AdminSidebar({ school, canManageUsers = false }: AdminSidebarProps) {
+export default function AdminSidebar({
+  school,
+  allowedPermissionKeys = [],
+}: AdminSidebarProps) {
   const pathname = usePathname();
   const iconClass = "h-5 w-5 shrink-0";
+  const canAccess = (permissionKey: AdminPermissionKey) =>
+    allowedPermissionKeys.includes(permissionKey);
 
   const navItems = [
     {
@@ -88,32 +85,61 @@ export default function AdminSidebar({ school, canManageUsers = false }: AdminSi
       icon: <DashboardIcon className={iconClass} />,
       exact: true,
     },
-    {
-      label: "Schedules",
-      href: `/${school}/admin/schedules`,
-      icon: <CalendarIcon className={iconClass} />,
-    },
-    {
-      label: "Calendar",
-      href: `/${school}/admin/calendar`,
-      icon: <CalendarIcon className={iconClass} />,
-    },
-    {
-      label: "Events",
-      href: `/${school}/admin/events`,
-      icon: <CalendarIcon className={iconClass} />,
-    },
-    {
-      label: "Announcements",
-      href: `/${school}/admin/announcements`,
-      icon: <MegaphoneIcon className={iconClass} />,
-    },
-    {
-      label: "Athletics",
-      href: `/${school}/admin/athletics`,
-      icon: <PlaceholderIcon className={iconClass} />,
-    },
-    ...(canManageUsers
+    ...(canAccess("schedules")
+      ? [
+          {
+            label: "Schedules",
+            href: `/${school}/admin/schedules`,
+            icon: <CalendarIcon className={iconClass} />,
+          },
+        ]
+      : []),
+    ...(canAccess("calendar")
+      ? [
+          {
+            label: "Calendar",
+            href: `/${school}/admin/calendar`,
+            icon: <CalendarIcon className={iconClass} />,
+          },
+        ]
+      : []),
+    ...(canAccess("events")
+      ? [
+          {
+            label: "Events",
+            href: `/${school}/admin/events`,
+            icon: <CalendarIcon className={iconClass} />,
+          },
+        ]
+      : []),
+    ...(canAccess("announcements")
+      ? [
+          {
+            label: "Announcements",
+            href: `/${school}/admin/announcements`,
+            icon: <MegaphoneIcon className={iconClass} />,
+          },
+        ]
+      : []),
+    ...(canAccess("athletics")
+      ? [
+          {
+            label: "Athletics",
+            href: `/${school}/admin/athletics`,
+            icon: <PlaceholderIcon className={iconClass} />,
+          },
+        ]
+      : []),
+    ...(canAccess("resources")
+      ? [
+          {
+            label: "Resources",
+            href: `/${school}/admin/resources`,
+            icon: <PlaceholderIcon className={iconClass} />,
+          },
+        ]
+      : []),
+    ...(canAccess("users")
       ? [
           {
             label: "Users",
@@ -122,11 +148,6 @@ export default function AdminSidebar({ school, canManageUsers = false }: AdminSi
           },
         ]
       : []),
-    {
-      label: "Settings",
-      href: `/${school}/admin/settings`,
-      icon: <SettingsIcon className={iconClass} />,
-    },
   ];
 
   function renderNavItem(item: (typeof navItems)[number], compact = false) {
@@ -199,7 +220,7 @@ export default function AdminSidebar({ school, canManageUsers = false }: AdminSi
           href={`/${school}/admin`}
           className="mb-6 flex items-center gap-3 px-2 min-[1180px]:mb-8 min-[1180px]:px-3"
         >
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden min-[1180px]:h-16 min-[1180px]:w-16 min-[1500px]:h-20 min-[1500px]:w-20">
+          <span className="flex h-18 w-18 shrink-0 items-center justify-center overflow-hidden min-[1180px]:h-18 min-[1180px]:w-18 min-[1500px]:h-12 min-[1500px]:w-12">
             <img
               src="/sundial-icon.png"
               alt="Sundial"

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function AdminResourcesPage({
@@ -22,11 +23,16 @@ export default async function AdminResourcesPage({
   }
 
   const schoolId = schoolData.id;
+  await requireAdminSectionAccess(schoolId, "resources", school);
 
   async function deleteResource(formData: FormData) {
     "use server";
 
-    const supabase = await createSupabaseServerClient();
+    const { supabase } = await requireAdminSectionAccess(
+      schoolId,
+      "resources",
+      school
+    );
     const resourceId = String(formData.get("resource_id") || "");
 
     const { error } = await supabase
@@ -62,12 +68,6 @@ export default async function AdminResourcesPage({
             <h1 className="mt-1 text-3xl font-bold">Resources</h1>
           </div>
 
-          <Link
-            href={`/${school}/admin`}
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900"
-          >
-            Back to Admin
-          </Link>
         </div>
 
         <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 flex items-center justify-between">
@@ -80,7 +80,7 @@ export default async function AdminResourcesPage({
 
           <Link
             href={`/${school}/admin/resources/new`}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
           >
             + New Resource
           </Link>
@@ -140,7 +140,7 @@ export default async function AdminResourcesPage({
 
                     <button
                       type="submit"
-                      className="rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
+                      className="cursor-pointer rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
                     >
                       Delete
                     </button>

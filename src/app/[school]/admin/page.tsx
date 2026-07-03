@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isSchoolAdminRole, isSuperAdminRole, normalizeAdminRole } from "@/lib/adminUsers";
-import { notFound, redirect } from "next/navigation";
+import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
+import { notFound } from "next/navigation";
 
 function getLocalDateString(date: Date) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -47,24 +47,6 @@ export default async function SchoolAdminPage({
   const { school } = await params;
   const supabase = await createSupabaseServerClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect(`/${school}/login`);
-  }
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("role, school_id, is_active")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || !profile.is_active) {
-    redirect(`/${school}/login`);
-  }
-
   const { data: schoolData } = await supabase
     .rpc("get_school_by_subdomain", {
       subdomain_input: school,
@@ -75,14 +57,9 @@ export default async function SchoolAdminPage({
     notFound();
   }
 
-  const allowed =
-    isSuperAdminRole(profile.role) ||
-    ((isSchoolAdminRole(profile.role) || normalizeAdminRole(profile.role) === "editor") &&
-      profile.school_id === schoolData.id);
-
-  if (!allowed) {
-    redirect(`/${school}`);
-  }
+  const adminUser = await requireAdminPortalAccess(schoolData.id, school);
+  const canAccess = (permissionKey: string) =>
+    adminUser.permissionKeys.includes(permissionKey as never);
 
   const now = new Date();
   const today = getLocalDateString(now);
@@ -199,35 +176,41 @@ export default async function SchoolAdminPage({
         <section className="mt-10">
           <h2 className="text-xl font-bold">Quick Actions</h2>
           <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-5">
-            <Link
-              href={`/${school}/admin/announcements/new`}
-              className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
-            >
-              <QuickActionIcon>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m4 13 3.6-.9L17 6.5v11L7.6 11.9 4 11v2Zm3.6-.9 1 5.2a1.6 1.6 0 0 0 2.8.75l1-1.2" />
-              </QuickActionIcon>
-              <span className="text-base font-medium">Create Announcement</span>
-            </Link>
+            {canAccess("announcements") && (
+              <Link
+                href={`/${school}/admin/announcements/new`}
+                className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
+              >
+                <QuickActionIcon>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m4 13 3.6-.9L17 6.5v11L7.6 11.9 4 11v2Zm3.6-.9 1 5.2a1.6 1.6 0 0 0 2.8.75l1-1.2" />
+                </QuickActionIcon>
+                <span className="text-base font-medium">Create Announcement</span>
+              </Link>
+            )}
 
-            <Link
-              href={`/${school}/admin/events/new`}
-              className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
-            >
-              <QuickActionIcon>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
-              </QuickActionIcon>
-              <span className="text-base font-medium">Add Event</span>
-            </Link>
+            {canAccess("events") && (
+              <Link
+                href={`/${school}/admin/events/new`}
+                className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
+              >
+                <QuickActionIcon>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+                </QuickActionIcon>
+                <span className="text-base font-medium">Add Event</span>
+              </Link>
+            )}
 
-            <Link
-              href={`/${school}/admin/schedules`}
-              className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
-            >
-              <QuickActionIcon>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
-              </QuickActionIcon>
-              <span className="text-base font-medium">Manage Schedules</span>
-            </Link>
+            {canAccess("schedules") && (
+              <Link
+                href={`/${school}/admin/schedules`}
+                className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
+              >
+                <QuickActionIcon>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+                </QuickActionIcon>
+                <span className="text-base font-medium">Manage Schedules</span>
+              </Link>
+            )}
           </div>
         </section>
       </div>

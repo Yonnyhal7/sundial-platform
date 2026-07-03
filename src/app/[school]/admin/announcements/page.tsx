@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function AdminAnnouncementsPage({
@@ -21,10 +22,16 @@ export default async function AdminAnnouncementsPage({
     notFound();
   }
   const schoolId = schoolData.id;
+  await requireAdminSectionAccess(schoolId, "announcements", school);
+
   async function deleteAnnouncement(formData: FormData) {
   "use server";
 
-  const supabase = await createSupabaseServerClient();
+  const { supabase } = await requireAdminSectionAccess(
+    schoolId,
+    "announcements",
+    school
+  );
 
   const announcementId = String(formData.get("announcement_id") || "");
 
@@ -59,12 +66,6 @@ export default async function AdminAnnouncementsPage({
             <h1 className="mt-1 text-3xl font-bold">Announcements</h1>
           </div>
 
-          <Link
-            href={`/${school}/admin`}
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900"
-          >
-            Back to Admin
-          </Link>
         </div>
 
         <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
@@ -79,7 +80,7 @@ export default async function AdminAnnouncementsPage({
             
             <Link
                 href={`/${school}/admin/announcements/new`}
-                className="inline-flex w-fit max-w-full items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium leading-tight text-white hover:bg-blue-500 sm:shrink-0"
+                className="inline-flex w-fit max-w-full cursor-pointer items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium leading-tight text-white hover:bg-blue-500 sm:shrink-0"
                 >
                 <span className="hidden sm:inline">+ New Announcement</span>
                 <span className="sm:hidden">+ New</span>
@@ -150,7 +151,7 @@ export default async function AdminAnnouncementsPage({
 
                     <button
                         type="submit"
-                        className="rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
+                        className="cursor-pointer rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
                     >
                         Delete
                     </button>
