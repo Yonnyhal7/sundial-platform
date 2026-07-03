@@ -22,6 +22,7 @@ export type AdminPermissionKey = (typeof ADMIN_PERMISSION_KEYS)[number];
 
 export type CurrentAdminProfile = {
   id: string;
+  first_name: string | null;
   role: string | null;
   school_id: string | null;
   is_active: boolean | null;
@@ -118,7 +119,7 @@ export async function getCurrentAdminUser(
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, role, school_id, is_active")
+    .select("id, first_name, role, school_id, is_active")
     .eq("id", user.id)
     .maybeSingle<CurrentAdminProfile>();
 

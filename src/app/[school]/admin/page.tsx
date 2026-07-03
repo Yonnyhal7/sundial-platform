@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
+import { ADMIN_TAB_ICONS } from "@/components/admin/AdminNavIcons";
 import { notFound } from "next/navigation";
 
 function getLocalDateString(date: Date) {
@@ -19,22 +20,13 @@ function getLocalDateString(date: Date) {
 }
 
 function QuickActionIcon({
-  children,
+  icon: Icon,
 }: {
-  children: React.ReactNode;
+  icon: React.ComponentType<{ className?: string }>;
 }) {
   return (
     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[color:color-mix(in_srgb,var(--school-secondary)_16%,white)] text-[var(--school-primary)] dark:bg-[color:color-mix(in_srgb,var(--school-secondary)_24%,#242424)]">
-      <svg
-        aria-hidden="true"
-        className="h-7 w-7"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth="1.9"
-      >
-        {children}
-      </svg>
+      <Icon className="h-7 w-7" />
     </span>
   );
 }
@@ -58,8 +50,12 @@ export default async function SchoolAdminPage({
   }
 
   const adminUser = await requireAdminPortalAccess(schoolData.id, school);
+  const firstName = adminUser.profile.first_name?.trim() || "Admin";
   const canAccess = (permissionKey: string) =>
     adminUser.permissionKeys.includes(permissionKey as never);
+  const AnnouncementsIcon = ADMIN_TAB_ICONS.announcements;
+  const EventsIcon = ADMIN_TAB_ICONS.events;
+  const SchedulesIcon = ADMIN_TAB_ICONS.schedules;
 
   const now = new Date();
   const today = getLocalDateString(now);
@@ -141,7 +137,7 @@ export default async function SchoolAdminPage({
         <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
 
         <section className="mt-10">
-          <h2 className="text-xl font-bold">Welcome back, Admin!</h2>
+          <h2 className="text-xl font-bold">Welcome back, {firstName}!</h2>
           <p className="mt-2 text-base text-slate-500 dark:text-slate-300">
             Here&apos;s what&apos;s happening today.
           </p>
@@ -181,9 +177,7 @@ export default async function SchoolAdminPage({
                 href={`/${school}/admin/announcements/new`}
                 className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
               >
-                <QuickActionIcon>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="m4 13 3.6-.9L17 6.5v11L7.6 11.9 4 11v2Zm3.6-.9 1 5.2a1.6 1.6 0 0 0 2.8.75l1-1.2" />
-                </QuickActionIcon>
+                <QuickActionIcon icon={AnnouncementsIcon} />
                 <span className="text-base font-medium">Create Announcement</span>
               </Link>
             )}
@@ -193,9 +187,7 @@ export default async function SchoolAdminPage({
                 href={`/${school}/admin/events/new`}
                 className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
               >
-                <QuickActionIcon>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
-                </QuickActionIcon>
+                <QuickActionIcon icon={EventsIcon} />
                 <span className="text-base font-medium">Add Event</span>
               </Link>
             )}
@@ -205,9 +197,7 @@ export default async function SchoolAdminPage({
                 href={`/${school}/admin/schedules`}
                 className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
               >
-                <QuickActionIcon>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
-                </QuickActionIcon>
+                <QuickActionIcon icon={SchedulesIcon} />
                 <span className="text-base font-medium">Manage Schedules</span>
               </Link>
             )}

@@ -31,26 +31,10 @@ type Game = {
   game_date: string | null;
   location: string | null;
   is_home: boolean | null;
-  home_score: number | null;
-  away_score: number | null;
-  result: string | null;
 };
 
 function getTodayDateString() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function scoreLine(game: Game) {
-  if (game.home_score === null && game.away_score === null && !game.result) {
-    return null;
-  }
-
-  const score =
-    game.home_score !== null || game.away_score !== null
-      ? `${game.home_score ?? "-"} - ${game.away_score ?? "-"}`
-      : "";
-
-  return [score, game.result].filter(Boolean).join(" · ");
 }
 
 export default async function MobileAthleticsPage({
@@ -107,7 +91,7 @@ export default async function MobileAthleticsPage({
       .returns<Team[]>(),
     supabase
       .from("games")
-      .select("id, team_id, opponent, game_date, location, is_home, home_score, away_score, result")
+      .select("id, team_id, opponent, game_date, location, is_home")
       .eq("school_id", schoolData.id)
       .gte("game_date", getTodayDateString())
       .order("game_date", { ascending: true })
@@ -185,11 +169,6 @@ export default async function MobileAthleticsPage({
                       {game.location && (
                         <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-600 dark:bg-[#181818] dark:text-[#d4d4d4]">
                           {game.location}
-                        </span>
-                      )}
-                      {scoreLine(game) && (
-                        <span className="rounded-full bg-[color-mix(in_srgb,var(--school-primary)_12%,white)] px-3 py-1.5 text-[var(--school-primary)] dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,#242424)]">
-                          {scoreLine(game)}
                         </span>
                       )}
                     </div>

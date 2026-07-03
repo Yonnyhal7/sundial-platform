@@ -33,9 +33,6 @@ type Game = {
   game_date: string | null;
   location: string | null;
   is_home: boolean | null;
-  home_score: number | null;
-  away_score: number | null;
-  result: string | null;
   notes: string | null;
 };
 
@@ -66,19 +63,6 @@ function activeBadge(isActive: boolean | null) {
       Inactive
     </span>
   );
-}
-
-function scoreLine(game: Game) {
-  if (game.home_score === null && game.away_score === null && !game.result) {
-    return null;
-  }
-
-  const score =
-    game.home_score !== null || game.away_score !== null
-      ? `${game.home_score ?? "-"} - ${game.away_score ?? "-"}`
-      : "";
-
-  return [score, game.result].filter(Boolean).join(" · ");
 }
 
 export default async function AdminAthleticsPage({
@@ -206,7 +190,7 @@ export default async function AdminAthleticsPage({
       .order("name", { ascending: true }),
     supabase
       .from("games")
-      .select("id, team_id, opponent, game_date, location, is_home, home_score, away_score, result, notes")
+      .select("id, team_id, opponent, game_date, location, is_home, notes")
       .eq("school_id", schoolId)
       .order("game_date", { ascending: true }),
   ]);
@@ -275,11 +259,6 @@ export default async function AdminAthleticsPage({
                             {formatGameDateTime(game.game_date)} · {game.is_home ? "Home" : "Away"}
                             {game.location ? ` · ${game.location}` : ""}
                           </p>
-                          {scoreLine(game) && (
-                            <p className="mt-1 text-sm text-slate-700 dark:text-[#d4d4d4]">
-                              {scoreLine(game)}
-                            </p>
-                          )}
                         </div>
                       </div>
                     </div>

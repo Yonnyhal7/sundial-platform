@@ -79,15 +79,15 @@ export default async function NewTeamPage({
     <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-[#181818] dark:text-white">
       <div className="mx-auto max-w-3xl px-6 py-8">
         <div className="mb-8">
-          <p className="text-sm text-[#a3a3a3]">{schoolName} Admin</p>
+          <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">{schoolName} Admin</p>
           <h1 className="mt-1 text-3xl font-bold">New Team</h1>
         </div>
 
-        <form action={createTeam} className="rounded-2xl border border-[#3a3a3a] bg-[#242424] p-6">
+        <form action={createTeam} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424] dark:shadow-none">
           <div className="space-y-5">
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Sport</label>
-              <select name="sport_id" required className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500">
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Sport</label>
+              <select name="sport_id" required className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white">
                 <option value="">Select sport</option>
                 {(sports || []).map((sport) => (
                   <option key={sport.id} value={sport.id}>{sport.name}</option>
@@ -96,8 +96,8 @@ export default async function NewTeamPage({
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Level</label>
-              <select name="level" required className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500">
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Level</label>
+              <select name="level" required className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white">
                 <option value="">Select level</option>
                 {TEAM_LEVEL_OPTIONS.map((level) => (
                   <option key={level} value={level}>
@@ -108,8 +108,8 @@ export default async function NewTeamPage({
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Gender</label>
-              <select name="gender" required defaultValue="Coed" className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500">
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Gender</label>
+              <select name="gender" required defaultValue="Coed" className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white">
                 {TEAM_GENDER_OPTIONS.map((gender) => (
                   <option key={gender} value={gender}>
                     {gender}
@@ -120,25 +120,25 @@ export default async function NewTeamPage({
 
             {["coach_name", "coach_email"].map((field) => (
               <div key={field}>
-                <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">
-                  {field.split("_").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ")} <span className="font-normal text-[#a3a3a3]">(optional)</span>
+                <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">
+                  {field.split("_").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ")} <span className="font-normal text-slate-500 dark:text-[#a3a3a3]">(optional)</span>
                 </label>
                 <input
                   name={field}
                   type={field === "coach_email" ? "email" : "text"}
-                  className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white"
                 />
               </div>
             ))}
 
-            <label className="flex items-center gap-3 rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3">
+            <label className="flex items-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 dark:border-[#3a3a3a] dark:bg-[#181818]">
               <input name="is_active" type="checkbox" defaultChecked className="h-4 w-4 rounded border-[#4a4a4a]" />
-              <span className="text-sm text-[#d4d4d4]">Active</span>
+              <span className="text-sm text-slate-700 dark:text-[#d4d4d4]">Active</span>
             </label>
           </div>
 
-          <div className="mt-8 flex items-center justify-between border-t border-[#3a3a3a] pt-5">
-            <Link href={`/${school}/admin/athletics`} className="rounded-lg border border-[#4a4a4a] px-4 py-2 text-sm text-[#d4d4d4] hover:bg-[#303030]">Cancel</Link>
+          <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5 dark:border-[#3a3a3a]">
+            <Link href={`/${school}/admin/athletics`} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-[#4a4a4a] dark:text-[#d4d4d4] dark:hover:bg-[#303030]">Cancel</Link>
             <button type="submit" className="cursor-pointer rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500">Create Team</button>
           </div>
         </form>

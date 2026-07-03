@@ -1,13 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import GameDateTimePicker from "@/components/admin/GameDateTimePicker";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { toDateTimeLocalValue } from "@/lib/athletics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-function optionalNumber(formData: FormData, key: string) {
-  const value = String(formData.get(key) || "").trim();
-  return value === "" ? null : Number(value);
-}
 
 export default async function EditGamePage({
   params,
@@ -33,7 +29,7 @@ export default async function EditGamePage({
       .order("name", { ascending: true }),
     supabase
       .from("games")
-      .select("id, team_id, opponent, game_date, location, is_home, home_score, away_score, result, notes")
+      .select("id, team_id, opponent, game_date, location, is_home, notes")
       .eq("id", gameId)
       .eq("school_id", schoolId)
       .single<{
@@ -43,9 +39,6 @@ export default async function EditGamePage({
         game_date: string | null;
         location: string | null;
         is_home: boolean | null;
-        home_score: number | null;
-        away_score: number | null;
-        result: string | null;
         notes: string | null;
       }>(),
   ]);
@@ -73,9 +66,6 @@ export default async function EditGamePage({
         game_date: String(formData.get("game_date") || "") || null,
         location: String(formData.get("location") || "").trim() || null,
         is_home: formData.get("is_home") === "on",
-        home_score: optionalNumber(formData, "home_score"),
-        away_score: optionalNumber(formData, "away_score"),
-        result: String(formData.get("result") || "").trim() || null,
         notes: String(formData.get("notes") || "").trim() || null,
       })
       .eq("id", gameId)
@@ -94,11 +84,11 @@ export default async function EditGamePage({
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="mb-8 text-3xl font-bold">Edit Game</h1>
 
-        <form action={updateGame} className="rounded-2xl border border-[#3a3a3a] bg-[#242424] p-6">
+        <form action={updateGame} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424] dark:shadow-none">
           <div className="space-y-5">
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Team</label>
-              <select name="team_id" required defaultValue={game.team_id || ""} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500">
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Team</label>
+              <select name="team_id" required defaultValue={game.team_id || ""} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white">
                 <option value="">Select team</option>
                 {(teams || []).map((team) => (
                   <option key={team.id} value={team.id}>{team.name}</option>
@@ -107,49 +97,36 @@ export default async function EditGamePage({
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Opponent</label>
-              <input name="opponent" required defaultValue={game.opponent} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500" />
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Opponent</label>
+              <input name="opponent" required defaultValue={game.opponent} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Game Date and Time</label>
-              <input name="game_date" type="datetime-local" defaultValue={toDateTimeLocalValue(game.game_date)} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500" />
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Game Date and Time</label>
+              <GameDateTimePicker
+                name="game_date"
+                defaultValue={toDateTimeLocalValue(game.game_date)}
+              />
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Location</label>
-              <input name="location" defaultValue={game.location || ""} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500" />
-            </div>
-
-            <div className="grid gap-5 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Home Score</label>
-                <input name="home_score" type="number" defaultValue={game.home_score ?? ""} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Away Score</label>
-                <input name="away_score" type="number" defaultValue={game.away_score ?? ""} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500" />
-              </div>
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Location</label>
+              <input name="location" defaultValue={game.location || ""} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Result <span className="font-normal text-[#a3a3a3]">(optional)</span></label>
-              <input name="result" defaultValue={game.result || ""} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500" />
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Notes <span className="font-normal text-slate-500 dark:text-[#a3a3a3]">(optional)</span></label>
+              <textarea name="notes" rows={4} defaultValue={game.notes || ""} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Notes <span className="font-normal text-[#a3a3a3]">(optional)</span></label>
-              <textarea name="notes" rows={4} defaultValue={game.notes || ""} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500" />
-            </div>
-
-            <label className="flex items-center gap-3 rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3">
+            <label className="flex items-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 dark:border-[#3a3a3a] dark:bg-[#181818]">
               <input name="is_home" type="checkbox" defaultChecked={game.is_home ?? false} className="h-4 w-4 rounded border-[#4a4a4a]" />
-              <span className="text-sm text-[#d4d4d4]">Home game</span>
+              <span className="text-sm text-slate-700 dark:text-[#d4d4d4]">Home game</span>
             </label>
           </div>
 
-          <div className="mt-8 flex items-center justify-between border-t border-[#3a3a3a] pt-5">
-            <Link href={`/${school}/admin/athletics`} className="rounded-lg border border-[#4a4a4a] px-4 py-2 text-sm text-[#d4d4d4] hover:bg-[#303030]">Cancel</Link>
+          <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5 dark:border-[#3a3a3a]">
+            <Link href={`/${school}/admin/athletics`} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-[#4a4a4a] dark:text-[#d4d4d4] dark:hover:bg-[#303030]">Cancel</Link>
             <button type="submit" className="cursor-pointer rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500">Save Changes</button>
           </div>
         </form>

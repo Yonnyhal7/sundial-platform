@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  ADMIN_TAB_ICONS,
+  CalendarIcon,
+  DashboardIcon,
+} from "@/components/admin/AdminNavIcons";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { AdminPermissionKey } from "@/lib/auth/adminPermissions";
 
@@ -10,71 +15,18 @@ type AdminSidebarProps = {
   allowedPermissionKeys?: AdminPermissionKey[];
 };
 
-type IconProps = {
-  className?: string;
-};
-
-function IconShell({ children, className = "" }: React.PropsWithChildren<IconProps>) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth="1.9"
-    >
-      {children}
-    </svg>
-  );
-}
-
-function DashboardIcon(props: IconProps) {
-  return (
-    <IconShell {...props}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4 5.5A1.5 1.5 0 0 1 5.5 4h4A1.5 1.5 0 0 1 11 5.5v4A1.5 1.5 0 0 1 9.5 11h-4A1.5 1.5 0 0 1 4 9.5v-4ZM13 5.5A1.5 1.5 0 0 1 14.5 4h4A1.5 1.5 0 0 1 20 5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 13 9.5v-4ZM4 14.5A1.5 1.5 0 0 1 5.5 13h4a1.5 1.5 0 0 1 1.5 1.5v4A1.5 1.5 0 0 1 9.5 20h-4A1.5 1.5 0 0 1 4 18.5v-4ZM13 14.5a1.5 1.5 0 0 1 1.5-1.5h4a1.5 1.5 0 0 1 1.5 1.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a1.5 1.5 0 0 1-1.5-1.5v-4Z" />
-    </IconShell>
-  );
-}
-
-function CalendarIcon(props: IconProps) {
-  return (
-    <IconShell {...props}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
-    </IconShell>
-  );
-}
-
-function MegaphoneIcon(props: IconProps) {
-  return (
-    <IconShell {...props}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="m4 13 3.6-.9L17 6.5v11L7.6 11.9 4 11v2Zm3.6-.9 1 5.2a1.6 1.6 0 0 0 2.8.75l1-1.2" />
-    </IconShell>
-  );
-}
-
-function UserIcon(props: IconProps) {
-  return (
-    <IconShell {...props}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20a7.5 7.5 0 0 1 15 0" />
-    </IconShell>
-  );
-}
-
-function PlaceholderIcon(props: IconProps) {
-  return (
-    <IconShell {...props}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M5 19 19 5M7 8h.01M16 17h.01M8.5 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM18.5 17a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
-    </IconShell>
-  );
-}
-
 export default function AdminSidebar({
   school,
   allowedPermissionKeys = [],
 }: AdminSidebarProps) {
   const pathname = usePathname();
   const iconClass = "h-5 w-5 shrink-0";
+  const SchedulesIcon = ADMIN_TAB_ICONS.schedules;
+  const EventsIcon = ADMIN_TAB_ICONS.events;
+  const AnnouncementsIcon = ADMIN_TAB_ICONS.announcements;
+  const AthleticsIcon = ADMIN_TAB_ICONS.athletics;
+  const ResourcesIcon = ADMIN_TAB_ICONS.resources;
+  const UsersIcon = ADMIN_TAB_ICONS.users;
   const canAccess = (permissionKey: AdminPermissionKey) =>
     allowedPermissionKeys.includes(permissionKey);
 
@@ -90,7 +42,7 @@ export default function AdminSidebar({
           {
             label: "Schedules",
             href: `/${school}/admin/schedules`,
-            icon: <CalendarIcon className={iconClass} />,
+            icon: <SchedulesIcon className={iconClass} />,
           },
         ]
       : []),
@@ -108,7 +60,7 @@ export default function AdminSidebar({
           {
             label: "Events",
             href: `/${school}/admin/events`,
-            icon: <CalendarIcon className={iconClass} />,
+            icon: <EventsIcon className={iconClass} />,
           },
         ]
       : []),
@@ -117,7 +69,7 @@ export default function AdminSidebar({
           {
             label: "Announcements",
             href: `/${school}/admin/announcements`,
-            icon: <MegaphoneIcon className={iconClass} />,
+            icon: <AnnouncementsIcon className={iconClass} />,
           },
         ]
       : []),
@@ -126,7 +78,7 @@ export default function AdminSidebar({
           {
             label: "Athletics",
             href: `/${school}/admin/athletics`,
-            icon: <PlaceholderIcon className={iconClass} />,
+            icon: <AthleticsIcon className={iconClass} />,
           },
         ]
       : []),
@@ -135,7 +87,7 @@ export default function AdminSidebar({
           {
             label: "Resources",
             href: `/${school}/admin/resources`,
-            icon: <PlaceholderIcon className={iconClass} />,
+            icon: <ResourcesIcon className={iconClass} />,
           },
         ]
       : []),
@@ -144,7 +96,7 @@ export default function AdminSidebar({
           {
             label: "Users",
             href: `/${school}/admin/users`,
-            icon: <UserIcon className={iconClass} />,
+            icon: <UsersIcon className={iconClass} />,
           },
         ]
       : []),

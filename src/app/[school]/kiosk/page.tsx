@@ -1,5 +1,8 @@
 import KioskDisplay from "./KioskDisplay";
+import { formatGameTime } from "@/lib/athletics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 type Period = {
   id: string;
@@ -79,19 +82,14 @@ function formatTime(time: string) {
   });
 }
 
-function formatGameTime(value: string | null) {
-  if (!value) return "Time TBA";
+function formatEventDate(value: string | null) {
+  if (!value) return "";
 
-  const normalized = value.includes("T") ? value : `${value}T00:00:00`;
-  const date = new Date(normalized);
+  const [year, month, day] = value.split("-");
 
-  if (Number.isNaN(date.getTime())) return "Time TBA";
+  if (!year || !month || !day) return value;
 
-  return date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  return `${month}-${day}-${year}`;
 }
 
 export default async function KioskPage({
@@ -230,7 +228,7 @@ export default async function KioskPage({
         upcomingEvents?.map((event) => ({
           id: `${event.title}-${event.event_date}`,
           title: event.title,
-          date: event.event_date,
+          date: formatEventDate(event.event_date),
         })) || []
       }
       games={

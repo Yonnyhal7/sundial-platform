@@ -79,24 +79,65 @@ export function buildTeamDisplayName({
     .join(" ");
 }
 
+function parseGameDateTimeParts(value: string | null) {
+  if (!value) return null;
+
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?/
+  );
+
+  if (!match) return null;
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: match[4] ? Number(match[4]) : null,
+    minute: match[5] ? Number(match[5]) : 0,
+  };
+}
+
+function formatGameTimeParts(hour: number, minute: number) {
+  const hour12 = hour % 12 || 12;
+  const period = hour >= 12 ? "PM" : "AM";
+
+  return `${hour12}:${String(minute).padStart(2, "0")} ${period}`;
+}
+
 export function formatGameDateTime(value: string | null) {
   if (!value) return "Date not set";
 
-  const normalized = value.includes("T") ? value : `${value}T00:00:00`;
-  const date = new Date(normalized);
+  const parts = parseGameDateTimeParts(value);
+
+  if (!parts) return value;
+
+  const date = new Date(parts.year, parts.month - 1, parts.day);
 
   if (Number.isNaN(date.getTime())) return value;
 
-  return date.toLocaleString("en-US", {
+  const dateLabel = date.toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
   });
+
+  if (parts.hour === null) return dateLabel;
+
+  return `${dateLabel}, ${formatGameTimeParts(parts.hour, parts.minute)}`;
+}
+
+export function formatGameTime(value: string | null) {
+  const parts = parseGameDateTimeParts(value);
+
+  if (!parts || parts.hour === null) return "Time TBA";
+
+  return formatGameTimeParts(parts.hour, parts.minute);
 }
 
 export function toDateTimeLocalValue(value: string | null) {
   if (!value) return "";
-  return value.slice(0, 16);
+
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})/);
+
+  return match ? `${match[1]}T${match[2]}` : "";
 }

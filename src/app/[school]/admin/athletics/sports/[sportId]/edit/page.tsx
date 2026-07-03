@@ -115,16 +115,16 @@ export default async function EditSportPage({
       <div className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="mb-8 text-3xl font-bold">Edit Sport</h1>
 
-        <form action={updateSport} className="rounded-2xl border border-[#3a3a3a] bg-[#242424] p-6">
+        <form action={updateSport} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424] dark:shadow-none">
           <div className="space-y-5">
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Name</label>
-              <input name="name" required defaultValue={sport.name} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500" />
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Name</label>
+              <input name="name" required defaultValue={sport.name} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Icon</label>
-              <select name="icon" required defaultValue={sport.icon || "generic"} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500">
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Icon</label>
+              <select name="icon" required defaultValue={sport.icon || "generic"} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white">
                 {SPORT_ICON_OPTIONS.map((icon) => (
                   <option key={icon} value={icon}>
                     {formatSportIconName(icon)}
@@ -134,33 +134,33 @@ export default async function EditSportPage({
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Icon Color</label>
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Icon Color</label>
               <div className="flex items-center gap-3">
                 <input
                   name="icon_color"
                   type="color"
                   defaultValue={sport.icon_color || DEFAULT_SPORT_ICON_COLOR}
-                  className="h-12 w-16 cursor-pointer rounded-lg border border-[#3a3a3a] bg-[#181818] p-1"
+                  className="h-12 w-16 cursor-pointer rounded-lg border border-slate-300 bg-white p-1 dark:border-[#3a3a3a] dark:bg-[#181818]"
                 />
-                <span className="text-sm text-[#a3a3a3]">
+                <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                   Pick the color used for this sport icon.
                 </span>
               </div>
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-[#d4d4d4]">Season <span className="font-normal text-[#a3a3a3]">(optional)</span></label>
-              <input name="season" defaultValue={sport.season || ""} className="w-full rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3 text-white outline-none focus:border-blue-500" />
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Season <span className="font-normal text-slate-500 dark:text-[#a3a3a3]">(optional)</span></label>
+              <input name="season" defaultValue={sport.season || ""} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
             </div>
 
-            <label className="flex items-center gap-3 rounded-lg border border-[#3a3a3a] bg-[#181818] px-4 py-3">
+            <label className="flex items-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 dark:border-[#3a3a3a] dark:bg-[#181818]">
               <input name="is_active" type="checkbox" defaultChecked={sport.is_active ?? false} className="h-4 w-4 rounded border-[#4a4a4a]" />
-              <span className="text-sm text-[#d4d4d4]">Active</span>
+              <span className="text-sm text-slate-700 dark:text-[#d4d4d4]">Active</span>
             </label>
           </div>
 
-          <div className="mt-8 flex items-center justify-between border-t border-[#3a3a3a] pt-5">
-            <Link href={`/${school}/admin/athletics`} className="rounded-lg border border-[#4a4a4a] px-4 py-2 text-sm text-[#d4d4d4] hover:bg-[#303030]">
+          <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5 dark:border-[#3a3a3a]">
+            <Link href={`/${school}/admin/athletics`} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-[#4a4a4a] dark:text-[#d4d4d4] dark:hover:bg-[#303030]">
               Cancel
             </Link>
 

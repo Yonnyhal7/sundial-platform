@@ -181,7 +181,7 @@ export default async function AdminUsersPage({
                         <h3 className="text-xl font-semibold">{displayName(user)}</h3>
                         {activeBadge(user.is_active)}
                       </div>
-                      <p className="mt-2 text-sm text-slate-300">{user.email || "No email"}</p>
+                      {/* <p className="mt-2 text-sm text-slate-300">{user.email || "No email"}</p> */}
                       <p className="mt-1 text-sm text-slate-400">Role: {formatUserRole(user.role)}</p>
                     </div>
                   </div>

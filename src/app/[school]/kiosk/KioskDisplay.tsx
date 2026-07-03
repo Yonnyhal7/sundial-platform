@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import SportIcon from "@/components/SportIcon";
@@ -61,6 +62,47 @@ type KioskStyle = CSSProperties & {
   "--school-primary": string;
 };
 
+const KIOSK_DATA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+function getHexLuminance(color: string) {
+  const match = color.match(/^#([0-9a-f]{6})$/i);
+
+  if (!match) return null;
+
+  const [red, green, blue] = [0, 2, 4].map((start) => {
+    const value = parseInt(match[1].slice(start, start + 2), 16) / 255;
+
+    return value <= 0.03928
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4;
+  });
+
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function getSportIconBadgeStyle(color: string | null): CSSProperties {
+  if (!color) {
+    return {
+      backgroundColor: "#fff2cc",
+      color: "#f59e0b",
+    };
+  }
+
+  const luminance = getHexLuminance(color);
+
+  if (luminance !== null && luminance > 0.72) {
+    return {
+      backgroundColor: "#1f2937",
+      color,
+    };
+  }
+
+  return {
+    backgroundColor: `${color}1f`,
+    color,
+  };
+}
+
 function formatClock(date: Date) {
   return date.toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -86,6 +128,54 @@ function getAmPm(date: Date) {
   return date.getHours() >= 12 ? "PM" : "AM";
 }
 
+function CalendarStarIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.9"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="m12 12.3.95 2 2.2.32-1.6 1.55.38 2.18L12 17.33l-1.95 1.02.38-2.18-1.6-1.55 2.2-.32.97-2Z" />
+    </svg>
+  );
+}
+
+function ScheduleDayIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.9"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v3M17 3v3M4.5 9h15M6 5h12a2 2 0 0 1 2 2v11.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 13h3M8 16h5M15.5 13.5h.01" />
+    </svg>
+  );
+}
+
+function ClockIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.9"
+    >
+      <circle cx="12" cy="12" r="8.25" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5V12l3 1.8" />
+    </svg>
+  );
+}
+
 export default function KioskDisplay({
   schoolName,
   schoolPrimaryColor,
@@ -99,6 +189,7 @@ export default function KioskDisplay({
   isNoSchool = false,
   noSchoolLabel = "Enjoy your day",
 }: KioskDisplayProps) {
+  const router = useRouter();
   const [now, setNow] = useState<Date | null>(null);
   const [activeInfoCard, setActiveInfoCard] = useState<"events" | "games">("events");
   const [rotationReset, setRotationReset] = useState(0);
@@ -125,6 +216,14 @@ export default function KioskDisplay({
 
     return () => window.clearInterval(interval);
   }, [rotationReset]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      router.refresh();
+    }, KIOSK_DATA_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
+  }, [router]);
 
   const schedulePeriods = useMemo<SchedulePeriod[]>(
     () =>
@@ -316,8 +415,8 @@ export default function KioskDisplay({
               <div className="mt-auto w-full border-t border-slate-200 pt-[1.8dvh]">
                 <div className="mx-auto grid max-w-[780px] grid-cols-[1fr_auto_1fr] items-center gap-[1.8vw]">
                   <div className="flex items-center justify-end gap-[0.9vw]">
-                    <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center rounded-full border-[0.25dvh] border-amber-400 text-[1.8dvh]">
-                      ◷
+                    <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center text-amber-500">
+                      <ClockIcon className="h-[3dvh] w-[3dvh]" />
                     </div>
                     <div>
                       <p className="text-[clamp(0.7rem,0.9vw,1rem)] font-semibold uppercase text-slate-500">
@@ -333,7 +432,7 @@ export default function KioskDisplay({
 
                   <div className="flex items-center gap-[0.9vw]">
                     <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center text-[3dvh] text-amber-500">
-                      ▦
+                      <ScheduleDayIcon className="h-[3dvh] w-[3dvh]" />
                     </div>
                     <div>
                       <p className="text-[clamp(0.7rem,0.9vw,1rem)] font-semibold uppercase text-slate-500">
@@ -408,7 +507,7 @@ export default function KioskDisplay({
                     className="flex min-h-0 items-center gap-[1vw] border-b border-slate-200 py-[0.85dvh] first:pt-0 last:border-b-0 last:pb-0"
                   >
                     <div className="shrink-0 text-[clamp(1.25rem,1.9vw,2.25rem)] leading-none text-amber-500">
-                      ▦
+                      <CalendarStarIcon className="h-[2.25dvh] w-[2.25dvh]" />
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-[clamp(0.95rem,1.28vw,1.5rem)] font-extrabold leading-tight">
@@ -433,7 +532,10 @@ export default function KioskDisplay({
                     key={game.id}
                     className="flex min-h-0 items-center gap-[0.8vw] border-b border-slate-200 py-[0.55dvh] first:pt-0 last:border-b-0 last:pb-0"
                   >
-                    <div className="grid h-[3.8dvh] w-[3.8dvh] shrink-0 place-items-center rounded-xl bg-amber-100 text-[clamp(0.65rem,0.85vw,1rem)] font-extrabold text-amber-500">
+                    <div
+                      className="grid h-[3.8dvh] w-[3.8dvh] shrink-0 place-items-center rounded-xl text-[clamp(0.65rem,0.85vw,1rem)] font-extrabold shadow-inner ring-1 ring-black/5"
+                      style={getSportIconBadgeStyle(game.sportIconColor)}
+                    >
                       <SportIcon
                         icon={game.sportIcon}
                         color={game.sportIconColor}
