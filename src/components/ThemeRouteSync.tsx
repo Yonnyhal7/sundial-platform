@@ -29,7 +29,7 @@ export default function ThemeRouteSync() {
   const pathname = usePathname();
 
   useEffect(() => {
-    const scope = getThemeScopeFromPath(pathname);
+    const scope = getThemeScopeFromPath(pathname, window.location.hostname.toLowerCase());
     const storageKey = getThemeStorageKey(scope);
     const theme = getPreferredTheme(storageKey);
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");

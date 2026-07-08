@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
+import { getSchoolSetupStepPath, requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
 import { ADMIN_TAB_ICONS } from "@/components/admin/AdminNavIcons";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { getSchoolForSetup, isSchoolSetupComplete } from "@/lib/schools";
+import { normalizeSetupStep } from "@/lib/setupSteps";
 
 function getLocalDateString(date: Date) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -39,17 +41,20 @@ export default async function SchoolAdminPage({
   const { school } = await params;
   const supabase = await createSupabaseServerClient();
 
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
-      subdomain_input: school,
-    })
-    .single<{ id: string; name: string; subdomain: string }>();
+  const schoolData = await getSchoolForSetup(school);
 
   if (!schoolData) {
     notFound();
   }
 
   const adminUser = await requireAdminPortalAccess(schoolData.id, school);
+
+  if (!(await isSchoolSetupComplete(supabase, schoolData.id))) {
+    redirect(
+      await getSchoolSetupStepPath(school, normalizeSetupStep(schoolData.setup_step))
+    );
+  }
+
   const firstName = adminUser.profile.first_name?.trim() || "Admin";
   const canAccess = (permissionKey: string) =>
     adminUser.permissionKeys.includes(permissionKey as never);

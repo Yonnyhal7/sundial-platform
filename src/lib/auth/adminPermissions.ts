@@ -1,10 +1,13 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   isSchoolAdminRole,
   isSuperAdminRole,
   normalizeAdminRole,
 } from "@/lib/userAccess";
+import { parseSundialHost } from "@/lib/routing/hosts";
+import type { SetupStepSlug } from "@/lib/setupSteps";
 
 export const ADMIN_PERMISSION_KEYS = [
   "announcements",
@@ -25,6 +28,7 @@ export type CurrentAdminProfile = {
   first_name: string | null;
   role: string | null;
   school_id: string | null;
+  district_id?: string | null;
   is_active: boolean | null;
 };
 
@@ -39,6 +43,64 @@ export type CurrentAdminUser = {
   profile: CurrentAdminProfile;
   permissionKeys: AdminPermissionKey[];
 };
+
+async function getRequestHost() {
+  const headerStore = await headers();
+  return headerStore.get("host") || "";
+}
+
+async function getAdminLoginPath(school: string) {
+  const parsedHost = parseSundialHost(await getRequestHost());
+
+  if (parsedHost.kind === "admin") {
+    return "/";
+  }
+
+  if (parsedHost.kind === "dev") {
+    return parsedHost.school ? `/${school}/login` : "/admin";
+  }
+
+  return `/${school}/login`;
+}
+
+export async function getSchoolAdminPath(school: string) {
+  const parsedHost = parseSundialHost(await getRequestHost());
+
+  if (parsedHost.kind === "admin") {
+    return `/${school}`;
+  }
+
+  if (parsedHost.kind === "dev" && !parsedHost.school) {
+    return `/admin/${school}`;
+  }
+
+  return `/${school}/admin`;
+}
+
+export async function getSchoolSetupPath(school: string) {
+  return `${await getSchoolAdminPath(school)}/setup`;
+}
+
+export async function getSchoolSetupStepPath(school: string, step: SetupStepSlug) {
+  return `${await getSchoolSetupPath(school)}/${step}`;
+}
+
+async function getSchoolSitePath(school: string) {
+  const parsedHost = parseSundialHost(await getRequestHost());
+
+  if (parsedHost.kind === "school" || (parsedHost.kind === "dev" && parsedHost.school)) {
+    return "/";
+  }
+
+  return `/${school}`;
+}
+
+async function getAdminUtilityPath(path: string) {
+  const parsedHost = parseSundialHost(await getRequestHost());
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  return parsedHost.kind === "dev" ? `/admin${normalizedPath}` : normalizedPath;
+}
 
 function isEditorRole(role: string | null | undefined) {
   return normalizeAdminRole(role) === "editor";
@@ -160,11 +222,11 @@ export async function requireAdminPortalAccess(schoolId: string, school: string)
   const adminUser = await getCurrentAdminUser(schoolId);
 
   if (!adminUser) {
-    redirect(`/${school}/login`);
+    redirect(await getAdminLoginPath(school));
   }
 
   if (!canUsePortal(adminUser.profile, schoolId)) {
-    redirect(`/${school}`);
+    redirect(await getSchoolSitePath(school));
   }
 
   return adminUser;
@@ -178,7 +240,7 @@ export async function requireAdminSectionAccess(
   const adminUser = await getCurrentAdminUser(schoolId);
 
   if (!adminUser) {
-    redirect(`/${school}/login`);
+    redirect(await getAdminLoginPath(school));
   }
 
   if (
@@ -189,8 +251,48 @@ export async function requireAdminSectionAccess(
       adminUser.permissionKeys
     )
   ) {
-    redirect(`/${school}/admin`);
+    redirect(await getSchoolAdminPath(school));
   }
 
   return adminUser;
+}
+
+export async function requireSuperAdminAccess() {
+  const supabase = await createSupabaseServerClient();
+  const adminBasePath = await getAdminUtilityPath("/dashboard");
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect(await getAdminUtilityPath("/"));
+  }
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("id, first_name, role, school_id, district_id, is_active")
+    .eq("id", user.id)
+    .maybeSingle<CurrentAdminProfile>();
+
+  if (!profile?.is_active) {
+    redirect(await getAdminUtilityPath("/select-school"));
+  }
+
+  if (!isSuperAdminRole(profile.role)) {
+    if (profile.school_id) {
+      const { data: school } = await supabase
+        .from("schools")
+        .select("subdomain")
+        .eq("id", profile.school_id)
+        .maybeSingle<{ subdomain: string }>();
+
+      if (school?.subdomain) {
+        redirect(await getSchoolAdminPath(school.subdomain));
+      }
+    }
+
+    redirect(await getAdminUtilityPath("/select-school"));
+  }
+
+  return { supabase, profile, adminBasePath };
 }

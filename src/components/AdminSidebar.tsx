@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import {
   ADMIN_TAB_ICONS,
   CalendarIcon,
   DashboardIcon,
+  ScheduleIcon,
 } from "@/components/admin/AdminNavIcons";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { AdminPermissionKey } from "@/lib/auth/adminPermissions";
@@ -15,11 +17,38 @@ type AdminSidebarProps = {
   allowedPermissionKeys?: AdminPermissionKey[];
 };
 
+type SidebarNavItem = {
+  label: string;
+  href?: string;
+  icon: ReactNode;
+  exact?: boolean;
+  locked?: boolean;
+  badge?: string;
+};
+
+function normalizeAdminPathname(pathname: string, school: string) {
+  const canonicalBase = `/${school}/admin`;
+
+  if (pathname === canonicalBase) {
+    return `/admin/${school}`;
+  }
+
+  if (pathname.startsWith(`${canonicalBase}/`)) {
+    return `/admin/${school}${pathname.slice(canonicalBase.length)}`;
+  }
+
+  return pathname;
+}
+
 export default function AdminSidebar({
   school,
   allowedPermissionKeys = [],
 }: AdminSidebarProps) {
   const pathname = usePathname();
+  const activePathname = normalizeAdminPathname(pathname, school);
+  const base = `/admin/${school}`;
+  const isSetupMode =
+    activePathname === `${base}/setup` || activePathname.startsWith(`${base}/setup/`);
   const iconClass = "h-5 w-5 shrink-0";
   const SchedulesIcon = ADMIN_TAB_ICONS.schedules;
   const EventsIcon = ADMIN_TAB_ICONS.events;
@@ -27,13 +56,37 @@ export default function AdminSidebar({
   const AthleticsIcon = ADMIN_TAB_ICONS.athletics;
   const ResourcesIcon = ADMIN_TAB_ICONS.resources;
   const UsersIcon = ADMIN_TAB_ICONS.users;
+  const SettingsIcon = DashboardIcon;
   const canAccess = (permissionKey: AdminPermissionKey) =>
     allowedPermissionKeys.includes(permissionKey);
 
-  const navItems = [
+  const setupNavItems: SidebarNavItem[] = [
     {
       label: "Dashboard",
-      href: `/${school}/admin`,
+      href: base,
+      icon: <DashboardIcon className={iconClass} />,
+      exact: true,
+    },
+    {
+      label: "School Setup",
+      href: `${base}/setup`,
+      icon: <ScheduleIcon className={iconClass} />,
+      badge: "In Progress",
+    },
+    { label: "Announcements", icon: <AnnouncementsIcon className={iconClass} />, locked: true },
+    { label: "Events", icon: <EventsIcon className={iconClass} />, locked: true },
+    { label: "Resources", icon: <ResourcesIcon className={iconClass} />, locked: true },
+    { label: "Schedules", icon: <SchedulesIcon className={iconClass} />, locked: true },
+    { label: "Calendar", icon: <CalendarIcon className={iconClass} />, locked: true },
+    { label: "Settings", icon: <SettingsIcon className={iconClass} />, locked: true },
+    { label: "Users", icon: <UsersIcon className={iconClass} />, locked: true },
+    { label: "Athletics", icon: <AthleticsIcon className={iconClass} />, locked: true },
+  ];
+
+  const navItems: SidebarNavItem[] = isSetupMode ? setupNavItems : [
+    {
+      label: "Dashboard",
+      href: base,
       icon: <DashboardIcon className={iconClass} />,
       exact: true,
     },
@@ -41,7 +94,7 @@ export default function AdminSidebar({
       ? [
           {
             label: "Schedules",
-            href: `/${school}/admin/schedules`,
+            href: `${base}/schedules`,
             icon: <SchedulesIcon className={iconClass} />,
           },
         ]
@@ -50,7 +103,7 @@ export default function AdminSidebar({
       ? [
           {
             label: "Calendar",
-            href: `/${school}/admin/calendar`,
+            href: `${base}/calendar`,
             icon: <CalendarIcon className={iconClass} />,
           },
         ]
@@ -59,7 +112,7 @@ export default function AdminSidebar({
       ? [
           {
             label: "Events",
-            href: `/${school}/admin/events`,
+            href: `${base}/events`,
             icon: <EventsIcon className={iconClass} />,
           },
         ]
@@ -68,7 +121,7 @@ export default function AdminSidebar({
       ? [
           {
             label: "Announcements",
-            href: `/${school}/admin/announcements`,
+            href: `${base}/announcements`,
             icon: <AnnouncementsIcon className={iconClass} />,
           },
         ]
@@ -77,7 +130,7 @@ export default function AdminSidebar({
       ? [
           {
             label: "Athletics",
-            href: `/${school}/admin/athletics`,
+            href: `${base}/athletics`,
             icon: <AthleticsIcon className={iconClass} />,
           },
         ]
@@ -86,7 +139,7 @@ export default function AdminSidebar({
       ? [
           {
             label: "Resources",
-            href: `/${school}/admin/resources`,
+            href: `${base}/resources`,
             icon: <ResourcesIcon className={iconClass} />,
           },
         ]
@@ -95,19 +148,24 @@ export default function AdminSidebar({
       ? [
           {
             label: "Users",
-            href: `/${school}/admin/users`,
+            href: `${base}/users`,
             icon: <UsersIcon className={iconClass} />,
           },
         ]
       : []),
+    {
+      label: "Settings",
+      href: `${base}/settings`,
+      icon: <SettingsIcon className={iconClass} />,
+    },
   ];
 
-  function renderNavItem(item: (typeof navItems)[number], compact = false) {
+  function renderNavItem(item: SidebarNavItem, compact = false) {
     const isActive =
       item.href &&
       (item.exact
-        ? pathname === item.href
-        : pathname === item.href || pathname.startsWith(`${item.href}/`));
+        ? activePathname === item.href
+        : activePathname === item.href || activePathname.startsWith(`${item.href}/`));
 
     const baseClass = compact
       ? "flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition"
@@ -115,9 +173,18 @@ export default function AdminSidebar({
 
     if (!item.href) {
       return (
-        <div key={item.label} className={`${baseClass} text-white`}>
+        <div
+          key={item.label}
+          className={`${baseClass} cursor-not-allowed text-white/55`}
+          aria-disabled="true"
+        >
           {item.icon}
-          {item.label}
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          {item.locked && (
+            <span className="text-xs text-white/45" aria-hidden="true">
+              🔒
+            </span>
+          )}
         </div>
       );
     }
@@ -134,7 +201,12 @@ export default function AdminSidebar({
         ].join(" ")}
       >
         {item.icon}
-        {item.label}
+        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        {item.badge && (
+          <span className="rounded-full bg-white/15 px-2 py-0.5 text-[0.65rem] font-semibold text-white">
+            {item.badge}
+          </span>
+        )}
       </Link>
     );
   }
@@ -143,7 +215,7 @@ export default function AdminSidebar({
     <>
       <header className="admin-sidebar fixed inset-x-0 top-0 z-40 flex flex-col gap-3 bg-zinc-800 px-4 py-3 text-white shadow-xl shadow-black/15 dark:bg-black lg:hidden">
         <div className="flex items-center justify-between gap-3">
-          <Link href={`/${school}/admin`} className="flex min-w-0 items-center gap-3">
+          <Link href={base} className="flex min-w-0 items-center gap-3">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden">
               <img
                 src="/sundial-icon.png"
@@ -169,7 +241,7 @@ export default function AdminSidebar({
 
       <aside className="admin-sidebar fixed inset-y-0 left-0 z-40 hidden w-[var(--admin-sidebar-width)] flex-col overflow-y-auto bg-zinc-800 px-3 py-5 text-white shadow-2xl shadow-black/20 dark:bg-black min-[1180px]:px-4 min-[1180px]:py-6 lg:flex">
         <Link
-          href={`/${school}/admin`}
+          href={base}
           className="mb-6 flex items-center gap-3 px-2 min-[1180px]:mb-8 min-[1180px]:px-3"
         >
           <span className="flex h-18 w-18 shrink-0 items-center justify-center overflow-hidden min-[1180px]:h-18 min-[1180px]:w-18 min-[1500px]:h-12 min-[1500px]:w-12">

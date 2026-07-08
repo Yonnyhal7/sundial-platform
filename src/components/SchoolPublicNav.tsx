@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import KioskMenuControls from "@/components/KioskMenuControls";
+import { getSchoolSiteBasePath } from "@/lib/routing/paths";
 
 type SchoolPublicNavProps = {
   school: string;
@@ -10,17 +11,21 @@ type SchoolPublicNavProps = {
 
 export default function SchoolPublicNav({ school }: SchoolPublicNavProps) {
   const pathname = usePathname();
+  const hostname =
+    typeof window === "undefined" ? "" : window.location.hostname.toLowerCase();
+  const base = getSchoolSiteBasePath(school, pathname, hostname);
 
   if (
-    pathname === `/${school}/app` ||
-    pathname.startsWith(`/${school}/app/`) ||
-    pathname === `/${school}/admin` ||
-    pathname.startsWith(`/${school}/admin/`)
+    pathname === `${base}/app` ||
+    pathname.startsWith(`${base}/app/`) ||
+    pathname === `${base}/admin` ||
+    pathname.startsWith(`${base}/admin/`) ||
+    pathname.startsWith(`/admin/${school}`)
   ) {
     return null;
   }
 
-  if (pathname === `/${school}/kiosk` || pathname.startsWith(`/${school}/kiosk/`)) {
+  if (pathname === `${base}/kiosk` || pathname.startsWith(`${base}/kiosk/`)) {
     return (
       <nav className="school-menu-bar border-b border-slate-200 bg-white px-6 py-3 dark:border-neutral-800 dark:bg-black">
         <div className="flex items-center justify-end">
@@ -31,12 +36,12 @@ export default function SchoolPublicNav({ school }: SchoolPublicNavProps) {
   }
 
   const navItems = [
-    { label: "Home", href: `/${school}` },
-    { label: "Announcements", href: `/${school}/announcements` },
-    { label: "Events", href: `/${school}/events` },
-    { label: "Resources", href: `/${school}/resources` },
-    { label: "Schedule", href: `/${school}/schedule` },
-    { label: "Kiosk", href: `/${school}/kiosk` },
+    { label: "Home", href: base || "/" },
+    { label: "Announcements", href: `${base}/announcements` },
+    { label: "Events", href: `${base}/events` },
+    { label: "Resources", href: `${base}/resources` },
+    { label: "Schedule", href: `${base}/schedule` },
+    { label: "Kiosk", href: `${base}/kiosk` },
   ];
 
   return (

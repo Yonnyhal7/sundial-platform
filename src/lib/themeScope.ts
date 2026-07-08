@@ -8,16 +8,23 @@ export const themeStorageKeys: Record<ThemeScope, string> = {
   site: "sundial-theme-site",
 };
 
-export function getThemeScopeFromPath(pathname: string): ThemeScope {
-  if (/\/[^/]+\/admin(?:\/|$)/.test(pathname)) {
+export function getThemeScopeFromPath(
+  pathname: string,
+  hostname = ""
+): ThemeScope {
+  if (
+    hostname.startsWith("admin.") ||
+    /^\/admin(?:\/|$)/.test(pathname) ||
+    /^\/[^/]+\/admin(?:\/|$)/.test(pathname)
+  ) {
     return "admin";
   }
 
-  if (/\/[^/]+\/kiosk(?:\/|$)/.test(pathname)) {
+  if (/^\/kiosk(?:\/|$)/.test(pathname) || /^\/[^/]+\/kiosk(?:\/|$)/.test(pathname)) {
     return "kiosk";
   }
 
-  if (/\/[^/]+\/app(?:\/|$)/.test(pathname)) {
+  if (/^\/app(?:\/|$)/.test(pathname) || /^\/[^/]+\/app(?:\/|$)/.test(pathname)) {
     return "app";
   }
 

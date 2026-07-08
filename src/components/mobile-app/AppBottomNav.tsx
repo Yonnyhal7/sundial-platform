@@ -9,6 +9,7 @@ import {
   ClockIcon,
   MoreIcon,
 } from "@/components/mobile-app/AppIcons";
+import { getSchoolAppBasePath } from "@/lib/routing/paths";
 
 type AppBottomNavProps = {
   school: string;
@@ -16,7 +17,9 @@ type AppBottomNavProps = {
 
 export default function AppBottomNav({ school }: AppBottomNavProps) {
   const pathname = usePathname();
-  const base = `/${school}/app`;
+  const hostname =
+    typeof window === "undefined" ? "" : window.location.hostname.toLowerCase();
+  const base = getSchoolAppBasePath(school, pathname, hostname);
   const navItems = [
     { label: "Home", href: base, icon: HomeIcon },
     { label: "Schedule", href: `${base}/schedule`, icon: ClockIcon },

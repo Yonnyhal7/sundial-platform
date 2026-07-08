@@ -3,19 +3,17 @@
 import { createBrowserClient } from "@supabase/ssr";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSchoolAdminBasePath } from "@/lib/routing/paths";
+import { getAdminUtilityPath } from "@/lib/routing/paths";
 
-export default function LoginForm({ school }: { school: string }) {
+export default function AdminLoginForm() {
   const router = useRouter();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleLogin(event: React.FormEvent) {
+    event.preventDefault();
 
     setLoading(true);
     setError(null);
@@ -37,10 +35,10 @@ export default function LoginForm({ school }: { school: string }) {
     }
 
     router.push(
-      getSchoolAdminBasePath(
-        school,
+      getAdminUtilityPath(
         window.location.pathname,
-        window.location.hostname.toLowerCase()
+        window.location.hostname.toLowerCase(),
+        "/dashboard"
       )
     );
     router.refresh();
@@ -65,7 +63,7 @@ export default function LoginForm({ school }: { school: string }) {
               type="email"
               required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) => setEmail(event.target.value)}
               className="mt-2 w-full rounded-lg border border-neutral-700 bg-black px-4 py-3 text-white outline-none focus:border-white"
             />
           </div>
@@ -76,7 +74,7 @@ export default function LoginForm({ school }: { school: string }) {
               type="password"
               required
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(event) => setPassword(event.target.value)}
               className="mt-2 w-full rounded-lg border border-neutral-700 bg-black px-4 py-3 text-white outline-none focus:border-white"
             />
           </div>

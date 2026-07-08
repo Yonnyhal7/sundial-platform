@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import ThemeProvider from "@/components/ThemeProvider";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
 import "./globals.css";
 
@@ -30,9 +29,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <head>
-        <ThemeProvider />
-      </head>
+      <head />
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <ThemeRouteSync />
         {children}

@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getSchoolForSetup } from "@/lib/schools";
 
 type AdminLayoutProps = {
   children: React.ReactNode;
@@ -33,14 +34,15 @@ export default async function AdminLayout({
       subdomain_input: school,
     })
     .single<School>();
+  const setupSchoolData = schoolData || (await getSchoolForSetup(school));
 
-  if (!schoolData) {
+  if (!setupSchoolData) {
     notFound();
   }
 
-  const primaryColor = schoolData.primary_color || "#2563eb";
-  const secondaryColor = schoolData.secondary_color || "#64748b";
-  const adminUser = await requireAdminPortalAccess(schoolData.id, school);
+  const primaryColor = setupSchoolData.primary_color || "#2563eb";
+  const secondaryColor = setupSchoolData.secondary_color || "#64748b";
+  const adminUser = await requireAdminPortalAccess(setupSchoolData.id, school);
 
   return (
     <div
