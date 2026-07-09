@@ -101,32 +101,28 @@ export default function AppScheduleDashboard({
         </div>
 
         <div className="mt-[clamp(1.5rem,4vw,2rem)] border-t border-slate-200 pt-[clamp(1.25rem,3.5vw,1.5rem)] dark:border-[#3a3a3a]">
-          <div className="mx-auto grid max-w-[clamp(20rem,78vw,32.5rem)] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-[clamp(1rem,3.4vw,1.75rem)] text-left sm:gap-20">
-            <div className="flex min-w-0 items-center justify-end gap-[clamp(0.5rem,1.8vw,0.75rem)]">
-              <div className="grid h-[clamp(2.25rem,5.5vw,2.75rem)] w-[clamp(2.25rem,5.5vw,2.75rem)] shrink-0 place-items-center rounded-full border-2 border-[var(--school-accent-visible-card)] text-[var(--school-accent-visible-card)]">
-                <SmallClockIcon className="h-[clamp(0.9rem,2.3vw,1.25rem)] w-[clamp(0.9rem,2.3vw,1.25rem)]" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-[#a3a3a3]">
+          <div className="mx-auto grid max-w-[clamp(20rem,82vw,34rem)] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-[clamp(0.75rem,2.6vw,1.25rem)]">
+            <div className="flex min-w-0 items-center justify-center gap-[clamp(0.5rem,1.8vw,0.75rem)] text-center">
+              <SmallClockIcon className="h-[clamp(1.15rem,3vw,1.45rem)] w-[clamp(1.15rem,3vw,1.45rem)] shrink-0 text-[var(--school-accent-visible-card)]" />
+              <div className="min-w-0 text-left">
+                <p className="text-[clamp(0.7rem,1.8vw,0.8rem)] font-black uppercase tracking-wide text-slate-500 dark:text-[#a3a3a3]">
                   Next Period
                 </p>
-                <p className="text-[10px] mt-1 truncate text-base font-black leading-tight text-slate-950 dark:text-white">
+                <p className="mt-1 text-[clamp(0.8rem,2.35vw,0.95rem)] font-black leading-tight text-slate-950 dark:text-white">
                   {noSchool ? "No School" : nextPeriodLabel}
                 </p>
               </div>
             </div>
 
-            <div className="h-12 w-px bg-slate-300 dark:bg-[#3a3a3a]" />
+            <div className="h-full min-h-14 w-px bg-slate-300 dark:bg-[#3a3a3a]" />
 
-            <div className="flex min-w-0 items-center gap-[clamp(0.25rem,0.8vw,0.5rem)]">
-              <div className="grid h-[clamp(2.25rem,5.5vw,2.75rem)] w-[clamp(2.25rem,5.5vw,2.75rem)] shrink-0 place-items-center text-[var(--school-accent-visible-card)]">
-                <SmallCalendarIcon className="h-[clamp(1rem,2.5vw,1.25rem)] w-[clamp(1rem,2.5vw,1.25rem)]" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-[#a3a3a3]">
+            <div className="flex min-w-0 items-center justify-center gap-[clamp(0.5rem,1.8vw,0.75rem)] text-center">
+              <SmallCalendarIcon className="h-[clamp(1.15rem,3vw,1.45rem)] w-[clamp(1.15rem,3vw,1.45rem)] shrink-0 text-[var(--school-accent-visible-card)]" />
+              <div className="min-w-0 text-left">
+                <p className="text-[clamp(0.7rem,1.8vw,0.8rem)] font-black uppercase tracking-wide text-slate-500 dark:text-[#a3a3a3]">
                   Day Type
                 </p>
-                <p className="text-[10px] mt-0 text-sm font-black leading-tight text-slate-950 dark:text-white">
+                <p className="mt-1 text-[clamp(0.8rem,2.35vw,0.95rem)] font-black leading-tight text-slate-950 dark:text-white">
                   {todayScheduleLabel}
                 </p>
               </div>

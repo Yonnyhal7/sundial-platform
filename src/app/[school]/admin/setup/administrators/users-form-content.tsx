@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { getPermissionLabel, isEditorDefaultPermission } from "@/lib/userAccess";
 import type { PermissionRow } from "@/lib/adminDefaultPermissions";
+import { setupAccent, setupPrimaryButtonClass } from "@/lib/ui/setupStyles";
 
 type SetupUserRole = "school_admin" | "editor";
 
@@ -197,7 +198,10 @@ export default function UsersFormContent({
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="assistant-principal@school.edu"
-              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-normal text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-slate-700 dark:bg-black dark:text-white"
+              className={[
+                "mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-normal text-slate-950 outline-none dark:border-slate-700 dark:bg-black dark:text-white",
+                setupAccent.focus,
+              ].join(" ")}
             />
           </label>
           <label className="text-sm font-semibold">
@@ -205,7 +209,10 @@ export default function UsersFormContent({
             <select
               value={role}
               onChange={(event) => handleRoleChange(event.target.value as SetupUserRole)}
-              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-normal text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-slate-700 dark:bg-black dark:text-white"
+              className={[
+                "mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-normal text-slate-950 outline-none dark:border-slate-700 dark:bg-black dark:text-white",
+                setupAccent.focus,
+              ].join(" ")}
             >
               <option value="school_admin">Administrator</option>
               <option value="editor">Editor</option>
@@ -232,7 +239,7 @@ export default function UsersFormContent({
                   className={[
                     "flex items-start gap-3 rounded-lg border px-3 py-3 text-sm transition",
                     checked
-                      ? "border-[var(--school-primary)] bg-blue-50 dark:bg-white/10"
+                      ? setupAccent.selectedCard
                       : "border-slate-200 bg-white dark:border-slate-700 dark:bg-black",
                   ].join(" ")}
                 >
@@ -244,7 +251,7 @@ export default function UsersFormContent({
                     onChange={(event) =>
                       togglePermission(permissionKey, event.target.checked)
                     }
-                    className="mt-1"
+                    className="mt-1 accent-[#D4A017]"
                   />
                   <span>
                     <span className="block font-semibold">
@@ -271,7 +278,7 @@ export default function UsersFormContent({
         <button
           type="button"
           onClick={addOrUpdateUser}
-          className="mt-5 inline-flex cursor-pointer items-center justify-center rounded-lg bg-[var(--school-primary)] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:opacity-90"
+          className={setupPrimaryButtonClass("mt-5 cursor-pointer px-5 py-2.5")}
         >
           {editingUserId ? "Save User" : "+ Add User"}
         </button>

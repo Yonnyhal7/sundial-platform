@@ -4,7 +4,7 @@ import {
   getSchoolAdminPath,
   getSchoolSetupStepPath,
 } from "@/lib/auth/adminPermissions";
-import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
+import { setupPrimaryButtonClass } from "@/lib/ui/setupStyles";
 import {
   getNextSetupStep,
   getPreviousSetupStep,
@@ -83,7 +83,7 @@ export default async function SetupLayout({
               </button>
               <button
                 type="submit"
-                className={sundialPrimaryButtonClass("px-5 py-2.5")}
+                className={setupPrimaryButtonClass("px-5 py-2.5")}
               >
                 {continueLabel}
               </button>

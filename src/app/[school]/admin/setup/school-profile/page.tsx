@@ -1,6 +1,7 @@
 import SetupLayout from "../setup-layout";
 import { getSetupContext } from "../context";
 import SetupLogoUploadField from "./setup-logo-upload-field";
+import { setupAccent } from "@/lib/ui/setupStyles";
 
 type SchoolProfilePageProps = {
   params: Promise<{ school: string }>;
@@ -23,7 +24,10 @@ function Field({
       <input
         name={name}
         defaultValue={defaultValue || ""}
-        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[var(--school-primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--school-primary)_20%,transparent)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white"
+        className={[
+          "mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none transition dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white",
+          setupAccent.focus,
+        ].join(" ")}
       />
     </label>
   );

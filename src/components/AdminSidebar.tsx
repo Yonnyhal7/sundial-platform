@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import {
@@ -17,6 +18,7 @@ import {
   normalizeSetupStep,
   SETUP_STEPS,
 } from "@/lib/setupSteps";
+import { setupAccent } from "@/lib/ui/setupStyles";
 
 type AdminSidebarProps = {
   school: string;
@@ -273,7 +275,7 @@ export default function AdminSidebar({
         className={[
           itemClass,
           isActive
-            ? "bg-[var(--school-primary)] text-[var(--school-primary-text)] shadow-lg shadow-black/15"
+            ? setupAccent.activeNav
             : "text-white hover:bg-white/10",
         ].join(" ")}
       >
@@ -283,7 +285,7 @@ export default function AdminSidebar({
             status === "completed"
               ? "bg-emerald-500 text-white"
               : isActive
-                ? "bg-[var(--school-accent-visible-primary)] text-[var(--school-secondary-text)]"
+                ? setupAccent.activeIndicator
                 : "border border-white/25 text-white/65",
           ].join(" ")}
         >
@@ -305,26 +307,11 @@ export default function AdminSidebar({
     return (
       <div className={compact ? "flex gap-2" : "space-y-2"}>
         {!compact && (
-          <>
-            <Link
-              href={`${base}/setup`}
-              className="block rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition hover:bg-white/10"
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">
-                Onboarding
-              </p>
-
-              <p className="mt-1 text-xl font-bold tracking-tight">
-                School Setup
-              </p>
-            </Link>
-
-            <SetupProgress
-              savedStep={savedSetupStep}
-              setupComplete={setupComplete}
-              className="mb-3"
-            />
-          </>
+          <SetupProgress
+            savedStep={savedSetupStep}
+            setupComplete={setupComplete}
+            className="mb-3"
+          />
         )}
 
         {SETUP_STEPS.map((step) => renderSetupStepItem(step, compact))}
@@ -340,24 +327,33 @@ export default function AdminSidebar({
             href={isSetupIncomplete ? `${base}/setup` : base}
             className="flex min-w-0 items-center gap-3"
           >
-            <SchoolLogo
-              schoolName={schoolName}
-              logoUrl={logoUrl}
-              size="lg"
-              className="h-12 w-12"
-            />
+            {isSetupIncomplete ? (
+              <Image
+                src="/sundial-icon.png"
+                alt=""
+                width={40}
+                height={40}
+                className="h-10 w-10 object-contain"
+                priority
+              />
+            ) : (
+              <SchoolLogo
+                schoolName={schoolName}
+                logoUrl={logoUrl}
+                size="lg"
+                className="h-12 w-12"
+              />
+            )}
 
             <span className="truncate text-xl font-bold tracking-tight">
-              {isSetupIncomplete ? "School Setup" : schoolName}
+              {isSetupIncomplete ? "Sundial" : schoolName}
             </span>
           </Link>
 
-          {!isSetupIncomplete && (
-            <ThemeToggle
-              scope="admin"
-              className="h-9 w-9 shrink-0 border-white/15 bg-white/10 text-white shadow-none hover:bg-white/15 dark:border-white/15 dark:bg-white/10 dark:hover:bg-white/15"
-            />
-          )}
+          <ThemeToggle
+            scope="admin"
+            className="h-9 w-9 shrink-0 border-white/15 bg-white/10 text-white shadow-none hover:bg-white/15 dark:border-white/15 dark:bg-white/10 dark:hover:bg-white/15"
+          />
         </div>
 
         <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
@@ -368,21 +364,41 @@ export default function AdminSidebar({
       </header>
 
       <aside className="admin-sidebar fixed inset-y-0 left-0 z-40 hidden w-[var(--admin-sidebar-width)] flex-col overflow-hidden bg-zinc-800 px-3 py-5 text-white shadow-2xl shadow-black/20 dark:bg-black min-[1180px]:px-4 min-[1180px]:py-6 lg:flex">
-        <Link
-          href={isSetupIncomplete ? `${base}/setup` : base}
-          className="mb-6 flex flex-col items-center gap-4 border-b border-white/10 px-3 pb-6 text-center min-[1180px]:mb-8 min-[1180px]:pb-7"
-        >
-          <SchoolLogo
-            schoolName={schoolName}
-            logoUrl={logoUrl}
-            size="xl"
-            className="h-20 w-20 rounded-3xl min-[1180px]:h-24 min-[1180px]:w-24"
-          />
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/10 px-3 pb-4">
+          {isSetupIncomplete ? (
+            <Link href={`${base}/setup`} className="flex min-w-0 items-center gap-3">
+              <Image
+                src="/sundial-icon.png"
+                alt=""
+                width={42}
+                height={42}
+                className="h-10 w-10 shrink-0 object-contain min-[1180px]:h-11 min-[1180px]:w-11"
+                priority
+              />
+              <span className="truncate text-2xl font-bold tracking-tight">
+                Sundial
+              </span>
+            </Link>
+          ) : (
+            <Link href={base} className="flex min-w-0 items-center gap-3">
+              <SchoolLogo
+                schoolName={schoolName}
+                logoUrl={logoUrl}
+                size="lg"
+                className="h-11 w-11 shrink-0"
+              />
 
-          <span className="line-clamp-2 max-w-full text-balance text-xl font-bold leading-tight tracking-tight min-[1180px]:text-2xl">
-            {schoolName}
-          </span>
-        </Link>
+              <span className="line-clamp-2 min-w-0 text-lg font-bold leading-tight tracking-tight">
+                {schoolName}
+              </span>
+            </Link>
+          )}
+
+          <ThemeToggle
+            scope="admin"
+            className="h-9 w-9 shrink-0 border-white/15 bg-white/10 text-white shadow-none hover:bg-white/15 dark:border-white/15 dark:bg-white/10 dark:hover:bg-white/15"
+          />
+        </div>
 
         <nav className="space-y-1.5 min-[1180px]:space-y-2">
           {isSetupIncomplete
@@ -390,18 +406,6 @@ export default function AdminSidebar({
             : navItems.map((item) => renderNavItem(item))}
         </nav>
 
-        {!isSetupIncomplete && (
-          <div className="mt-auto border-t border-white/10 pt-5">
-            <div className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
-              <span className="text-sm font-medium text-white">Theme</span>
-
-              <ThemeToggle
-                scope="admin"
-                className="h-9 w-9 border-white/15 bg-white/10 text-white shadow-none hover:bg-white/15 dark:border-white/15 dark:bg-white/10 dark:hover:bg-white/15"
-              />
-            </div>
-          </div>
-        )}
       </aside>
     </>
   );

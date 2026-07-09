@@ -14,8 +14,32 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sundial",
-  description: "A multi-tenant K-12 school communication platform.",
+  title: {
+    default: "Sundial",
+    template: "%s | Sundial",
+  },
+  description:
+    "School schedules, announcements, events, and communication in one place.",
+  applicationName: "Sundial",
+  appleWebApp: {
+    capable: true,
+    title: "Sundial",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [
+      {
+        url: "/apple-touch-icon.png",
+        type: "image/png",
+        sizes: "180x180",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({

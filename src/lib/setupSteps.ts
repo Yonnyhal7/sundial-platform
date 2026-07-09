@@ -79,6 +79,10 @@ export function getCompletedSetupStepCount(
     return SETUP_STEPS.length;
   }
 
+  if (currentStep === "administrators") {
+    return getSetupStepIndex(currentStep) + 1;
+  }
+
   return Math.max(0, getSetupStepIndex(currentStep));
 }
 
@@ -95,6 +99,10 @@ export function getSetupStepStatus(
   const currentIndex = getSetupStepIndex(currentStep);
 
   if (stepIndex < currentIndex) {
+    return "completed";
+  }
+
+  if (step === "administrators" && currentStep === "administrators") {
     return "completed";
   }
 

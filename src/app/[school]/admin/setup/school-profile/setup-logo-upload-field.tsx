@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import SchoolLogo from "@/components/SchoolLogo";
+import { setupPrimaryButtonClass } from "@/lib/ui/setupStyles";
 import { updateSetupLogoAction, uploadSetupLogoAction } from "../actions";
 
 const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
@@ -103,7 +104,7 @@ export default function SetupLogoUploadField({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="cursor-pointer rounded-xl bg-[var(--school-primary)] px-4 py-2.5 text-sm font-bold text-[var(--school-primary-text)] transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            className={setupPrimaryButtonClass("cursor-pointer rounded-xl px-4 py-2.5")}
           >
             {uploading ? "Uploading..." : "Upload Logo"}
           </button>

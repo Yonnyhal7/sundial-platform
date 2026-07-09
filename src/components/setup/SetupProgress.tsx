@@ -3,6 +3,7 @@ import {
   SETUP_STEPS,
   type SetupStepSlug,
 } from "@/lib/setupSteps";
+import { setupAccent } from "@/lib/ui/setupStyles";
 
 type SetupProgressProps = {
   savedStep: SetupStepSlug;
@@ -33,7 +34,7 @@ export default function SetupProgress({
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/15">
         <div
-          className="h-full rounded-full bg-[var(--school-accent-visible-primary)] transition-all"
+          className={["h-full rounded-full transition-all", setupAccent.progressBar].join(" ")}
           style={{ width: `${percentComplete}%` }}
         />
       </div>

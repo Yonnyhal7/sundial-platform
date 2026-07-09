@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
-import ThemeToggle from "@/components/ThemeToggle";
 import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
 import { getSchoolForSetup } from "@/lib/schools";
@@ -77,10 +76,6 @@ export default async function AdminLayout({
       />
 
       <div className="flex min-h-screen flex-col bg-slate-50 pt-[142px] dark:bg-black sm:pt-[132px] lg:pl-[var(--admin-sidebar-width)] lg:pt-0">
-        <div className="fixed right-6 top-5 z-30 hidden lg:block">
-          <ThemeToggle scope="admin" className="h-9 w-9" />
-        </div>
-
         <div className="flex-1">{children}</div>
 
         <footer className="mt-auto px-6 pb-8 pt-10 lg:px-10">

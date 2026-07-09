@@ -2,7 +2,12 @@ import {
   getOrSeedAdminPermissions,
   type PermissionRow,
 } from "@/lib/adminDefaultPermissions";
+import { getSchoolSetupStepPath } from "@/lib/auth/adminPermissions";
+import { updateSchoolSetupStep } from "@/lib/schools";
+import { createSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
+import { getSetupStepIndex } from "@/lib/setupSteps";
 import { getPermissionLabel, PRIORITY_PERMISSION_LABELS } from "@/lib/userAccess";
+import { redirect } from "next/navigation";
 import SetupLayout from "../setup-layout";
 import { getSetupContext } from "../context";
 import UsersFormContent from "./users-form-content";
@@ -31,6 +36,19 @@ export default async function AdministratorsSetupPage({
 }: AdministratorsPageProps) {
   const { school } = await params;
   const context = await getSetupContext(school);
+  const savedStepIndex = getSetupStepIndex(context.savedStep);
+  const usersStepIndex = getSetupStepIndex("administrators");
+
+  if (savedStepIndex < usersStepIndex) {
+    const serviceSupabase = createSupabaseServiceRoleClient();
+    await updateSchoolSetupStep(
+      serviceSupabase,
+      context.schoolData.id,
+      "administrators"
+    );
+    redirect(await getSchoolSetupStepPath(school, "administrators"));
+  }
+
   const permissions = sortPermissions(await getOrSeedAdminPermissions());
 
   return (

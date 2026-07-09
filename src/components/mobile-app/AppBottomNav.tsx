@@ -8,7 +8,6 @@ import {
   ClockIcon,
 } from "@/components/mobile-app/AppIcons";
 import SportIcon from "@/components/SportIcon";
-import { getSchoolAppBasePath } from "@/lib/routing/paths";
 
 type AppBottomNavProps = {
   school: string;
@@ -20,9 +19,10 @@ function AthleticsIcon({ className }: { className?: string }) {
 
 export default function AppBottomNav({ school }: AppBottomNavProps) {
   const pathname = usePathname();
-  const hostname =
-    typeof window === "undefined" ? "" : window.location.hostname.toLowerCase();
-  const base = getSchoolAppBasePath(school, pathname, hostname);
+  const base =
+    pathname === "/app" || pathname.startsWith("/app/")
+      ? "/app"
+      : `/${school}/app`;
   const navItems = [
     { label: "Home", href: base, icon: HomeIcon },
     { label: "Schedule", href: `${base}/schedule`, icon: ClockIcon },
@@ -44,8 +44,6 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
             <Link
               key={item.href}
               href={item.href}
-              aria-label={item.label}
-              aria-current={active ? "page" : undefined}
               className={`flex min-h-[3.5rem] sm:min-h-16 w-full flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 sm:py-1 text-[0.7rem] font-semibold transition ${
                 active
                   ? "bg-[color-mix(in_srgb,var(--school-primary)_10%,transparent)] text-[var(--school-primary)]"
@@ -53,7 +51,9 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
               }`}
             >
               <Icon className="h-7 w-7" />
-              <span aria-hidden="true" className="mt-0.5 leading-tight text-center max-[480px]:hidden block">{item.label}</span>
+              <span className="mt-0.5 text-center leading-tight max-[480px]:sr-only">
+                {item.label}
+              </span>
             </Link>
           );
         })}

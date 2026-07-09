@@ -5,6 +5,7 @@ import {
   SETUP_STEPS,
   type SetupStepSlug,
 } from "@/lib/setupSteps";
+import { setupAccent } from "@/lib/ui/setupStyles";
 import { getSetupContext } from "./context";
 
 type SetupRootPageProps = {
@@ -45,7 +46,12 @@ export default async function SchoolSetupRootPage({ params }: SetupRootPageProps
               context.savedStep,
               Boolean(context.schoolData.setup_complete)
             );
-            const status = savedStatus === "completed" ? "completed" : "upcoming";
+            const status =
+              savedStatus === "completed"
+                ? "completed"
+                : savedStatus === "current"
+                  ? "current"
+                  : "upcoming";
 
             return (
               <Link
@@ -53,9 +59,11 @@ export default async function SchoolSetupRootPage({ params }: SetupRootPageProps
                 href={stepHrefs[step.slug]}
                 className={[
                   "group flex h-full flex-col rounded-2xl border bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-[#242424]",
-                  status === "completed"
-                    ? "border-emerald-200 dark:border-emerald-900/70"
-                    : "border-slate-200 hover:border-slate-300 dark:border-slate-700",
+                  status === "current"
+                    ? setupAccent.selectedCard
+                    : status === "completed"
+                      ? "border-emerald-200 dark:border-emerald-900/70"
+                      : "border-slate-200 hover:border-slate-300 dark:border-slate-700",
                 ].join(" ")}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -64,7 +72,9 @@ export default async function SchoolSetupRootPage({ params }: SetupRootPageProps
                       "flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold",
                       status === "completed"
                         ? "bg-emerald-100 text-emerald-700"
-                        : "border border-slate-200 text-slate-400 dark:border-slate-700",
+                        : status === "current"
+                          ? "bg-[#D4A017] text-slate-950"
+                          : "border border-slate-200 text-slate-400 dark:border-slate-700",
                     ].join(" ")}
                   >
                     {status === "completed" ? "✓" : "□"}
@@ -80,7 +90,7 @@ export default async function SchoolSetupRootPage({ params }: SetupRootPageProps
                 <p className="mt-2 flex-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
                   {step.description}
                 </p>
-                <span className="mt-5 inline-flex text-sm font-semibold text-[var(--school-primary)] group-hover:underline">
+                <span className={["mt-5 inline-flex text-sm font-semibold group-hover:underline", setupAccent.link].join(" ")}>
                   Open step
                 </span>
               </Link>
