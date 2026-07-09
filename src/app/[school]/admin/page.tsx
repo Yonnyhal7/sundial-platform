@@ -27,7 +27,7 @@ function QuickActionIcon({
   icon: React.ComponentType<{ className?: string }>;
 }) {
   return (
-    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[color:color-mix(in_srgb,var(--school-secondary)_16%,white)] text-[var(--school-primary)] dark:bg-[color:color-mix(in_srgb,var(--school-secondary)_24%,#242424)]">
+    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[color:color-mix(in_srgb,var(--school-primary)_14%,white)] text-[var(--school-primary)] dark:bg-[color:color-mix(in_srgb,var(--school-primary)_24%,#242424)]">
       <Icon className="h-7 w-7" />
     </span>
   );
@@ -154,18 +154,18 @@ export default async function SchoolAdminPage({
                 className={[
                   "min-h-40 rounded-2xl border border-slate-200 p-8 shadow-sm dark:border-slate-700",
                   card.featured
-                    ? "bg-[color:color-mix(in_srgb,var(--school-primary)_9%,white)] dark:bg-[color:color-mix(in_srgb,var(--school-primary)_18%,#242424)]"
+                    ? "bg-[var(--school-primary)] text-[var(--school-primary-text)]"
                     : "bg-white dark:bg-[#242424]",
                 ].join(" ")}
               >
-                <p className="text-base font-medium text-slate-900 dark:text-slate-100">
+                <p className={card.featured ? "text-base font-medium opacity-85" : "text-base font-medium text-slate-900 dark:text-slate-100"}>
                   {card.eyebrow}
                 </p>
-                <p className="mt-7 text-4xl font-bold tracking-tight text-[var(--school-primary)] dark:text-slate-100">
+                <p className={card.featured ? "mt-7 text-4xl font-bold tracking-tight" : "mt-7 text-4xl font-bold tracking-tight text-[var(--school-primary)] dark:text-slate-100"}>
                   {card.value}
                 </p>
                 {card.footer && (
-                  <p className="mt-5 text-base text-slate-500 dark:text-slate-300">
+                  <p className={card.featured ? "mt-5 text-base opacity-85" : "mt-5 text-base text-slate-500 dark:text-slate-300"}>
                     {card.footer}
                   </p>
                 )}

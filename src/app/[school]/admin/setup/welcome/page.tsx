@@ -10,19 +10,19 @@ export default async function WelcomeSetupPage({ params }: WelcomePageProps) {
   const context = await getSetupContext(school);
   const checklistItems = [
     {
-      title: "🏫 School Information",
+      title: "School Profile",
       body: "Add your school's basic information, mascot and logo.",
     },
     {
-      title: "🎨 Branding",
-      body: "Choose your colors and customize the experience.",
+      title: "Appearance",
+      body: "Customize how your school will look across Sundial.",
     },
     {
-      title: "👥 Administrators",
+      title: "Users",
       body: "Invite administrators and editors.",
     },
     {
-      title: "📅 Schedule",
+      title: "Schedule Wizard",
       body: "Build your default bell schedule.",
     },
   ];

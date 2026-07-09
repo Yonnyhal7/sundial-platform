@@ -16,7 +16,7 @@ export default async function SchoolProfileSetupPage({
       school={school}
       schoolName={context.schoolData.name}
       currentStep="school-profile"
-      nextStep="branding"
+      nextStep="appearance"
     >
       <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-[#242424]">
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">

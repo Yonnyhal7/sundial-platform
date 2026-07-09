@@ -24,7 +24,13 @@ type SetupLayoutProps = {
   children: ReactNode;
 };
 
-function SetupProgress({ currentStep }: { currentStep: SetupStepSlug }) {
+function SetupProgress({
+  currentStep,
+  stepHrefs,
+}: {
+  currentStep: SetupStepSlug;
+  stepHrefs: Record<SetupStepSlug, string>;
+}) {
   const currentStepNumber = getSetupStepNumber(currentStep);
 
   return (
@@ -42,27 +48,38 @@ function SetupProgress({ currentStep }: { currentStep: SetupStepSlug }) {
               key={step.slug}
               className="relative flex flex-col items-center text-center"
             >
-              <span
+              <Link
+                href={stepHrefs[step.slug]}
                 className={[
-                  "relative z-10 flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold",
+                  "group relative z-10 flex cursor-pointer flex-col items-center rounded-lg px-2 py-1 transition",
                   isCurrent
-                    ? "border-[#D4A017] bg-[#D4A017] text-white shadow-sm shadow-[#D4A017]/20"
-                    : "border-slate-200 bg-white text-slate-400",
+                    ? "text-slate-950"
+                    : "text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-100",
                 ].join(" ")}
+                aria-current={isCurrent ? "step" : undefined}
               >
-                {stepNumber}
-              </span>
+                <span
+                  className={[
+                    "flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold transition",
+                    isCurrent
+                      ? "border-[#D4A017] bg-[#D4A017] text-white shadow-sm shadow-[#D4A017]/20"
+                      : "border-slate-200 bg-white text-slate-400 group-hover:border-slate-300",
+                  ].join(" ")}
+                >
+                  {stepNumber}
+                </span>
+                <span
+                  className={[
+                    "mt-2 font-medium",
+                    isCurrent ? "text-slate-950" : "text-inherit",
+                  ].join(" ")}
+                >
+                  {step.label}
+                </span>
+              </Link>
               {index < SETUP_STEPS.length - 1 && (
                 <span className="absolute left-[calc(50%+1rem)] top-4 hidden h-px w-[calc(100%-2rem)] bg-slate-200 xl:block" />
               )}
-              <span
-                className={[
-                  "mt-2 font-medium",
-                  isCurrent ? "text-slate-950" : "text-slate-400",
-                ].join(" ")}
-              >
-                {step.label}
-              </span>
             </div>
           );
         })}
@@ -85,6 +102,14 @@ export default async function SetupLayout({
   const backHref = previousStep
     ? await getSchoolSetupStepPath(school, previousStep)
     : await getSchoolAdminPath(school);
+  const stepHrefs = Object.fromEntries(
+    await Promise.all(
+      SETUP_STEPS.map(async (step) => [
+        step.slug,
+        await getSchoolSetupStepPath(school, step.slug),
+      ])
+    )
+  ) as Record<SetupStepSlug, string>;
 
   return (
     <main className="min-h-screen bg-slate-50 p-6 text-slate-950 dark:bg-black dark:text-white lg:p-10">
@@ -107,7 +132,7 @@ export default async function SetupLayout({
           </Link>
         </div>
 
-        <SetupProgress currentStep={currentStep} />
+        <SetupProgress currentStep={currentStep} stepHrefs={stepHrefs} />
 
         <form action={continueAction}>
           <input type="hidden" name="school" value={school} />

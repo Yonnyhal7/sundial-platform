@@ -1,6 +1,8 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { DEFAULT_ADMIN_PERMISSIONS } from "@/lib/adminDefaultPermissions";
 import {
   getSchoolAdminPath,
   getSchoolSetupStepPath,
@@ -20,6 +22,14 @@ import {
 } from "@/lib/setupSteps";
 import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
 
+type SetupInviteRole = "school_admin" | "editor";
+
+type SubmittedSetupUser = {
+  email: string;
+  role: SetupInviteRole;
+  permissionKeys: string[];
+};
+
 function cleanText(value: FormDataEntryValue | null) {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
@@ -27,6 +37,56 @@ function cleanText(value: FormDataEntryValue | null) {
 function cleanColor(value: FormDataEntryValue | null, fallback: string) {
   const color = String(value || "").trim();
   return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
+}
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function createInviteToken() {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+function parseSetupUsers(value: FormDataEntryValue | null): SubmittedSetupUser[] {
+  if (!value) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(String(value));
+  } catch {
+    return [];
+  }
+
+  if (!Array.isArray(parsed)) return [];
+
+  const validPermissionKeys = new Set<string>(
+    DEFAULT_ADMIN_PERMISSIONS.map((permission) => permission.key)
+  );
+  const seenEmails = new Set<string>();
+  const users: SubmittedSetupUser[] = [];
+
+  for (const item of parsed) {
+    if (!item || typeof item !== "object") continue;
+
+    const record = item as Record<string, unknown>;
+    const email = String(record.email || "").trim().toLowerCase();
+    const role = record.role === "school_admin" ? "school_admin" : "editor";
+    const permissionKeys =
+      role === "school_admin"
+        ? Array.from(validPermissionKeys)
+        : Array.isArray(record.permissionKeys)
+          ? record.permissionKeys
+              .map((permissionKey) => String(permissionKey))
+              .filter((permissionKey) => validPermissionKeys.has(permissionKey))
+          : [];
+
+    if (!isValidEmail(email) || seenEmails.has(email)) continue;
+
+    users.push({ email, role, permissionKeys });
+    seenEmails.add(email);
+  }
+
+  return users;
 }
 
 async function getOrCreateDistrictId(name: string) {
@@ -112,7 +172,7 @@ async function saveStepData(
     }
   }
 
-  if (currentStep === "branding") {
+  if (currentStep === "appearance") {
     const primaryColor = cleanColor(
       formData.get("primaryColor"),
       schoolData.primary_color || "#2563eb"
@@ -121,7 +181,6 @@ async function saveStepData(
       formData.get("secondaryColor"),
       schoolData.secondary_color || "#64748b"
     );
-
     const { error } = await serviceSupabase
       .from("schools")
       .update({
@@ -133,12 +192,38 @@ async function saveStepData(
     if (error) {
       throw new Error(error.message);
     }
-
-    // TODO: Persist website theme and default appearance after theme settings exist.
   }
 
   if (currentStep === "administrators") {
-    // TODO: Create pending admin/editor invites from the Admin Users step.
+    const setupUsers = parseSetupUsers(formData.get("setupUsers"));
+
+    const { error: deleteError } = await serviceSupabase
+      .from("pending_admin_invites")
+      .delete()
+      .eq("school_id", schoolData.id)
+      .in("role", ["school_admin", "editor"]);
+
+    if (deleteError) {
+      console.error("Delete setup invites error:", JSON.stringify(deleteError, null, 2));
+      return { schoolData, serviceSupabase };
+    }
+
+    if (setupUsers.length > 0) {
+      const { error } = await serviceSupabase.from("pending_admin_invites").insert(
+        setupUsers.map((user) => ({
+          school_id: schoolData.id,
+          email: user.email,
+          invite_token: createInviteToken(),
+          status: "pending",
+          role: user.role,
+          permission_keys: user.permissionKeys,
+        }))
+      );
+
+      if (error) {
+        console.error("Setup invites error:", JSON.stringify(error, null, 2));
+      }
+    }
   }
 
   if (currentStep === "schedule") {
@@ -146,6 +231,31 @@ async function saveStepData(
   }
 
   return { schoolData, serviceSupabase };
+}
+
+function revalidateAppearanceRoutes(school: string) {
+  const setupSteps = [
+    "appearance",
+    "branding",
+    "administrators",
+    "users",
+    "schedule",
+    "complete",
+  ];
+  const adminBases = [`/${school}/admin`, `/admin/${school}`];
+
+  for (const adminBase of adminBases) {
+    revalidatePath(adminBase);
+    revalidatePath(`${adminBase}/setup`);
+
+    for (const setupStep of setupSteps) {
+      revalidatePath(`${adminBase}/setup/${setupStep}`);
+    }
+  }
+
+  revalidatePath("/[school]/admin", "layout");
+  revalidatePath("/[school]/admin/setup", "layout");
+  revalidatePath("/admin/[school]/setup", "layout");
 }
 
 export async function continueSetupStepAction(formData: FormData) {
@@ -161,6 +271,9 @@ export async function continueSetupStepAction(formData: FormData) {
   );
 
   await updateSchoolSetupStep(serviceSupabase, schoolData.id, nextStep);
+  if (currentStep === "appearance") {
+    revalidateAppearanceRoutes(school);
+  }
   redirect(await getSchoolSetupStepPath(school, nextStep));
 }
 
@@ -175,6 +288,9 @@ export async function finishSchoolSetupAction(formData: FormData) {
 
   await updateSchoolSetupStep(serviceSupabase, schoolData.id, "complete");
   await updateSchoolSetupComplete(serviceSupabase, schoolData.id, true);
+  if (currentStep === "appearance") {
+    revalidateAppearanceRoutes(school);
+  }
   redirect(await getSchoolAdminPath(school));
 }
 
@@ -188,5 +304,8 @@ export async function saveSetupProgressAction(formData: FormData) {
   );
 
   await updateSchoolSetupStep(serviceSupabase, schoolData.id, currentStep);
+  if (currentStep === "appearance") {
+    revalidateAppearanceRoutes(school);
+  }
   redirect(await getSchoolAdminPath(school));
 }

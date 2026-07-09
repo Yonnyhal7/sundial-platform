@@ -106,7 +106,14 @@ export default async function KioskPage({
     .rpc("get_school_by_subdomain", {
       subdomain_input: school,
     })
-    .single<{ id: string; name: string; primary_color: string | null }>();
+    .single<{
+      id: string;
+      name: string;
+      mascot: string | null;
+      logo_url: string | null;
+      primary_color: string | null;
+      secondary_color: string | null;
+    }>();
 
   if (!schoolData) return null;
 
@@ -214,6 +221,9 @@ export default async function KioskPage({
     <KioskDisplay
       schoolName={schoolData.name}
       schoolPrimaryColor={schoolData.primary_color || "#2563eb"}
+      schoolSecondaryColor={schoolData.secondary_color || schoolData.primary_color || "#2563eb"}
+      schoolMascot={schoolData.mascot}
+      schoolLogoUrl={schoolData.logo_url || null}
       dayType={dayType}
       periods={periods.map((period) => ({
         id: period.id,

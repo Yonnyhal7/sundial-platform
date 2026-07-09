@@ -178,6 +178,7 @@ export type SetupSchool = {
   name: string;
   subdomain: string;
   mascot: string | null;
+  logo_url?: string | null;
   primary_color: string | null;
   secondary_color: string | null;
   district_id: string | null;
@@ -190,6 +191,19 @@ export async function getSchoolForSetup(subdomain: string) {
   const serviceSupabase = createSupabaseServiceRoleClient();
   const normalizedSubdomain = subdomain.trim().toLowerCase();
 
+  const setupSelect =
+    "id, name, subdomain, mascot, logo_url, primary_color, secondary_color, district_id, is_active, setup_complete, setup_step";
+
+  const { data, error } = await serviceSupabase
+    .from("schools")
+    .select(setupSelect)
+    .eq("subdomain", normalizedSubdomain)
+    .maybeSingle<SetupSchool>();
+
+  if (!error && data) {
+    return data;
+  }
+
   const { data: rpcSchool } = await serviceSupabase
     .rpc("get_school_by_subdomain", {
       subdomain_input: normalizedSubdomain,
@@ -200,22 +214,10 @@ export async function getSchoolForSetup(subdomain: string) {
     return rpcSchool;
   }
 
-  const { data, error } = await serviceSupabase
-    .from("schools")
-    .select(
-      "id, name, subdomain, mascot, primary_color, secondary_color, district_id, is_active, setup_complete, setup_step"
-    )
-    .eq("subdomain", normalizedSubdomain)
-    .maybeSingle<SetupSchool>();
-
-  if (!error && data) {
-    return data;
-  }
-
   const { data: fallbackData } = await serviceSupabase
     .from("schools")
     .select(
-      "id, name, subdomain, mascot, primary_color, secondary_color, district_id, is_active"
+      "id, name, subdomain, mascot, logo_url, primary_color, secondary_color, district_id, is_active"
     )
     .eq("subdomain", normalizedSubdomain)
     .maybeSingle<SetupSchool>();

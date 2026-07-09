@@ -1,11 +1,13 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
+import SchoolLogo from "@/components/SchoolLogo";
 
 type School = {
   id: string;
   name: string;
   subdomain: string;
   mascot: string;
+  logo_url: string | null;
   primary_color: string;
   secondary_color: string;
   timezone: string;
@@ -53,11 +55,16 @@ export default async function SchoolPage({
         className="px-6 py-10"
         style={{ borderTop: `8px solid ${schoolData.primary_color}` }}
       >
-        <p className="text-sm uppercase tracking-widest text-neutral-400">
-          Sundial
-        </p>
-        <h1 className="mt-2 text-4xl font-bold">{schoolData.name}</h1>
-        <p className="mt-2 text-neutral-300">Home of the {schoolData.mascot}</p>
+        <div className="flex items-center gap-4">
+          <SchoolLogo schoolName={schoolData.name} logoUrl={schoolData.logo_url} size="lg" />
+          <div>
+            <p className="text-sm uppercase tracking-widest text-neutral-400">
+              Sundial
+            </p>
+            <h1 className="mt-2 text-4xl font-bold">{schoolData.name}</h1>
+            <p className="mt-2 text-neutral-300">Home of the {schoolData.mascot}</p>
+          </div>
+        </div>
       </section>
 
       <section className="grid gap-6 px-6 pb-10 md:grid-cols-2">

@@ -9,11 +9,15 @@ import {
   DashboardIcon,
   ScheduleIcon,
 } from "@/components/admin/AdminNavIcons";
+import SchoolLogo from "@/components/SchoolLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { AdminPermissionKey } from "@/lib/auth/adminPermissions";
 
 type AdminSidebarProps = {
   school: string;
+  schoolName: string;
+  logoUrl?: string | null;
+  canManageSettings?: boolean;
   allowedPermissionKeys?: AdminPermissionKey[];
 };
 
@@ -42,6 +46,9 @@ function normalizeAdminPathname(pathname: string, school: string) {
 
 export default function AdminSidebar({
   school,
+  schoolName,
+  logoUrl,
+  canManageSettings = false,
   allowedPermissionKeys = [],
 }: AdminSidebarProps) {
   const pathname = usePathname();
@@ -153,11 +160,15 @@ export default function AdminSidebar({
           },
         ]
       : []),
-    {
-      label: "Settings",
-      href: `${base}/settings`,
-      icon: <SettingsIcon className={iconClass} />,
-    },
+    ...(canManageSettings
+      ? [
+          {
+            label: "Settings",
+            href: `${base}/settings`,
+            icon: <SettingsIcon className={iconClass} />,
+          },
+        ]
+      : []),
   ];
 
   function renderNavItem(item: SidebarNavItem, compact = false) {
@@ -196,14 +207,14 @@ export default function AdminSidebar({
         className={[
           baseClass,
           isActive
-            ? "bg-[var(--school-primary)] text-white shadow-lg shadow-black/15"
+            ? "bg-[var(--school-primary)] text-[var(--school-primary-text)] shadow-lg shadow-black/15"
             : "text-white hover:bg-white/10",
         ].join(" ")}
       >
         {item.icon}
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
         {item.badge && (
-          <span className="rounded-full bg-white/15 px-2 py-0.5 text-[0.65rem] font-semibold text-white">
+          <span className="rounded-full bg-[var(--school-accent-visible-primary)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--school-secondary-text)]">
             {item.badge}
           </span>
         )}
@@ -216,15 +227,9 @@ export default function AdminSidebar({
       <header className="admin-sidebar fixed inset-x-0 top-0 z-40 flex flex-col gap-3 bg-zinc-800 px-4 py-3 text-white shadow-xl shadow-black/15 dark:bg-black lg:hidden">
         <div className="flex items-center justify-between gap-3">
           <Link href={base} className="flex min-w-0 items-center gap-3">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden">
-              <img
-                src="/sundial-icon.png"
-                alt="Sundial"
-                className="h-full w-full object-contain"
-              />
-            </span>
+            <SchoolLogo schoolName={schoolName} logoUrl={logoUrl} size="lg" className="h-12 w-12" />
             <span className="truncate text-xl font-bold tracking-tight">
-              Sundial
+              {schoolName}
             </span>
           </Link>
 
@@ -244,15 +249,9 @@ export default function AdminSidebar({
           href={base}
           className="mb-6 flex items-center gap-3 px-2 min-[1180px]:mb-8 min-[1180px]:px-3"
         >
-          <span className="flex h-18 w-18 shrink-0 items-center justify-center overflow-hidden min-[1180px]:h-18 min-[1180px]:w-18 min-[1500px]:h-12 min-[1500px]:w-12">
-            <img
-              src="/sundial-icon.png"
-              alt="Sundial"
-              className="h-full w-full object-contain"
-            />
-          </span>
+          <SchoolLogo schoolName={schoolName} logoUrl={logoUrl} size="lg" className="min-[1500px]:h-12 min-[1500px]:w-12" />
           <span className="truncate text-xl font-bold tracking-tight min-[1180px]:text-2xl">
-            Sundial
+            {schoolName}
           </span>
         </Link>
 

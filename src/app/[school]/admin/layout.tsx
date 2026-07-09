@@ -2,8 +2,10 @@ import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
+import { getSchoolTheme } from "@/lib/schoolTheme";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSchoolForSetup } from "@/lib/schools";
+import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
 
 type AdminLayoutProps = {
   children: React.ReactNode;
@@ -15,11 +17,17 @@ type School = {
   name: string;
   primary_color: string | null;
   secondary_color: string | null;
+  logo_url?: string | null;
 };
 
 type AdminStyle = CSSProperties & {
   "--school-primary": string;
   "--school-secondary": string;
+  "--school-primary-text": string;
+  "--school-secondary-text": string;
+  "--school-accent-visible": string;
+  "--school-accent-visible-card": string;
+  "--school-accent-visible-primary": string;
 };
 
 export default async function AdminLayout({
@@ -40,8 +48,7 @@ export default async function AdminLayout({
     notFound();
   }
 
-  const primaryColor = setupSchoolData.primary_color || "#2563eb";
-  const secondaryColor = setupSchoolData.secondary_color || "#64748b";
+  const schoolTheme = getSchoolTheme(setupSchoolData, "light");
   const adminUser = await requireAdminPortalAccess(setupSchoolData.id, school);
 
   return (
@@ -49,12 +56,26 @@ export default async function AdminLayout({
       className="admin-theme min-h-screen bg-slate-50 dark:bg-black"
       style={
         {
-          "--school-primary": primaryColor,
-          "--school-secondary": secondaryColor,
+          "--school-primary": schoolTheme.schoolColor,
+          "--school-secondary": schoolTheme.accentColor,
+          "--school-primary-text": schoolTheme.schoolColorText,
+          "--school-secondary-text": schoolTheme.accentColorText,
+          "--school-accent-visible": schoolTheme.visibleAccentOnPage,
+          "--school-accent-visible-card": schoolTheme.visibleAccentOnCard,
+          "--school-accent-visible-primary": schoolTheme.visibleAccentOnSchoolColor,
         } as AdminStyle
       }
     >
-      <AdminSidebar school={school} allowedPermissionKeys={adminUser.permissionKeys} />
+      <AdminSidebar
+        school={school}
+        schoolName={setupSchoolData.name}
+        logoUrl={"logo_url" in setupSchoolData ? setupSchoolData.logo_url || null : null}
+        canManageSettings={
+          isSuperAdminRole(adminUser.profile.role) ||
+          isSchoolAdminRole(adminUser.profile.role)
+        }
+        allowedPermissionKeys={adminUser.permissionKeys}
+      />
 
       <div className="min-h-screen bg-slate-50 pt-[142px] dark:bg-black sm:pt-[132px] lg:pl-[var(--admin-sidebar-width)] lg:pt-0">
         {children}

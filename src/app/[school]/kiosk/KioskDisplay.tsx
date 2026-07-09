@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
+import SchoolLogo from "@/components/SchoolLogo";
 import SportIcon from "@/components/SportIcon";
+import { getSchoolTheme } from "@/lib/schoolTheme";
 import {
   formatCountdownDuration,
   getTodayScheduleState,
@@ -47,7 +49,9 @@ type Announcement = {
 type KioskDisplayProps = {
   schoolName: string;
   schoolPrimaryColor: string;
-  schoolLogoUrl?: string;
+  schoolSecondaryColor: string;
+  schoolMascot?: string | null;
+  schoolLogoUrl?: string | null;
   dayType: string;
   periods: Period[];
   events: EventItem[];
@@ -60,6 +64,11 @@ type KioskDisplayProps = {
 
 type KioskStyle = CSSProperties & {
   "--school-primary": string;
+  "--school-secondary": string;
+  "--school-primary-text": string;
+  "--school-secondary-text": string;
+  "--school-accent-visible": string;
+  "--school-accent-visible-card": string;
 };
 
 const KIOSK_DATA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -179,6 +188,8 @@ function ClockIcon({ className = "" }: { className?: string }) {
 export default function KioskDisplay({
   schoolName,
   schoolPrimaryColor,
+  schoolSecondaryColor,
+  schoolMascot,
   schoolLogoUrl,
   dayType,
   periods,
@@ -284,6 +295,22 @@ export default function KioskDisplay({
     ? "School Day Complete"
     : currentPeriod?.name ?? "No Active Period";
   const countdownIsLong = periodState.countdown.includes("hr");
+  const schoolTheme = getSchoolTheme(
+    {
+      primary_color: schoolPrimaryColor,
+      secondary_color: schoolSecondaryColor,
+    },
+    "light"
+  );
+  const kioskStyle = {
+    "--school-primary": schoolTheme.schoolColor,
+    "--school-secondary": schoolTheme.accentColor,
+    "--school-primary-text": schoolTheme.schoolColorText,
+    "--school-secondary-text": schoolTheme.accentColorText,
+    "--school-accent-visible": schoolTheme.visibleAccentOnPage,
+    "--school-accent-visible-card": schoolTheme.visibleAccentOnCard,
+  } as KioskStyle;
+  const cheerText = schoolMascot?.trim() ? `Go ${schoolMascot.trim()}!` : "Go Sundial!";
 
   const radius = 155;
   const circumference = 2 * Math.PI * radius;
@@ -294,7 +321,7 @@ export default function KioskDisplay({
     return (
       <main
         className="kiosk-theme flex h-[99dvh] w-screen items-center justify-center bg-[#f7f8fb] p-6 text-[#07152f]"
-        style={{ "--school-primary": schoolPrimaryColor } as KioskStyle}
+        style={kioskStyle}
       >
         <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
           <h1 className="text-[clamp(3rem,7vw,7rem)] font-extrabold">
@@ -312,18 +339,17 @@ export default function KioskDisplay({
   return (
     <main
       className="kiosk-theme h-[99dvh] w-screen overflow-hidden bg-[#f7f8fb] text-[#07152f]"
-      style={{ "--school-primary": schoolPrimaryColor } as KioskStyle}
+      style={kioskStyle}
     >
       <div className="flex h-full w-full flex-col px-[1.25vw] py-[1dvh]">
         <header className="grid h-[11dvh] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-[1vw]">
           <div className="flex min-w-0 items-center gap-[1vw]">
-            {schoolLogoUrl && (
-              <img
-                src={schoolLogoUrl}
-                alt={`${schoolName} logo`}
-                className="h-[7dvh] w-[7dvh] shrink-0 object-contain"
-              />
-            )}
+            <SchoolLogo
+              schoolName={schoolName}
+              logoUrl={schoolLogoUrl}
+              size="lg"
+              className="h-[7dvh] w-[7dvh] rounded-[1.2dvh] text-[1.5dvh]"
+            />
 
             <div className="flex min-w-0 items-end gap-[15vw]">
               <h1 className="truncate text-[clamp(1.8rem,3vw,3.75rem)] font-extrabold leading-[1.25] tracking-tight">
@@ -352,10 +378,10 @@ export default function KioskDisplay({
 
         <section className="grid min-h-0 flex-1 grid-cols-1 gap-[1vw] pb-[1dvh] lg:grid-cols-[1.22fr_1fr]">
           <div className="relative min-h-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_45%,rgba(245,158,11,0.10),transparent_35%)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_45%,color-mix(in_srgb,var(--school-accent-visible-card)_14%,transparent),transparent_35%)]" />
 
             <div className="relative flex h-full flex-col items-center px-[1.75vw] py-[1.8dvh]">
-              <p className="text-[clamp(0.95rem,1.35vw,1.55rem)] font-bold uppercase tracking-wide text-amber-500">
+              <p className="text-[clamp(0.95rem,1.35vw,1.55rem)] font-bold uppercase tracking-wide text-[var(--school-accent-visible-card)]">
                 Current Period
               </p>
 
@@ -387,7 +413,7 @@ export default function KioskDisplay({
                     cy="205"
                     r={radius}
                     fill="none"
-                    stroke="#f5b400"
+                    stroke="var(--school-accent-visible-card)"
                     strokeWidth="24"
                     strokeLinecap="butt"
                     strokeDasharray={circumference}
@@ -415,7 +441,7 @@ export default function KioskDisplay({
               <div className="mt-auto w-full border-t border-slate-200 pt-[1.8dvh]">
                 <div className="mx-auto grid max-w-[780px] grid-cols-[1fr_auto_1fr] items-center gap-[1.8vw]">
                   <div className="flex items-center justify-end gap-[0.9vw]">
-                    <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center text-amber-500">
+                    <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center text-[var(--school-accent-visible-card)]">
                       <ClockIcon className="h-[3dvh] w-[3dvh]" />
                     </div>
                     <div>
@@ -431,7 +457,7 @@ export default function KioskDisplay({
                   <div className="h-[5.5dvh] w-px bg-slate-300" />
 
                   <div className="flex items-center gap-[0.9vw]">
-                    <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center text-[3dvh] text-amber-500">
+                    <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center text-[3dvh] text-[var(--school-accent-visible-card)]">
                       <ScheduleDayIcon className="h-[3dvh] w-[3dvh]" />
                     </div>
                     <div>
@@ -466,13 +492,13 @@ export default function KioskDisplay({
                       className={[
                         "grid min-h-0 grid-cols-[minmax(5.6rem,0.8fr)_minmax(7.5rem,1fr)_2rem] items-center gap-[0.6vw] rounded-lg px-[0.9vw] py-[0.35dvh] text-[clamp(0.72rem,0.92vw,1.08rem)] leading-tight",
                         isCurrent
-                          ? "bg-amber-100 text-[#07152f]"
+                          ? "bg-[color-mix(in_srgb,var(--school-primary)_16%,white)] text-[#07152f]"
                           : "border-b border-slate-200",
                       ].join(" ")}
                     >
                       <div className="flex items-center gap-[0.5vw] font-extrabold">
                         {isCurrent && (
-                          <span className="h-[0.55vw] w-[0.55vw] rounded-full bg-amber-400" />
+                          <span className="h-[0.55vw] w-[0.55vw] rounded-full bg-[var(--school-accent-visible-card)]" />
                         )}
                         {period.name.replace(" Period", "")}
                       </div>
@@ -506,14 +532,14 @@ export default function KioskDisplay({
                     key={event.id}
                     className="flex min-h-0 items-center gap-[1vw] border-b border-slate-200 py-[0.85dvh] first:pt-0 last:border-b-0 last:pb-0"
                   >
-                    <div className="shrink-0 text-[clamp(1.25rem,1.9vw,2.25rem)] leading-none text-amber-500">
+                    <div className="shrink-0 text-[clamp(1.25rem,1.9vw,2.25rem)] leading-none text-[var(--school-accent-visible-card)]">
                       <CalendarStarIcon className="h-[2.25dvh] w-[2.25dvh]" />
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-[clamp(0.95rem,1.28vw,1.5rem)] font-extrabold leading-tight">
                         {event.title}
                       </p>
-                      <p className="mt-[0.25dvh] text-[clamp(0.75rem,0.98vw,1.1rem)] font-semibold leading-tight text-amber-500">
+                      <p className="mt-[0.25dvh] text-[clamp(0.75rem,0.98vw,1.1rem)] font-semibold leading-tight text-[var(--school-accent-visible-card)]">
                         {event.date}
                       </p>
                     </div>
@@ -556,7 +582,7 @@ export default function KioskDisplay({
                 {games.length > 3 && (
                   <Link
                     href={athleticsHref}
-                    className="mt-[0.55dvh] text-[clamp(0.7rem,0.85vw,0.95rem)] font-extrabold text-amber-500"
+                    className="mt-[0.55dvh] text-[clamp(0.7rem,0.85vw,0.95rem)] font-extrabold text-[var(--school-accent-visible-card)]"
                   >
                     + {games.length - 3} more games today
                   </Link>
@@ -582,7 +608,7 @@ export default function KioskDisplay({
                     }}
                     className={[
                       "h-[0.75dvh] w-[0.75dvh] rounded-full transition",
-                      activeInfoCard === card ? "bg-amber-500" : "bg-slate-300",
+                      activeInfoCard === card ? "bg-[var(--school-accent-visible-card)]" : "bg-slate-300",
                     ].join(" ")}
                   />
                 ))}
@@ -591,7 +617,7 @@ export default function KioskDisplay({
 
             <Card title="Priority Announcement">
               <div className="flex items-center gap-[1vw]">
-                <div className="text-[clamp(1.8rem,2.8vw,3.25rem)] text-amber-500">
+                <div className="text-[clamp(1.8rem,2.8vw,3.25rem)] text-[var(--school-accent-visible-card)]">
                   📣
                 </div>
                 <div>
@@ -609,8 +635,8 @@ export default function KioskDisplay({
           </div>
         </section>
 
-        <footer className="-mx-[1.25vw] -mb-[1dvh] flex h-[5.25dvh] shrink-0 items-center justify-center bg-gradient-to-r from-amber-300 to-amber-400 text-[clamp(1rem,1.35vw,1.55rem)] font-extrabold">
-          Go Suns!
+        <footer className="-mx-[1.25vw] -mb-[1dvh] flex h-[5.25dvh] shrink-0 items-center justify-center bg-[var(--school-primary)] text-[clamp(1rem,1.35vw,1.55rem)] font-extrabold text-[var(--school-primary-text)]">
+          {cheerText}
         </footer>
       </div>
     </main>
@@ -629,7 +655,7 @@ function Card({
   return (
     <div className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-[1.2vw] shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
       <div className="mb-[0.9dvh] flex shrink-0 items-center justify-between gap-[1vw]">
-        <h3 className="text-[clamp(0.95rem,1.3vw,1.55rem)] font-extrabold uppercase tracking-wide text-amber-500">
+        <h3 className="text-[clamp(0.95rem,1.3vw,1.55rem)] font-extrabold uppercase tracking-wide text-[var(--school-accent-visible-card)]">
           {title}
         </h3>
         {action}

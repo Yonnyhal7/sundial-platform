@@ -58,7 +58,7 @@ export default function AppScheduleDashboard({
     : "Done";
   const activePeriod = scheduleState.currentPeriod;
   const ringProgress = Math.max(0, Math.min(scheduleState.progressPercent, 100));
-  const background = `conic-gradient(var(--school-primary) ${ringProgress}%, #e6e8ee ${ringProgress}% 100%)`;
+  const background = `conic-gradient(var(--school-accent-visible-card) ${ringProgress}%, #e6e8ee ${ringProgress}% 100%)`;
   const currentTitle = noSchool
     ? "No School"
     : scheduleState.status === "after_school"
@@ -71,7 +71,7 @@ export default function AppScheduleDashboard({
   return (
     <>
       <section className="rounded-[clamp(1.1rem,3.2vw,1.75rem)] border border-slate-200 bg-white px-[clamp(1rem,4vw,1.5rem)] py-[clamp(1.25rem,4.5vw,2rem)] text-center shadow-[0_12px_32px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424]">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--school-primary)]">
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--school-accent-visible-card)]">
           Current Period
         </p>
         <h2 className="mt-4 text-[clamp(1.35rem,4vw,2rem)] font-black leading-tight tracking-tight text-slate-950 dark:text-white">
@@ -103,7 +103,7 @@ export default function AppScheduleDashboard({
         <div className="mt-[clamp(1.5rem,4vw,2rem)] border-t border-slate-200 pt-[clamp(1.25rem,3.5vw,1.5rem)] dark:border-[#3a3a3a]">
           <div className="mx-auto grid max-w-[clamp(20rem,78vw,32.5rem)] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-[clamp(1rem,3.4vw,1.75rem)] text-left sm:gap-20">
             <div className="flex min-w-0 items-center justify-end gap-[clamp(0.5rem,1.8vw,0.75rem)]">
-              <div className="grid h-[clamp(2.25rem,5.5vw,2.75rem)] w-[clamp(2.25rem,5.5vw,2.75rem)] shrink-0 place-items-center rounded-full border-2 border-[var(--school-primary)] text-[var(--school-primary)]">
+              <div className="grid h-[clamp(2.25rem,5.5vw,2.75rem)] w-[clamp(2.25rem,5.5vw,2.75rem)] shrink-0 place-items-center rounded-full border-2 border-[var(--school-accent-visible-card)] text-[var(--school-accent-visible-card)]">
                 <SmallClockIcon className="h-[clamp(0.9rem,2.3vw,1.25rem)] w-[clamp(0.9rem,2.3vw,1.25rem)]" />
               </div>
               <div className="min-w-0">
@@ -119,7 +119,7 @@ export default function AppScheduleDashboard({
             <div className="h-12 w-px bg-slate-300 dark:bg-[#3a3a3a]" />
 
             <div className="flex min-w-0 items-center gap-[clamp(0.25rem,0.8vw,0.5rem)]">
-              <div className="grid h-[clamp(2.25rem,5.5vw,2.75rem)] w-[clamp(2.25rem,5.5vw,2.75rem)] shrink-0 place-items-center text-[var(--school-primary)]">
+              <div className="grid h-[clamp(2.25rem,5.5vw,2.75rem)] w-[clamp(2.25rem,5.5vw,2.75rem)] shrink-0 place-items-center text-[var(--school-accent-visible-card)]">
                 <SmallCalendarIcon className="h-[clamp(1rem,2.5vw,1.25rem)] w-[clamp(1rem,2.5vw,1.25rem)]" />
               </div>
               <div className="min-w-0">
@@ -164,7 +164,7 @@ export default function AppScheduleDashboard({
                   <div
                     className={`grid h-[clamp(2.5rem,6vw,3rem)] w-[clamp(2.5rem,6vw,3rem)] place-items-center rounded-full border text-[clamp(0.95rem,2.4vw,1.1rem)] font-black ${
                       complete
-                        ? "border-[color-mix(in_srgb,var(--school-primary)_45%,white)] text-[var(--school-primary)]"
+                        ? "border-[color-mix(in_srgb,var(--school-accent-visible-card)_45%,white)] text-[var(--school-accent-visible-card)]"
                         : current
                           ? "border-[var(--school-primary)] text-[var(--school-primary)]"
                           : "border-slate-300 text-slate-500 dark:border-[#4a4a4a] dark:text-[#a3a3a3]"
@@ -188,7 +188,7 @@ export default function AppScheduleDashboard({
                   </div>
 
                   {current && (
-                    <span className="rounded-full bg-[var(--school-primary)] px-3 py-1 text-xs font-black uppercase text-white">
+                    <span className="rounded-full bg-[var(--school-primary)] px-3 py-1 text-xs font-black uppercase text-[var(--school-primary-text)]">
                       Current
                     </span>
                   )}

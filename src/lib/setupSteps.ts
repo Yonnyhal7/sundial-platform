@@ -5,23 +5,23 @@ export const SETUP_STEPS = [
   },
   {
     slug: "school-profile",
-    label: "School Information",
+    label: "School Profile",
   },
   {
-    slug: "branding",
-    label: "Branding",
+    slug: "appearance",
+    label: "Appearance",
   },
   {
     slug: "administrators",
-    label: "Administrators",
+    label: "Users",
   },
   {
     slug: "schedule",
-    label: "Schedule",
+    label: "Schedule Wizard",
   },
   {
     slug: "complete",
-    label: "Complete",
+    label: "Launch School",
   },
 ] as const;
 
@@ -29,11 +29,19 @@ export type SetupStepSlug = (typeof SETUP_STEPS)[number]["slug"];
 
 export const DEFAULT_SETUP_STEP: SetupStepSlug = "welcome";
 
+const LEGACY_SETUP_STEP_ALIASES: Record<string, SetupStepSlug> = {
+  branding: "appearance",
+};
+
 export function isSetupStepSlug(value: string | null | undefined): value is SetupStepSlug {
   return SETUP_STEPS.some((step) => step.slug === value);
 }
 
 export function normalizeSetupStep(value: string | null | undefined): SetupStepSlug {
+  if (value && value in LEGACY_SETUP_STEP_ALIASES) {
+    return LEGACY_SETUP_STEP_ALIASES[value];
+  }
+
   return isSetupStepSlug(value) ? value : DEFAULT_SETUP_STEP;
 }
 
