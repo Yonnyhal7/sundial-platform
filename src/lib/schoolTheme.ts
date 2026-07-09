@@ -39,7 +39,10 @@ export function isDarkColor(color: string) {
 }
 
 export function getContrastTextColor(backgroundColor: string) {
-  return isLightColor(backgroundColor) ? "#07152F" : "#FFFFFF";
+  const whiteContrast = getContrastRatio("#FFFFFF", backgroundColor);
+  const blackContrast = getContrastRatio("#07152F", backgroundColor);
+
+  return whiteContrast >= blackContrast ? "#FFFFFF" : "#07152F";
 }
 
 function getRelativeLuminance(color: string) {
@@ -124,5 +127,18 @@ export function getSchoolTheme(
     visibleAccentOnPage: getVisibleAccentColor(accentColor, pageBackground),
     visibleAccentOnCard: getVisibleAccentColor(accentColor, cardBackground),
     visibleAccentOnSchoolColor: getVisibleAccentColor(accentColor, schoolColor),
+  };
+}
+
+/**
+ * The client toggles light/dark via a CSS class after hydration (no server-known
+ * cookie), so a single server-computed theme can't track it. Callers should render
+ * both modes' CSS vars (suffixed -light/-dark) and let globals.css pick the active
+ * one via the `.dark` ancestor class, instead of hardcoding one appearance.
+ */
+export function getSchoolThemeModes(school: SchoolThemeInput) {
+  return {
+    light: getSchoolTheme(school, "light"),
+    dark: getSchoolTheme(school, "dark"),
   };
 }

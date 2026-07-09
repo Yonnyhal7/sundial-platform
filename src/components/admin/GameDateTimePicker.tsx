@@ -91,7 +91,7 @@ export default function GameDateTimePicker({
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
-        className="flex w-full cursor-pointer items-center justify-between rounded-lg border border-slate-300 bg-white px-4 py-3 text-left text-slate-950 outline-none transition hover:border-blue-500 focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white"
+        className="flex w-full cursor-pointer items-center justify-between rounded-lg border border-slate-300 bg-white px-4 py-3 text-left text-slate-950 outline-none transition hover:border-[var(--school-primary)] focus:border-[var(--school-primary)] dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white"
       >
         <span>{formatDisplay(selectedDate, selectedTime)}</span>
         <svg
@@ -162,7 +162,7 @@ export default function GameDateTimePicker({
                     className={[
                       "aspect-square cursor-pointer rounded-lg text-xs font-semibold transition",
                       isSelected
-                        ? "bg-blue-600 text-white"
+                        ? "bg-[var(--school-primary)] text-[var(--school-primary-text)]"
                         : "bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-[#303030] dark:text-white dark:hover:bg-[#3a3a3a]",
                     ].join(" ")}
                   >
@@ -181,13 +181,13 @@ export default function GameDateTimePicker({
                   type="time"
                   value={selectedTime}
                   onChange={(event) => setSelectedTime(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white"
                 />
               </label>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
+                className="cursor-pointer rounded-lg bg-[var(--school-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--school-primary-text)] transition hover:opacity-90"
               >
                 Done
               </button>

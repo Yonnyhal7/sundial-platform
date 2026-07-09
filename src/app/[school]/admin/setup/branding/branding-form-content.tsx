@@ -40,17 +40,17 @@ const appearanceOptions: {
     value: "dark",
     icon: "\uD83C\uDF19",
     label: "Dark",
-    background: "#FFFFFF",
-    text: "#07152F",
-    border: "#E2E8F0",
+    background: "#0A0A0A",
+    text: "#FFFFFF",
+    border: "#3A3A3A",
   },
   {
     value: "system",
     icon: "\uD83D\uDCBB",
     label: "System",
-    background: "#FFFFFF",
-    text: "#07152F",
-    border: "#E2E8F0",
+    background: "#64748B",
+    text: "#FFFFFF",
+    border: "#94A3B8",
   },
 ];
 

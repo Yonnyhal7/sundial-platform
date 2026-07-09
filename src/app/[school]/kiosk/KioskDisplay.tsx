@@ -6,7 +6,7 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import SchoolLogo from "@/components/SchoolLogo";
 import SportIcon from "@/components/SportIcon";
-import { getSchoolTheme } from "@/lib/schoolTheme";
+import { getSchoolThemeModes } from "@/lib/schoolTheme";
 import {
   formatCountdownDuration,
   getTodayScheduleState,
@@ -67,8 +67,10 @@ type KioskStyle = CSSProperties & {
   "--school-secondary": string;
   "--school-primary-text": string;
   "--school-secondary-text": string;
-  "--school-accent-visible": string;
-  "--school-accent-visible-card": string;
+  "--school-accent-visible-light": string;
+  "--school-accent-visible-dark": string;
+  "--school-accent-visible-card-light": string;
+  "--school-accent-visible-card-dark": string;
 };
 
 const KIOSK_DATA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -295,20 +297,19 @@ export default function KioskDisplay({
     ? "School Day Complete"
     : currentPeriod?.name ?? "No Active Period";
   const countdownIsLong = periodState.countdown.includes("hr");
-  const schoolTheme = getSchoolTheme(
-    {
-      primary_color: schoolPrimaryColor,
-      secondary_color: schoolSecondaryColor,
-    },
-    "light"
-  );
+  const schoolTheme = getSchoolThemeModes({
+    primary_color: schoolPrimaryColor,
+    secondary_color: schoolSecondaryColor,
+  });
   const kioskStyle = {
-    "--school-primary": schoolTheme.schoolColor,
-    "--school-secondary": schoolTheme.accentColor,
-    "--school-primary-text": schoolTheme.schoolColorText,
-    "--school-secondary-text": schoolTheme.accentColorText,
-    "--school-accent-visible": schoolTheme.visibleAccentOnPage,
-    "--school-accent-visible-card": schoolTheme.visibleAccentOnCard,
+    "--school-primary": schoolTheme.light.schoolColor,
+    "--school-secondary": schoolTheme.light.accentColor,
+    "--school-primary-text": schoolTheme.light.schoolColorText,
+    "--school-secondary-text": schoolTheme.light.accentColorText,
+    "--school-accent-visible-light": schoolTheme.light.visibleAccentOnPage,
+    "--school-accent-visible-dark": schoolTheme.dark.visibleAccentOnPage,
+    "--school-accent-visible-card-light": schoolTheme.light.visibleAccentOnCard,
+    "--school-accent-visible-card-dark": schoolTheme.dark.visibleAccentOnCard,
   } as KioskStyle;
   const cheerText = schoolMascot?.trim() ? `Go ${schoolMascot.trim()}!` : "Go Sundial!";
 

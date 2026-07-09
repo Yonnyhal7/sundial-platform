@@ -5,11 +5,10 @@ import { useState } from "react";
 
 const supabase = createSupabaseBrowserClient();
 
-
 export default function ResourceFileUpload({
-  initialFileUrl,
+  initialFileUrl = "",
 }: {
-  initialFileUrl: string;
+  initialFileUrl?: string;
 }) {
   const [uploading, setUploading] = useState(false);
   const [fileUrl, setFileUrl] = useState(initialFileUrl);
@@ -36,25 +35,16 @@ export default function ResourceFileUpload({
       return;
     }
 
-    const { data, error: signedUrlError } = await supabase.storage
-    .from("resource-file")
-    .createSignedUrl(filePath, 60 * 60 * 24 * 365);
+    const { data } = supabase.storage.from("resource-file").getPublicUrl(filePath);
 
-    if (signedUrlError) {
-    console.error("Signed URL error:", signedUrlError);
-    alert("File uploaded, but URL creation failed.");
-    setUploading(false);
-    return;
-    }
-
-    setFileUrl(data.signedUrl);
+    setFileUrl(data.publicUrl);
     setUploading(false);
   }
 
   return (
     <div className="space-y-3">
-      <label className="block text-sm font-medium text-slate-300">
-        Resource File
+      <label className="block text-sm font-bold text-slate-700 dark:text-slate-200">
+        {initialFileUrl ? "Resource File" : "Upload File"}
       </label>
 
       {fileUrl && (
@@ -62,7 +52,7 @@ export default function ResourceFileUpload({
           href={fileUrl}
           target="_blank"
           rel="noreferrer"
-          className="block text-sm text-blue-300 hover:underline"
+          className="block text-sm font-semibold text-[var(--school-primary)] hover:underline"
         >
           View current file
         </a>
@@ -71,13 +61,19 @@ export default function ResourceFileUpload({
       <input
         type="file"
         onChange={handleUpload}
-        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white"
+        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[var(--school-primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--school-primary)_20%,transparent)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white"
       />
 
-      {uploading && <p className="text-sm text-slate-400">Uploading file...</p>}
+      {uploading && (
+        <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Uploading file...
+        </p>
+      )}
 
       {!uploading && fileUrl && (
-        <p className="text-sm text-green-300">File ready.</p>
+        <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+          File ready.
+        </p>
       )}
 
       <input type="hidden" name="file_url" value={fileUrl} />

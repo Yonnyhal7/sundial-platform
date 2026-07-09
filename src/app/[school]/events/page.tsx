@@ -1,5 +1,14 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+function getTodayDateString() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 type Event = {
   id: string;
   title: string;
@@ -30,7 +39,7 @@ export default async function EventsPage({
     .select("id, title, description, location, event_date, start_time, end_time, image_url")
     .eq("school_id", schoolData.id)
     .eq("is_active", true)
-    .gte("event_date", new Date().toISOString().slice(0, 10))
+    .gte("event_date", getTodayDateString())
     .order("event_date", { ascending: true });
 
   return (

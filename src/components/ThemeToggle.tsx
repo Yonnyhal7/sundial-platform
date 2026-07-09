@@ -2,30 +2,12 @@
 
 import { useEffect, useState } from "react";
 import {
+  applyTheme,
+  getPreferredTheme,
   getThemeStorageKey,
   type Theme,
   type ThemeScope,
 } from "@/lib/themeScope";
-
-function getPreferredTheme(storageKey: string): Theme {
-  if (typeof window === "undefined") {
-    return "light";
-  }
-
-  const savedTheme = window.localStorage.getItem(storageKey);
-
-  if (savedTheme === "light" || savedTheme === "dark") {
-    return savedTheme;
-  }
-
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-}
-
-function applyTheme(theme: Theme) {
-  document.documentElement.classList.toggle("dark", theme === "dark");
-}
 
 function MoonIcon() {
   return (
@@ -78,8 +60,7 @@ export default function ThemeToggle({
   useEffect(() => {
     const preferredTheme = getPreferredTheme(storageKey);
 
-    applyTheme(preferredTheme);
-    document.documentElement.dataset.themeScope = scope;
+    applyTheme(preferredTheme, scope);
 
     const timeout = window.setTimeout(() => {
       setTheme(preferredTheme);
@@ -95,7 +76,7 @@ export default function ThemeToggle({
       const nextTheme = event.matches ? "dark" : "light";
 
       setTheme(nextTheme);
-      applyTheme(nextTheme);
+      applyTheme(nextTheme, scope);
     }
 
     mediaQuery.addEventListener("change", handleSystemThemeChange);
@@ -112,8 +93,7 @@ export default function ThemeToggle({
   function toggleTheme() {
     setTheme(nextTheme);
     window.localStorage.setItem(storageKey, nextTheme);
-    applyTheme(nextTheme);
-    document.documentElement.dataset.themeScope = scope;
+    applyTheme(nextTheme, scope);
   }
 
   return (

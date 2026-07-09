@@ -1,14 +1,17 @@
 import { notFound, redirect } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import ScheduleForm from "./schedule-form";
+import ScheduleForm from "@/components/admin/ScheduleForm";
 
 export default async function NewSchedulePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ school: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { school } = await params;
+  const { error: errorParam } = await searchParams;
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
@@ -53,7 +56,7 @@ export default async function NewSchedulePage({
         "Create schedule error:",
         JSON.stringify(scheduleError, null, 2)
       );
-      return;
+      redirect(`/${school}/admin/schedules/new?error=1`);
     }
 
     const periodNames = formData.getAll("period_name").map(String);
@@ -80,7 +83,7 @@ export default async function NewSchedulePage({
           "Create periods error:",
           JSON.stringify(periodsError, null, 2)
         );
-        return;
+        redirect(`/${school}/admin/schedules/new?error=1`);
       }
     }
 
@@ -91,14 +94,20 @@ export default async function NewSchedulePage({
     <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
       <div className="mx-auto max-w-4xl px-6 py-8">
         <div className="mb-8">
-          <p className="text-sm text-slate-400">{schoolData.name} Admin</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{schoolData.name} Admin</p>
           <h1 className="mt-1 text-3xl font-bold">New Schedule</h1>
-          <p className="mt-2 text-sm text-slate-400">
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
             Create a schedule template and define all periods for the day.
           </p>
         </div>
 
-        <ScheduleForm school={school} createSchedule={createSchedule} />
+        {errorParam && (
+          <p className="mb-6 inline-block rounded-full bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-500/30 dark:text-red-300">
+            Something went wrong saving this schedule. Please try again.
+          </p>
+        )}
+
+        <ScheduleForm school={school} action={createSchedule} submitLabel="Create Schedule" />
       </div>
     </main>
   );
