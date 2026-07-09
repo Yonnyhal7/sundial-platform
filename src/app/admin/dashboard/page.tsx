@@ -1,25 +1,14 @@
 import Link from "next/link";
 import { requireSuperAdminAccess } from "@/lib/auth/adminPermissions";
-import { getSchoolSetupStatus, getSchoolSetupStatusLabel } from "@/lib/schools";
+import {
+  getSchoolSetupStatus,
+  getSchoolSetupStatusLabel,
+  type SuperAdminSchoolSummary,
+} from "@/lib/schools";
+import { formatShortDate } from "@/lib/formatDate";
 import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
 
-type School = {
-  id: string;
-  name: string;
-  subdomain: string;
-  is_active: boolean | null;
-  created_at: string | null;
-};
-
-function formatDate(date: string | null) {
-  if (!date) return "Not set";
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date(date));
-}
+type School = SuperAdminSchoolSummary;
 
 export default async function SuperAdminDashboardPage() {
   const { supabase } = await requireSuperAdminAccess();
@@ -28,20 +17,15 @@ export default async function SuperAdminDashboardPage() {
 
   const [
     { count: totalSchools },
-    { count: activeSchools },
-    { count: setupIncomplete },
+    { data: schoolStatusRows },
     { count: totalUsers },
     { data: recentSchools },
   ] = await Promise.all([
     supabase.from("schools").select("*", { count: "exact", head: true }),
     supabase
       .from("schools")
-      .select("*", { count: "exact", head: true })
-      .eq("is_active", true),
-    supabase
-      .from("schools")
-      .select("*", { count: "exact", head: true })
-      .eq("is_active", false),
+      .select("is_active, setup_complete")
+      .returns<{ is_active: boolean | null; setup_complete: boolean | null }[]>(),
     supabase.from("users").select("*", { count: "exact", head: true }),
     supabase
       .from("schools")
@@ -51,10 +35,15 @@ export default async function SuperAdminDashboardPage() {
       .returns<School[]>(),
   ]);
 
+  const activeSchools = (schoolStatusRows || []).filter(
+    (school) => getSchoolSetupStatus(school) === "active"
+  ).length;
+  const setupIncomplete = (schoolStatusRows || []).length - activeSchools;
+
   const statCards = [
     { label: "Total Schools", value: totalSchools || 0 },
-    { label: "Active Schools", value: activeSchools || 0 },
-    { label: "Setup Incomplete", value: setupIncomplete || 0 },
+    { label: "Active Schools", value: activeSchools },
+    { label: "Setup Incomplete", value: setupIncomplete },
     { label: "Total Users", value: totalUsers || 0 },
   ];
 
@@ -145,7 +134,7 @@ export default async function SuperAdminDashboardPage() {
                       </td>
                       <td className="p-0 text-slate-500 dark:text-slate-300">
                         <Link href={schoolHref} className="block px-6 py-4">
-                          {formatDate(school.created_at)}
+                          {formatShortDate(school.created_at)}
                         </Link>
                       </td>
                     </tr>

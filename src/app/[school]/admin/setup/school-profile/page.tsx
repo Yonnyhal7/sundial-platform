@@ -1,9 +1,33 @@
 import SetupLayout from "../setup-layout";
 import { getSetupContext } from "../context";
+import SetupLogoUploadField from "./setup-logo-upload-field";
 
 type SchoolProfilePageProps = {
   params: Promise<{ school: string }>;
 };
+
+function Field({
+  label,
+  name,
+  defaultValue,
+}: {
+  label: string;
+  name: string;
+  defaultValue?: string | null;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="font-bold text-slate-700 dark:text-slate-200">
+        {label}
+      </span>
+      <input
+        name={name}
+        defaultValue={defaultValue || ""}
+        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[var(--school-primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--school-primary)_20%,transparent)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white"
+      />
+    </label>
+  );
+}
 
 export default async function SchoolProfileSetupPage({
   params,
@@ -18,7 +42,7 @@ export default async function SchoolProfileSetupPage({
       currentStep="school-profile"
       nextStep="appearance"
     >
-      <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-[#242424]">
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424] lg:p-8">
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
           Step 2
         </p>
@@ -26,37 +50,33 @@ export default async function SchoolProfileSetupPage({
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
           Let&apos;s start with your school&apos;s basic information.
         </p>
-        <div className="mt-5 grid gap-5 md:grid-cols-2">
-          <label className="text-sm font-semibold">
-            School Name
-            <input
-              name="schoolName"
-              defaultValue={context.schoolData.name}
-              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-normal text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-slate-700 dark:bg-black dark:text-white"
-            />
-          </label>
-          <label className="text-sm font-semibold">
-            District Name
-            <input
-              name="districtName"
-              defaultValue={context.district?.name || ""}
-              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-normal text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-slate-700 dark:bg-black dark:text-white"
-            />
-          </label>
-          <label className="text-sm font-semibold">
-            Mascot
-            <input
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-3 lg:items-start">
+          <div className="space-y-5 lg:col-span-2">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field
+                label="School Name"
+                name="schoolName"
+                defaultValue={context.schoolData.name}
+              />
+              <Field
+                label="District Name"
+                name="districtName"
+                defaultValue={context.district?.name}
+              />
+            </div>
+            <Field
+              label="Mascot"
               name="mascot"
-              defaultValue={context.schoolData.mascot || ""}
-              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-normal text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-slate-700 dark:bg-black dark:text-white"
+              defaultValue={context.schoolData.mascot}
             />
-          </label>
-          <div className="rounded-lg border border-dashed border-slate-300 p-4 dark:border-slate-700">
-            <p className="text-sm font-semibold">Logo Upload</p>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Upload placeholder. File storage wiring comes later.
-            </p>
           </div>
+
+          <SetupLogoUploadField
+            school={school}
+            schoolName={context.schoolData.name}
+            initialLogoUrl={context.logoUrl}
+          />
         </div>
       </section>
     </SetupLayout>

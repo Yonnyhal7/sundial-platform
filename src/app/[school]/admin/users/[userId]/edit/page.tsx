@@ -46,10 +46,13 @@ function sortPermissions(permissions: PermissionRow[]) {
 
 export default async function EditUserPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ school: string; userId: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { school, userId } = await params;
+  const { error: errorParam } = await searchParams;
   const { supabase, schoolData, profile } = await requireUserManager(school);
 
   const [{ data: targetUser }, permissions, { data: userPermissions }] =
@@ -100,7 +103,7 @@ export default async function EditUserPage({
       .single<{ id: string; role: string | null; school_id: string | null }>();
 
     if (!existingUser || !canEditTargetUser({ actor: profile, target: existingUser })) {
-      return;
+      redirect(`/${school}/admin/users/${userId}/edit?error=1`);
     }
 
     const allowedRoles = MANAGEABLE_USER_ROLES.map((option) => option.value);
@@ -111,7 +114,7 @@ export default async function EditUserPage({
       !email ||
       (!allowedRoles.includes(role as never) && !preservingSuperAdmin)
     ) {
-      return;
+      redirect(`/${school}/admin/users/${userId}/edit?error=1`);
     }
 
     const { error } = await supabase
@@ -128,7 +131,7 @@ export default async function EditUserPage({
 
     if (error) {
       console.error("Update user error:", JSON.stringify(error, null, 2));
-      return;
+      redirect(`/${school}/admin/users/${userId}/edit?error=1`);
     }
 
     const { error: deleteError } = await supabase
@@ -138,7 +141,7 @@ export default async function EditUserPage({
 
     if (deleteError) {
       console.error("Delete user permissions error:", JSON.stringify(deleteError, null, 2));
-      return;
+      redirect(`/${school}/admin/users/${userId}/edit?error=1`);
     }
 
     const permissionIds = await filterSavablePermissionIds({
@@ -156,7 +159,7 @@ export default async function EditUserPage({
 
       if (permissionError) {
         console.error("Update user permissions error:", JSON.stringify(permissionError, null, 2));
-        return;
+        redirect(`/${school}/admin/users/${userId}/edit?error=1`);
       }
     }
 
@@ -167,9 +170,15 @@ export default async function EditUserPage({
     <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
       <div className="mx-auto max-w-3xl px-6 py-8">
         <div className="mb-8">
-          <p className="text-sm text-slate-400">{schoolData.name} Admin</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{schoolData.name} Admin</p>
           <h1 className="mt-1 text-3xl font-bold">Edit User</h1>
         </div>
+
+        {errorParam && (
+          <p className="mb-6 inline-block rounded-full bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-500/30 dark:text-red-300">
+            Something went wrong saving this user. Please check the required fields and try again.
+          </p>
+        )}
 
         <UserAccessForm
           action={updateUser}

@@ -92,46 +92,53 @@ export default function UserAccessForm({
     });
   }
 
+  const inputClass =
+    "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[var(--school-primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--school-primary)_20%,transparent)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white";
+  const labelClass = "mb-2 block text-sm font-bold text-slate-700 dark:text-slate-200";
+
   return (
-    <form action={action} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+    <form
+      action={action}
+      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
+    >
       <div className="grid gap-5 sm:grid-cols-2">
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">First Name</label>
+          <label className={labelClass}>First Name</label>
           <input
             name="first_name"
             required
             defaultValue={initialValues?.first_name || ""}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+            className={inputClass}
           />
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">Last Name</label>
+          <label className={labelClass}>Last Name</label>
           <input
             name="last_name"
             required
             defaultValue={initialValues?.last_name || ""}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+            className={inputClass}
           />
         </div>
 
         <div className="sm:col-span-2">
-          <label className="mb-2 block text-sm font-medium text-slate-300">Email</label>
+          <label className={labelClass}>Email</label>
           <input
             name="email"
             type="email"
             required
             defaultValue={initialValues?.email || ""}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+            className={inputClass}
           />
         </div>
 
         <div className="sm:col-span-2">
-          <label className="mb-2 block text-sm font-medium text-slate-300">Role</label>
+          <label className={labelClass}>Role</label>
           {preserveSuperAdminRole ? (
             <>
               <input type="hidden" name="role" value="super_admin" />
-              <div className="rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-950 dark:border-[#3a3a3a] dark:bg-black/30 dark:text-white">
                 Super Admin
               </div>
             </>
@@ -141,7 +148,7 @@ export default function UserAccessForm({
               required
               value={role}
               onChange={(event) => handleRoleChange(event.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500"
+              className={inputClass}
             >
               {MANAGEABLE_USER_ROLES.map((roleOption) => (
                 <option key={roleOption.value} value={roleOption.value}>
@@ -152,26 +159,28 @@ export default function UserAccessForm({
           )}
         </div>
 
-        <label className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 sm:col-span-2">
+        <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#3a3a3a] dark:bg-black/30 sm:col-span-2">
           <input
             name="is_active"
             type="checkbox"
             defaultChecked={initialValues?.is_active ?? true}
-            className="h-4 w-4 rounded border-slate-600"
+            className="h-4 w-4 rounded border-slate-300 dark:border-slate-600"
           />
-          <span className="text-sm text-slate-300">Active user</span>
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Active user
+          </span>
         </label>
       </div>
 
-      <section className="mt-8 border-t border-slate-800 pt-6">
-        <h2 className="text-lg font-semibold">Permissions</h2>
+      <section className="mt-8 border-t border-slate-200 pt-6 dark:border-[#3a3a3a]">
+        <h2 className="text-lg font-bold">Permissions</h2>
         {role === "school_admin" || role === "super_admin" ? (
-          <p className="mt-4 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-300">
+          <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-[#3a3a3a] dark:bg-black/30 dark:text-slate-200">
             Administrators have full access.
           </p>
         ) : (
           <>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               Choose the admin sections this editor can access.
             </p>
 
@@ -179,7 +188,7 @@ export default function UserAccessForm({
               {editorPermissionGroups.map((permission) => (
                 <label
                   key={permission.id}
-                  className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3"
+                  className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#3a3a3a] dark:bg-black/30"
                 >
                   <input
                     name="permission_ids"
@@ -187,17 +196,17 @@ export default function UserAccessForm({
                     value={permission.id}
                     checked={selectedPermissionIds.has(permission.id)}
                     onChange={(event) => togglePermission(permission.id, event.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-slate-600"
+                    className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-600"
                   />
-                  <span className="min-w-0 text-sm text-slate-300">
-                    <span className="block font-medium">{permission.label}</span>
+                  <span className="min-w-0 text-sm text-slate-700 dark:text-slate-200">
+                    <span className="block font-semibold">{permission.label}</span>
                     {permission.description && (
-                      <span className="mt-1 block text-xs text-slate-500">
+                      <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
                         {permission.description}
                       </span>
                     )}
                     {permission.sensitive && (
-                      <span className="mt-2 inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-500/25">
+                      <span className="mt-2 inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-500/25 dark:text-amber-200">
                         Admin access
                       </span>
                     )}
@@ -207,7 +216,7 @@ export default function UserAccessForm({
             </div>
 
             {editorPermissionGroups.length === 0 && (
-              <p className="mt-4 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-400">
+              <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:border-[#3a3a3a] dark:bg-black/30 dark:text-slate-400">
                 No editor permissions have been configured yet.
               </p>
             )}
@@ -215,16 +224,16 @@ export default function UserAccessForm({
         )}
       </section>
 
-      <div className="mt-8 flex items-center justify-between border-t border-slate-800 pt-5">
+      <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5 dark:border-[#3a3a3a]">
         <Link
           href={cancelHref}
-          className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-900"
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
         >
           Cancel
         </Link>
         <button
           type="submit"
-          className="cursor-pointer rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500"
+          className="cursor-pointer rounded-lg bg-[var(--school-primary)] px-5 py-2 text-sm font-semibold text-[var(--school-primary-text)] transition hover:opacity-90"
         >
           {submitLabel}
         </button>

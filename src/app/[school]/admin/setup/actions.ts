@@ -39,6 +39,33 @@ function cleanColor(value: FormDataEntryValue | null, fallback: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
 }
 
+function cleanMultilineText(value: FormDataEntryValue | null) {
+  return String(value || "").trim();
+}
+
+function nullable(value: string) {
+  return value || null;
+}
+
+const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
+const ALLOWED_LOGO_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/svg+xml",
+]);
+
+function getLogoExtension(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+
+  if (extension === "jpg" || extension === "jpeg") return "jpg";
+  if (extension === "png" || extension === "webp" || extension === "svg") {
+    return extension;
+  }
+
+  return file.type === "image/svg+xml" ? "svg" : "png";
+}
+
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -159,6 +186,7 @@ async function saveStepData(
     const schoolPayload = {
       ...(schoolName ? { name: schoolName } : {}),
       mascot,
+      logo_url: nullable(cleanMultilineText(formData.get("logoUrl"))),
       ...(districtId ? { district_id: districtId } : {}),
     };
 
@@ -256,6 +284,93 @@ function revalidateAppearanceRoutes(school: string) {
   revalidatePath("/[school]/admin", "layout");
   revalidatePath("/[school]/admin/setup", "layout");
   revalidatePath("/admin/[school]/setup", "layout");
+}
+
+function revalidateSetupLogoRoutes(school: string) {
+  const paths = [
+    `/${school}`,
+    `/${school}/admin`,
+    `/${school}/admin/setup`,
+    `/${school}/admin/setup/school-profile`,
+    `/${school}/admin/setup/appearance`,
+    `/${school}/app`,
+    `/${school}/kiosk`,
+    `/admin/${school}`,
+    `/admin/${school}/setup`,
+    `/admin/${school}/setup/school-profile`,
+    `/admin/${school}/setup/appearance`,
+  ];
+
+  for (const path of paths) {
+    revalidatePath(path);
+  }
+
+  revalidatePath("/[school]/admin", "layout");
+  revalidatePath("/[school]/app", "layout");
+  revalidatePath("/[school]/kiosk", "page");
+}
+
+export async function updateSetupLogoAction(school: string, logoUrl: string) {
+  const { schoolData, serviceSupabase } = await requireSetupAccess(school);
+  const { error } = await serviceSupabase
+    .from("schools")
+    .update({ logo_url: nullable(cleanMultilineText(logoUrl)) })
+    .eq("id", schoolData.id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidateSetupLogoRoutes(school);
+}
+
+export async function uploadSetupLogoAction(formData: FormData) {
+  const school = cleanText(formData.get("school"));
+  const file = formData.get("logo");
+
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("Choose a logo file to upload.");
+  }
+
+  if (!ALLOWED_LOGO_TYPES.has(file.type)) {
+    throw new Error("Use a PNG, JPG, WEBP, or SVG logo.");
+  }
+
+  if (file.size > MAX_LOGO_SIZE_BYTES) {
+    throw new Error("Logo must be 2MB or smaller.");
+  }
+
+  const { schoolData, serviceSupabase } = await requireSetupAccess(school);
+  const extension = getLogoExtension(file);
+  const filePath = `logos/${school}/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await serviceSupabase.storage
+    .from("school-logos")
+    .upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message);
+  }
+
+  const { data } = serviceSupabase.storage
+    .from("school-logos")
+    .getPublicUrl(filePath);
+  const logoUrl = data.publicUrl;
+  const { error: updateError } = await serviceSupabase
+    .from("schools")
+    .update({ logo_url: logoUrl })
+    .eq("id", schoolData.id);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  revalidateSetupLogoRoutes(school);
+
+  return { logoUrl };
 }
 
 export async function continueSetupStepAction(formData: FormData) {

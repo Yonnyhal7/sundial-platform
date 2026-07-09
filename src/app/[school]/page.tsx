@@ -13,6 +13,15 @@ type School = {
   timezone: string;
 };
 
+function getTodayDateString() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export default async function SchoolPage({
   params,
 }: {
@@ -45,7 +54,7 @@ export default async function SchoolPage({
     .select("id, title, event_date, start_time, location")
     .eq("school_id", schoolData.id)
     .eq("is_active", true)
-    .gte("event_date", new Date().toISOString().slice(0, 10))
+    .gte("event_date", getTodayDateString())
     .order("event_date", { ascending: true })
     .limit(3);
 

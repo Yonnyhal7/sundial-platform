@@ -26,6 +26,15 @@ function createInviteToken() {
   return crypto.randomUUID().replace(/-/g, "");
 }
 
+class SchoolInsertError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
 async function insertSchoolWithSetupIncomplete({
   supabase,
   payload,
@@ -43,6 +52,10 @@ async function insertSchoolWithSetupIncomplete({
     return data;
   }
 
+  if (error?.code === "23505") {
+    throw new SchoolInsertError(error.message, error.code);
+  }
+
   const { data: setupCompleteFallbackData, error: setupCompleteFallbackError } = await supabase
     .from("schools")
     .insert({ ...payload, setup_complete: false })
@@ -53,6 +66,10 @@ async function insertSchoolWithSetupIncomplete({
     return setupCompleteFallbackData;
   }
 
+  if (setupCompleteFallbackError?.code === "23505") {
+    throw new SchoolInsertError(setupCompleteFallbackError.message, setupCompleteFallbackError.code);
+  }
+
   const { data: fallbackData, error: fallbackError } = await supabase
     .from("schools")
     .insert(payload)
@@ -60,11 +77,12 @@ async function insertSchoolWithSetupIncomplete({
     .single<{ id: string; subdomain: string }>();
 
   if (fallbackError || !fallbackData) {
-    throw new Error(
+    throw new SchoolInsertError(
       fallbackError?.message ||
         setupCompleteFallbackError?.message ||
         error?.message ||
-        "Could not create school."
+        "Could not create school.",
+      fallbackError?.code
     );
   }
 
@@ -116,29 +134,51 @@ export async function createSchoolAction(
     return { error: "Enter a school name with at least one letter or number." };
   }
 
-  const subdomain = await generateUniqueSchoolSubdomain(supabase, name);
   const now = new Date().toISOString();
+  const MAX_SUBDOMAIN_ATTEMPTS = 5;
 
-  const payload = {
-    name,
-    slug: subdomain,
-    subdomain,
-    mascot: "",
-    primary_color: "#2563eb",
-    secondary_color: "#64748b",
-    timezone: "America/Los_Angeles",
-    is_active: false,
-    ...(profile.district_id ? { district_id: profile.district_id } : {}),
-    created_at: now,
-  };
+  let school: { id: string; subdomain: string } | undefined;
+  let lastError: unknown;
 
-  let school: { id: string; subdomain: string };
+  for (let attempt = 0; attempt < MAX_SUBDOMAIN_ATTEMPTS; attempt++) {
+    const subdomain = await generateUniqueSchoolSubdomain(supabase, name);
+    const payload = {
+      name,
+      slug: subdomain,
+      subdomain,
+      mascot: "",
+      primary_color: "#2563eb",
+      secondary_color: "#64748b",
+      timezone: "America/Los_Angeles",
+      is_active: false,
+      ...(profile.district_id ? { district_id: profile.district_id } : {}),
+      created_at: now,
+    };
 
-  try {
-    school = await insertSchoolWithSetupIncomplete({ supabase, payload });
-  } catch (error) {
+    try {
+      school = await insertSchoolWithSetupIncomplete({ supabase, payload });
+      break;
+    } catch (error) {
+      lastError = error;
+
+      // Another request just took this subdomain between our availability
+      // check and this insert — regenerate and retry instead of failing.
+      if (error instanceof SchoolInsertError && error.code === "23505") {
+        continue;
+      }
+
+      return {
+        error: error instanceof Error ? error.message : "Could not create school.",
+      };
+    }
+  }
+
+  if (!school) {
     return {
-      error: error instanceof Error ? error.message : "Could not create school.",
+      error:
+        lastError instanceof Error
+          ? lastError.message
+          : "Could not create school. Please try again.",
     };
   }
 

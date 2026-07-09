@@ -62,38 +62,38 @@ export default async function AdminAnnouncementsPage({
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <p className="text-sm text-slate-400">{schoolData.name} Admin</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{schoolData.name} Admin</p>
             <h1 className="mt-1 text-3xl font-bold">Announcements</h1>
           </div>
 
         </div>
 
-        <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold">Manage Announcements</h2>
-              <p className="mt-1 text-sm text-slate-400">
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 View school announcements. Create, edit, and delete tools come next.
               </p>
             </div>
 
-            
+
             <Link
                 href={`/${school}/admin/announcements/new`}
-                className="inline-flex w-fit max-w-full cursor-pointer items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium leading-tight text-white hover:bg-blue-500 sm:shrink-0"
+                className="inline-flex w-fit max-w-full cursor-pointer items-center justify-center rounded-lg bg-[var(--school-primary)] px-3 py-2 text-sm font-medium leading-tight text-[var(--school-primary-text)] transition hover:opacity-90 sm:shrink-0"
                 >
                 <span className="hidden sm:inline">+ New Announcement</span>
                 <span className="sm:hidden">+ New</span>
             </Link>
-            
+
           </div>
         </div>
 
         <section className="space-y-4">
           {!announcements || announcements.length === 0 ? (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-8 text-center">
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
               <h3 className="text-lg font-semibold">No announcements yet</h3>
-              <p className="mt-2 text-sm text-slate-400">
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                 Once announcements are created, they will appear here.
               </p>
             </div>
@@ -101,7 +101,7 @@ export default async function AdminAnnouncementsPage({
             announcements.map((announcement) => (
               <article
                 key={announcement.id}
-                className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-lg shadow-black/20"
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -111,20 +111,20 @@ export default async function AdminAnnouncementsPage({
                       </h3>
 
                       {announcement.priority && (
-                        <span className="rounded-full bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-300 ring-1 ring-red-500/30">
+                        <span className="rounded-full bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-500/30 dark:text-red-300">
                           Priority
                         </span>
                       )}
                     </div>
 
-                    <p className="mt-2 line-clamp-2 text-sm text-slate-300">
+                    <p className="mt-2 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">
                       {announcement.body}
                     </p>
                   </div>
 
-                  <div className="text-left text-sm text-slate-400 sm:text-right">
+                  <div className="text-left text-sm text-slate-500 dark:text-slate-400 sm:text-right">
                     <p>Publish Date</p>
-                    <p className="font-medium text-slate-200">
+                    <p className="font-medium text-slate-900 dark:text-slate-200">
                       {announcement.publish_at
                         ? new Date(
                             announcement.publish_at
@@ -134,10 +134,10 @@ export default async function AdminAnnouncementsPage({
                   </div>
                 </div>
 
-                <div className="mt-5 flex gap-3 border-t border-slate-800 pt-4">
+                <div className="mt-5 flex gap-3 border-t border-slate-200 pt-4 dark:border-[#3a3a3a]">
                   <Link
                     href={`/${school}/admin/announcements/${announcement.id}/edit`}
-                    className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
                     >
                     Edit
                     </Link>
@@ -151,7 +151,7 @@ export default async function AdminAnnouncementsPage({
 
                     <button
                         type="submit"
-                        className="cursor-pointer rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
+                        className="cursor-pointer rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
                     >
                         Delete
                     </button>

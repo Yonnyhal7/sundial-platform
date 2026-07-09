@@ -34,3 +34,24 @@ export function getThemeScopeFromPath(
 export function getThemeStorageKey(scope: ThemeScope) {
   return themeStorageKeys[scope];
 }
+
+export function getPreferredTheme(storageKey: string): Theme {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+
+  const savedTheme = window.localStorage.getItem(storageKey);
+
+  if (savedTheme === "light" || savedTheme === "dark") {
+    return savedTheme;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+export function applyTheme(theme: Theme, scope: ThemeScope) {
+  document.documentElement.classList.toggle("dark", theme === "dark");
+  document.documentElement.dataset.themeScope = scope;
+}

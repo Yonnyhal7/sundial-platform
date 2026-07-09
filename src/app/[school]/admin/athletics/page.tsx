@@ -41,13 +41,13 @@ const cardClass =
 const innerCardClass =
   "rounded-2xl border border-slate-200 bg-slate-100 dark:border-[#3a3a3a] dark:bg-[#303030]";
 const newButtonClass =
-  "inline-flex w-fit cursor-pointer items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500";
+  "inline-flex w-fit cursor-pointer items-center justify-center rounded-lg bg-[var(--school-primary)] px-3 py-2 text-sm font-medium text-[var(--school-primary-text)] transition hover:opacity-90";
 const editButtonClass =
   "rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-[#4a4a4a] dark:text-[#d4d4d4] dark:hover:bg-[#303030]";
 const deleteButtonClass =
   "cursor-pointer rounded-lg border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40";
 const iconTileClass =
-  "grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-blue-100 text-blue-700 ring-1 ring-blue-200 dark:bg-[#303030] dark:text-[#d4d4d4] dark:ring-[#4a4a4a]";
+  "grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--school-primary)_14%,white)] text-[var(--school-primary)] ring-1 ring-[color-mix(in_srgb,var(--school-primary)_30%,transparent)] dark:bg-[#303030] dark:text-[#d4d4d4] dark:ring-[#4a4a4a]";
 const helperTextClass = "mt-1 text-sm text-slate-600 dark:text-[#a3a3a3]";
 const mutedTextClass = "text-slate-600 dark:text-[#a3a3a3]";
 const rowDividerClass =
@@ -55,7 +55,7 @@ const rowDividerClass =
 
 function activeBadge(isActive: boolean | null) {
   return isActive ? (
-    <span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-300 ring-1 ring-green-500/30">
+    <span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-700 ring-1 ring-green-500/30 dark:text-green-300">
       Active
     </span>
   ) : (

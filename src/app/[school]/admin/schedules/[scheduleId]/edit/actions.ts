@@ -33,7 +33,7 @@ export async function updateScheduleAction(
 
   if (scheduleError) {
     console.error("Update schedule error:", JSON.stringify(scheduleError, null, 2));
-    return;
+    redirect(`/${school}/admin/schedules/${scheduleId}/edit?error=1`);
   }
 
   const periodIds = formData.getAll("period_id").map(String);
@@ -55,7 +55,7 @@ export async function updateScheduleAction(
 
     if (deletePeriodsError) {
       console.error("Delete periods error:", JSON.stringify(deletePeriodsError, null, 2));
-      return;
+      redirect(`/${school}/admin/schedules/${scheduleId}/edit?error=1`);
     }
   }
 
@@ -80,7 +80,7 @@ export async function updateScheduleAction(
 
       if (insertPeriodError) {
         console.error("Insert period error:", JSON.stringify(insertPeriodError, null, 2));
-        return;
+        redirect(`/${school}/admin/schedules/${scheduleId}/edit?error=1`);
       }
     } else {
       const { error: updatePeriodError } = await supabase
@@ -96,7 +96,7 @@ export async function updateScheduleAction(
 
       if (updatePeriodError) {
         console.error("Update period error:", JSON.stringify(updatePeriodError, null, 2));
-        return;
+        redirect(`/${school}/admin/schedules/${scheduleId}/edit?error=1`);
       }
     }
   }

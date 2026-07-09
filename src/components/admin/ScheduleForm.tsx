@@ -25,6 +25,9 @@ type Period = {
   end_time: string;
 };
 
+const inputClass =
+  "rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[var(--school-primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--school-primary)_20%,transparent)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white";
+
 function SortablePeriodRow({
   period,
   index,
@@ -39,15 +42,17 @@ function SortablePeriodRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: period.id });
 
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
   return (
     <div
       ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-      }}
-      className={`rounded-xl border border-slate-800 bg-slate-950 p-4 ${
-        isDragging ? "opacity-70 ring-2 ring-blue-500" : ""
+      style={style}
+      className={`rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-[#3a3a3a] dark:bg-black/30 ${
+        isDragging ? "opacity-70 ring-2 ring-[var(--school-primary)]" : ""
       }`}
     >
       <div className="grid gap-4 sm:grid-cols-[40px_minmax(0,1fr)] xl:grid-cols-[40px_minmax(0,1fr)_minmax(8rem,10rem)_minmax(8rem,10rem)_auto]">
@@ -55,23 +60,20 @@ function SortablePeriodRow({
           type="button"
           {...attributes}
           {...listeners}
-          className="cursor-grab rounded-lg border border-slate-700 px-3 py-2 text-slate-400 hover:bg-slate-800 active:cursor-grabbing"
+          className="cursor-grab rounded-lg border border-slate-300 px-3 py-2 text-slate-500 hover:bg-slate-100 active:cursor-grabbing dark:border-slate-700 dark:text-slate-400 dark:hover:bg-white/10"
+          aria-label="Drag period"
         >
           ☰
         </button>
 
-        <input
-          type="hidden"
-          name="period_id"
-          value={period.id}
-        />
+        <input type="hidden" name="period_id" value={period.id} />
 
         <input
           name="period_name"
           value={period.name}
           onChange={(e) => updatePeriod(index, "name", e.target.value)}
           placeholder="Period Name"
-          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+          className={inputClass}
         />
 
         <input
@@ -79,7 +81,7 @@ function SortablePeriodRow({
           type="time"
           value={period.start_time}
           onChange={(e) => updatePeriod(index, "start_time", e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+          className={inputClass}
         />
 
         <input
@@ -87,13 +89,13 @@ function SortablePeriodRow({
           type="time"
           value={period.end_time}
           onChange={(e) => updatePeriod(index, "end_time", e.target.value)}
-          className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+          className={inputClass}
         />
 
         <button
           type="button"
           onClick={() => removePeriod(index)}
-          className="rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
+          className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
         >
           Remove
         </button>
@@ -102,27 +104,29 @@ function SortablePeriodRow({
   );
 }
 
-export default function ScheduleEditForm({
+export default function ScheduleForm({
   school,
-  schedule,
-  initialPeriods,
   action,
+  submitLabel,
+  initialScheduleName = "",
+  initialScheduleType = "",
+  initialActive = true,
+  initialPeriods = [],
 }: {
   school: string;
-  schedule: {
-    schedule_name: string;
-    schedule_type: string | null;
-    active: boolean;
-  };
-  initialPeriods: Period[];
   action: (formData: FormData) => void;
+  submitLabel: string;
+  initialScheduleName?: string;
+  initialScheduleType?: string;
+  initialActive?: boolean;
+  initialPeriods?: Period[];
 }) {
   const [periods, setPeriods] = useState<Period[]>(
     initialPeriods.length > 0
       ? initialPeriods
       : [
           {
-            id: crypto.randomUUID(),
+            id: `new-${crypto.randomUUID()}`,
             name: "Period 1",
             start_time: "",
             end_time: "",
@@ -172,41 +176,44 @@ export default function ScheduleEditForm({
   return (
     <form
       action={action}
-      className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6"
+      className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
     >
       <div className="space-y-5">
         <input
           name="schedule_name"
           required
-          defaultValue={schedule.schedule_name}
-          placeholder="Schedule Name"
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3"
+          defaultValue={initialScheduleName}
+          placeholder="Schedule Name, example: Rally Day"
+          className={`w-full ${inputClass}`}
         />
 
         <input
           name="schedule_type"
-          defaultValue={schedule.schedule_type || ""}
-          placeholder="Schedule Type"
-          className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3"
+          defaultValue={initialScheduleType}
+          placeholder="Schedule Type, example: Rally, Regular, Early Out"
+          className={`w-full ${inputClass}`}
         />
 
-        <label className="flex items-center gap-3">
+        <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#3a3a3a] dark:bg-black/30">
           <input
             type="checkbox"
             name="active"
-            defaultChecked={schedule.active}
+            defaultChecked={initialActive}
+            className="h-4 w-4 rounded border-slate-300 dark:border-slate-600"
           />
-          Active
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Active
+          </span>
         </label>
 
-        <div className="border-t border-slate-800 pt-5">
+        <div className="border-t border-slate-200 pt-5 dark:border-[#3a3a3a]">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Periods</h2>
+            <h2 className="text-xl font-bold">Periods</h2>
 
             <button
               type="button"
               onClick={addPeriod}
-              className="rounded-lg bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
             >
               + Add Period
             </button>
@@ -237,14 +244,19 @@ export default function ScheduleEditForm({
         </div>
       </div>
 
-      <div className="mt-8 flex justify-between border-t border-slate-800 pt-5">
-        <Link href={`/${school}/admin/schedules`}>Cancel</Link>
+      <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5 dark:border-[#3a3a3a]">
+        <Link
+          href={`/${school}/admin/schedules`}
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
+        >
+          Cancel
+        </Link>
 
         <button
           type="submit"
-          className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 font-semibold"
+          className="cursor-pointer rounded-lg bg-[var(--school-primary)] px-5 py-2 text-sm font-semibold text-[var(--school-primary-text)] transition hover:opacity-90"
         >
-          Save Changes
+          {submitLabel}
         </button>
       </div>
     </form>

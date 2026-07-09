@@ -45,10 +45,15 @@ export default async function AdminCalendarPage({
     console.error("Calendar days error:", JSON.stringify(calendarError, null, 2));
   }
 
-  const { data: periods, error: periodsError } = await supabase
-    .from("periods")
-    .select("id, schedule_id, name, start_time, end_time, sort_order")
-    .order("sort_order", { ascending: true });
+  const scheduleIds = (schedules || []).map((schedule) => schedule.id);
+
+  const { data: periods, error: periodsError } = scheduleIds.length
+    ? await supabase
+        .from("periods")
+        .select("id, schedule_id, name, start_time, end_time, sort_order")
+        .in("schedule_id", scheduleIds)
+        .order("sort_order", { ascending: true })
+    : { data: [], error: null };
 
     if (periodsError) {
     console.error("Calendar periods error:", JSON.stringify(periodsError, null, 2));
@@ -96,9 +101,9 @@ export default async function AdminCalendarPage({
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <p className="text-sm text-slate-400">{schoolData.name} Admin</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{schoolData.name} Admin</p>
             <h1 className="mt-1 text-3xl font-bold">Calendar</h1>
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               Assign schedule templates to specific school days.
             </p>
           </div>

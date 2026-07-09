@@ -44,6 +44,8 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
             <Link
               key={item.href}
               href={item.href}
+              aria-label={item.label}
+              aria-current={active ? "page" : undefined}
               className={`flex min-h-[3.5rem] sm:min-h-16 w-full flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 sm:py-1 text-[0.7rem] font-semibold transition ${
                 active
                   ? "bg-[color-mix(in_srgb,var(--school-primary)_10%,transparent)] text-[var(--school-primary)]"
@@ -51,7 +53,7 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
               }`}
             >
               <Icon className="h-7 w-7" />
-              <span className="mt-0.5 leading-tight text-center max-[480px]:hidden block">{item.label}</span>
+              <span aria-hidden="true" className="mt-0.5 leading-tight text-center max-[480px]:hidden block">{item.label}</span>
             </Link>
           );
         })}

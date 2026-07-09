@@ -94,6 +94,9 @@ body {
   --admin-text: #0f172a;
   --admin-muted: #475569;
   --admin-subtle: #64748b;
+  --school-accent-visible: var(--school-accent-visible-light);
+  --school-accent-visible-card: var(--school-accent-visible-card-light);
+  --school-accent-visible-primary: var(--school-accent-visible-primary-light);
   background: var(--admin-bg);
   color: var(--admin-text);
 }
@@ -116,6 +119,9 @@ body {
   --admin-surface-muted: #2f2f2f;
   --admin-border: #3a3a3a;
   --admin-text: #f8fafc;
+  --school-accent-visible: var(--school-accent-visible-dark);
+  --school-accent-visible-card: var(--school-accent-visible-card-dark);
+  --school-accent-visible-primary: var(--school-accent-visible-primary-dark);
   --admin-muted: #d4d4d4;
   --admin-subtle: #a3a3a3;
 }
@@ -279,6 +285,8 @@ body {
   --kiosk-surface: #ffffff;
   --kiosk-muted: #64748b;
   --kiosk-border: #e2e8f0;
+  --school-accent-visible: var(--school-accent-visible-light);
+  --school-accent-visible-card: var(--school-accent-visible-card-light);
   background: var(--kiosk-bg);
   color: var(--kiosk-text);
 }
@@ -289,6 +297,20 @@ body {
   --kiosk-surface: #242424;
   --kiosk-muted: #bdbdbd;
   --kiosk-border: #3a3a3a;
+  --school-accent-visible: var(--school-accent-visible-dark);
+  --school-accent-visible-card: var(--school-accent-visible-card-dark);
+}
+
+.mobile-app-theme {
+  --school-accent-visible: var(--school-accent-visible-light);
+  --school-accent-visible-card: var(--school-accent-visible-card-light);
+  --school-accent-visible-primary: var(--school-accent-visible-primary-light);
+}
+
+.dark .mobile-app-theme {
+  --school-accent-visible: var(--school-accent-visible-dark);
+  --school-accent-visible-card: var(--school-accent-visible-card-dark);
+  --school-accent-visible-primary: var(--school-accent-visible-primary-dark);
 }
 
 .kiosk-theme [class~="bg-[#f7f8fb]"],

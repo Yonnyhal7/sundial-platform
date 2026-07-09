@@ -4,6 +4,14 @@ import type { SetupStepSlug } from "@/lib/setupSteps";
 
 export type SchoolSetupStatus = "active" | "incomplete";
 
+export type SuperAdminSchoolSummary = {
+  id: string;
+  name: string;
+  subdomain: string;
+  is_active: boolean | null;
+  created_at: string | null;
+};
+
 const RESERVED_SUBDOMAINS = new Set([
   "admin",
   "api",

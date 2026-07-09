@@ -66,16 +66,16 @@ export default async function AdminSchedulesPage({
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <p className="text-sm text-slate-400">{schoolData.name} Admin</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{schoolData.name} Admin</p>
             <h1 className="mt-1 text-3xl font-bold">Schedules</h1>
           </div>
 
         </div>
 
-        <div className="mb-6 flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+        <div className="mb-6 flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
           <div>
             <h2 className="text-lg font-semibold">Manage Schedule Templates</h2>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               Create bell schedule templates like Regular Day, Minimum Day,
               Rally Day, and Finals.
             </p>
@@ -83,7 +83,7 @@ export default async function AdminSchedulesPage({
 
           <Link
             href={`/${school}/admin/schedules/new`}
-            className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            className="cursor-pointer rounded-lg bg-[var(--school-primary)] px-4 py-2 text-sm font-medium text-[var(--school-primary-text)] transition hover:opacity-90"
           >
             + New Schedule
           </Link>
@@ -91,9 +91,9 @@ export default async function AdminSchedulesPage({
 
         <section className="space-y-4">
           {!schedules || schedules.length === 0 ? (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-8 text-center">
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
               <h3 className="text-lg font-semibold">No schedules yet</h3>
-              <p className="mt-2 text-sm text-slate-400">
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                 Create your first schedule template to begin building the school
                 calendar.
               </p>
@@ -102,7 +102,7 @@ export default async function AdminSchedulesPage({
             schedules.map((schedule) => (
               <article
                 key={schedule.id}
-                className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -112,24 +112,24 @@ export default async function AdminSchedulesPage({
                       </h3>
 
                       {schedule.active && (
-                        <span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-300 ring-1 ring-green-500/30">
+                        <span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-700 ring-1 ring-green-500/30 dark:text-green-300">
                           Active
                         </span>
                       )}
                     </div>
 
                     {schedule.schedule_type && (
-                      <p className="mt-2 text-sm text-slate-300">
+                      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
                         {schedule.schedule_type}
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-800 pt-4">
+                <div className="mt-5 flex flex-wrap gap-3 border-t border-slate-200 pt-4 dark:border-[#3a3a3a]">
                   <Link
                     href={`/${school}/admin/schedules/${schedule.id}/edit`}
-                    className="cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                    className="cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
                   >
                     Edit Schedule
                   </Link>
@@ -143,7 +143,7 @@ export default async function AdminSchedulesPage({
 
                     <button
                       type="submit"
-                      className="cursor-pointer rounded-lg border border-red-900/60 px-3 py-2 text-sm text-red-300 hover:bg-red-950/40"
+                      className="cursor-pointer rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
                     >
                       Delete
                     </button>

@@ -118,17 +118,6 @@ export default function CalendarClient({
     setSelectedDate(null);
   }
 
-  function handleSubmit() {
-    if (!selectedDate) return;
-
-    const existingDay = assignedDays.get(selectedDate);
-
-    if (existingDay) {
-        existingDay.is_school_day = isSchoolDay;
-        existingDay.schedule_id = isSchoolDay ? selectedScheduleId || null : null;
-    }
-  }
-
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
       <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:p-5">
@@ -209,7 +198,7 @@ export default function CalendarClient({
                 }}
                 className={`relative aspect-square cursor-pointer overflow-hidden rounded-xl border p-1.5 text-left transition sm:p-2 ${
                   isSelected
-                    ? "border-blue-500 bg-blue-50 text-blue-900 shadow-sm dark:border-blue-400 dark:bg-blue-500/15 dark:text-blue-100"
+                    ? "border-[var(--school-primary)] bg-[color-mix(in_srgb,var(--school-primary)_10%,white)] text-[var(--school-primary)] shadow-sm dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,transparent)] dark:text-white"
                     : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
                 }`}
                 aria-label={`${dateString}${hasIndicator ? `, ${indicatorValue.trim()}` : ""}`}
@@ -241,7 +230,7 @@ export default function CalendarClient({
             Select a date on the calendar to assign a schedule.
           </p>
         ) : (
-          <form key={`${selectedDate}-${selectedCalendarDay?.schedule_id || "none"}`} action={action} onSubmit={handleSubmit} className="mt-5 space-y-5">
+          <form key={`${selectedDate}-${selectedCalendarDay?.schedule_id || "none"}`} action={action} className="mt-5 space-y-5">
             <input type="hidden" name="date" value={selectedDate} />
 
             <div>
@@ -346,7 +335,7 @@ export default function CalendarClient({
 
             <button
               type="submit"
-              className="w-full cursor-pointer rounded-lg bg-blue-600 px-4 py-3 font-semibold hover:bg-blue-500"
+              className="w-full cursor-pointer rounded-lg bg-[var(--school-primary)] px-4 py-3 font-semibold text-[var(--school-primary-text)] transition hover:opacity-90"
             >
               Save Calendar Day
             </button>

@@ -60,8 +60,11 @@ export default function LoginForm({ school }: { school: string }) {
 
         <div className="mt-8 space-y-4">
           <div>
-            <label className="text-sm text-neutral-400">Email</label>
+            <label htmlFor="login-email" className="text-sm text-neutral-400">
+              Email
+            </label>
             <input
+              id="login-email"
               type="email"
               required
               value={email}
@@ -71,8 +74,11 @@ export default function LoginForm({ school }: { school: string }) {
           </div>
 
           <div>
-            <label className="text-sm text-neutral-400">Password</label>
+            <label htmlFor="login-password" className="text-sm text-neutral-400">
+              Password
+            </label>
             <input
+              id="login-password"
               type="password"
               required
               value={password}

@@ -35,6 +35,20 @@ function applyAppearance(appearance: AppAppearance) {
   document.documentElement.dataset.themeScope = "app";
 }
 
+function BackArrowIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M19 12H5M11 6l-6 6 6 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function ExternalLinkIcon() {
   return (
     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -267,7 +281,7 @@ export default function AppHeader({
               onClick={closeMenu}
               className="mb-6 flex w-fit items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--school-primary-text)_26%,transparent)] bg-[color-mix(in_srgb,var(--school-primary-text)_10%,transparent)] px-4 py-2 text-sm font-black transition hover:bg-[color-mix(in_srgb,var(--school-primary-text)_16%,transparent)]"
             >
-              <span aria-hidden="true">?</span>
+              <BackArrowIcon />
               Back
             </button>
 
@@ -399,7 +413,7 @@ export default function AppHeader({
                 onClick={closeNotifications}
                 className="mb-6 flex w-fit items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--school-primary-text)_26%,transparent)] bg-[color-mix(in_srgb,var(--school-primary-text)_10%,transparent)] px-4 py-2 text-sm font-black transition hover:bg-[color-mix(in_srgb,var(--school-primary-text)_16%,transparent)]"
               >
-                <span aria-hidden="true">?</span>
+                <BackArrowIcon />
                 Back
               </button>
 

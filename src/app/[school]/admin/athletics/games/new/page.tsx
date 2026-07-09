@@ -6,10 +6,13 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function NewGamePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ school: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { school } = await params;
+  const { error: errorParam } = await searchParams;
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
@@ -38,7 +41,9 @@ export default async function NewGamePage({
     const teamId = String(formData.get("team_id") || "");
     const opponent = String(formData.get("opponent") || "").trim();
 
-    if (!teamId || !opponent) return;
+    if (!teamId || !opponent) {
+      redirect(`/${school}/admin/athletics/games/new?error=1`);
+    }
 
     const { error } = await supabase.from("games").insert({
       school_id: schoolId,
@@ -52,7 +57,7 @@ export default async function NewGamePage({
 
     if (error) {
       console.error("Create game error:", JSON.stringify(error, null, 2));
-      return;
+      redirect(`/${school}/admin/athletics/games/new?error=1`);
     }
 
     redirect(`/${school}/admin/athletics`);
@@ -66,11 +71,17 @@ export default async function NewGamePage({
           <h1 className="mt-1 text-3xl font-bold">New Game</h1>
         </div>
 
+        {errorParam && (
+          <p className="mb-6 inline-block rounded-full bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-500/30 dark:text-red-300">
+            Something went wrong saving this game. Please check the required fields and try again.
+          </p>
+        )}
+
         <form action={createGame} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424] dark:shadow-none">
           <div className="space-y-5">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Team</label>
-              <select name="team_id" required className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white">
+              <select name="team_id" required className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white">
                 <option value="">Select team</option>
                 {(teams || []).map((team) => (
                   <option key={team.id} value={team.id}>{team.name}</option>
@@ -80,7 +91,7 @@ export default async function NewGamePage({
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Opponent</label>
-              <input name="opponent" required className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
+              <input name="opponent" required className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
             </div>
 
             <div>
@@ -90,12 +101,12 @@ export default async function NewGamePage({
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Location</label>
-              <input name="location" className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
+              <input name="location" className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
             </div>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Notes <span className="font-normal text-slate-500 dark:text-[#a3a3a3]">(optional)</span></label>
-              <textarea name="notes" rows={4} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-blue-500 dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
+              <textarea name="notes" rows={4} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
             </div>
 
             <label className="flex items-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 dark:border-[#3a3a3a] dark:bg-[#181818]">
@@ -106,7 +117,7 @@ export default async function NewGamePage({
 
           <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-5 dark:border-[#3a3a3a]">
             <Link href={`/${school}/admin/athletics`} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-[#4a4a4a] dark:text-[#d4d4d4] dark:hover:bg-[#303030]">Cancel</Link>
-            <button type="submit" className="cursor-pointer rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-500">Create Game</button>
+            <button type="submit" className="cursor-pointer rounded-lg bg-[var(--school-primary)] px-5 py-2 text-sm font-semibold text-[var(--school-primary-text)] transition hover:opacity-90">Create Game</button>
           </div>
         </form>
       </div>
