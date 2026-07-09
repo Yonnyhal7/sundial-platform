@@ -23,6 +23,16 @@ type AppHeaderProps = {
 
 type AppAppearance = Theme | "system";
 
+function getStoredAppearance(storageKey: string): AppAppearance {
+  if (typeof window === "undefined") {
+    return "system";
+  }
+
+  const savedTheme = window.localStorage.getItem(storageKey);
+
+  return savedTheme === "light" || savedTheme === "dark" ? savedTheme : "system";
+}
+
 function applyAppearance(appearance: AppAppearance) {
   const resolved =
     appearance === "system"
@@ -106,8 +116,10 @@ export default function AppHeader({
   const [menuMounted, setMenuMounted] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsMounted, setNotificationsMounted] = useState(false);
-  const [appearance, setAppearance] = useState<AppAppearance>("system");
   const storageKey = getThemeStorageKey("app");
+  const [appearance, setAppearance] = useState<AppAppearance>(() =>
+    getStoredAppearance(storageKey)
+  );
   const homeHref = `/${school}/app`;
   const todayNotifications = [
     {
@@ -153,23 +165,18 @@ export default function AppHeader({
   ).length;
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem(storageKey);
-    const savedAppearance =
-      savedTheme === "light" || savedTheme === "dark" ? savedTheme : "system";
-
-    setAppearance(savedAppearance);
-    applyAppearance(savedAppearance);
+    applyAppearance(appearance);
 
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const syncSystem = () => {
-      if (!window.localStorage.getItem(storageKey)) {
+      if (appearance === "system") {
         applyAppearance("system");
       }
     };
 
     media.addEventListener("change", syncSystem);
     return () => media.removeEventListener("change", syncSystem);
-  }, [storageKey]);
+  }, [appearance]);
 
   useEffect(() => {
     if (!menuMounted && !notificationsMounted) return;
@@ -429,7 +436,7 @@ export default function AppHeader({
             <div className="flex-1 p-5">
               {[...todayNotifications, ...earlierNotifications].length === 0 ? (
                 <div className="grid min-h-52 place-items-center rounded-3xl border border-slate-200 bg-white p-6 text-center dark:border-[#3a3a3a] dark:bg-[#242424]">
-                  <p className="text-base font-black">You're all caught up.</p>
+                  <p className="text-base font-black">You&apos;re all caught up.</p>
                 </div>
               ) : (
                 <div className="space-y-7">
