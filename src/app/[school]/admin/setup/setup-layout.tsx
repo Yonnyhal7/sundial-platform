@@ -8,8 +8,6 @@ import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
 import {
   getNextSetupStep,
   getPreviousSetupStep,
-  getSetupStepNumber,
-  SETUP_STEPS,
   type SetupStepSlug,
 } from "@/lib/setupSteps";
 import { continueSetupStepAction, saveSetupProgressAction } from "./actions";
@@ -23,70 +21,6 @@ type SetupLayoutProps = {
   continueAction?: (formData: FormData) => void | Promise<void>;
   children: ReactNode;
 };
-
-function SetupProgress({
-  currentStep,
-  stepHrefs,
-}: {
-  currentStep: SetupStepSlug;
-  stepHrefs: Record<SetupStepSlug, string>;
-}) {
-  const currentStepNumber = getSetupStepNumber(currentStep);
-
-  return (
-    <div className="mt-8">
-      <p className="text-sm font-semibold text-slate-500">
-        Step {currentStepNumber} of {SETUP_STEPS.length}
-      </p>
-      <div className="mt-5 grid grid-cols-2 gap-x-3 gap-y-5 text-xs sm:grid-cols-3 xl:grid-cols-6">
-        {SETUP_STEPS.map((step, index) => {
-          const isCurrent = step.slug === currentStep;
-          const stepNumber = index + 1;
-
-          return (
-            <div
-              key={step.slug}
-              className="relative flex flex-col items-center text-center"
-            >
-              <Link
-                href={stepHrefs[step.slug]}
-                className={[
-                  "group relative z-10 flex cursor-pointer flex-col items-center rounded-lg px-2 py-1 transition",
-                  isCurrent
-                    ? "text-slate-950"
-                    : "text-slate-400 hover:bg-white hover:text-slate-700 dark:hover:bg-white/10 dark:hover:text-slate-100",
-                ].join(" ")}
-                aria-current={isCurrent ? "step" : undefined}
-              >
-                <span
-                  className={[
-                    "flex h-8 w-8 items-center justify-center rounded-full border text-sm font-semibold transition",
-                    isCurrent
-                      ? "border-[#D4A017] bg-[#D4A017] text-white shadow-sm shadow-[#D4A017]/20"
-                      : "border-slate-200 bg-white text-slate-400 group-hover:border-slate-300",
-                  ].join(" ")}
-                >
-                  {stepNumber}
-                </span>
-                <span
-                  className={[
-                    "mt-2 font-medium",
-                    isCurrent ? "text-slate-950" : "text-inherit",
-                  ].join(" ")}
-                >
-                  {step.label}
-                </span>
-              </Link>
-              {index < SETUP_STEPS.length - 1 && (
-                <span className="absolute left-[calc(50%+1rem)] top-4 hidden h-px w-[calc(100%-2rem)] bg-slate-200 xl:block" />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 export default async function SetupLayout({
   school,
@@ -102,14 +36,6 @@ export default async function SetupLayout({
   const backHref = previousStep
     ? await getSchoolSetupStepPath(school, previousStep)
     : await getSchoolAdminPath(school);
-  const stepHrefs = Object.fromEntries(
-    await Promise.all(
-      SETUP_STEPS.map(async (step) => [
-        step.slug,
-        await getSchoolSetupStepPath(school, step.slug),
-      ])
-    )
-  ) as Record<SetupStepSlug, string>;
 
   return (
     <main className="min-h-screen bg-slate-50 p-6 text-slate-950 dark:bg-black dark:text-white lg:p-10">
@@ -131,8 +57,6 @@ export default async function SetupLayout({
             Help
           </Link>
         </div>
-
-        <SetupProgress currentStep={currentStep} stepHrefs={stepHrefs} />
 
         <form action={continueAction}>
           <input type="hidden" name="school" value={school} />

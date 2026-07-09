@@ -3,21 +3,12 @@ import type { CSSProperties } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
 import { getSchoolTheme } from "@/lib/schoolTheme";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSchoolForSetup } from "@/lib/schools";
 import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
 
 type AdminLayoutProps = {
   children: React.ReactNode;
   params: Promise<{ school: string }>;
-};
-
-type School = {
-  id: string;
-  name: string;
-  primary_color: string | null;
-  secondary_color: string | null;
-  logo_url?: string | null;
 };
 
 type AdminStyle = CSSProperties & {
@@ -35,14 +26,7 @@ export default async function AdminLayout({
   params,
 }: AdminLayoutProps) {
   const { school } = await params;
-  const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
-      subdomain_input: school,
-    })
-    .single<School>();
-  const setupSchoolData = schoolData || (await getSchoolForSetup(school));
+  const setupSchoolData = await getSchoolForSetup(school);
 
   if (!setupSchoolData) {
     notFound();
@@ -69,7 +53,9 @@ export default async function AdminLayout({
       <AdminSidebar
         school={school}
         schoolName={setupSchoolData.name}
-        logoUrl={"logo_url" in setupSchoolData ? setupSchoolData.logo_url || null : null}
+        logoUrl={setupSchoolData.logo_url || null}
+        setupComplete={setupSchoolData.setup_complete}
+        setupStep={setupSchoolData.setup_step}
         canManageSettings={
           isSuperAdminRole(adminUser.profile.role) ||
           isSchoolAdminRole(adminUser.profile.role)

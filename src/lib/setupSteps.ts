@@ -2,26 +2,32 @@ export const SETUP_STEPS = [
   {
     slug: "welcome",
     label: "Welcome",
+    description: "Start the onboarding checklist and review what happens next.",
   },
   {
     slug: "school-profile",
     label: "School Profile",
+    description: "Configure your school's name, district, mascot, and logo.",
   },
   {
     slug: "appearance",
     label: "Appearance",
+    description: "Choose your school color, accent color, logo, and visual style.",
   },
   {
     slug: "administrators",
     label: "Users",
+    description: "Add the administrators and editors who will manage your school.",
   },
   {
     slug: "schedule",
     label: "Schedule Wizard",
+    description: "Generate your school year calendar and bell schedule foundation.",
   },
   {
     slug: "complete",
     label: "Launch School",
+    description: "Review everything and unlock the full School Admin Dashboard.",
   },
 ] as const;
 
@@ -61,4 +67,40 @@ export function getPreviousSetupStep(step: SetupStepSlug) {
 
 export function getSetupStepNumber(step: SetupStepSlug) {
   return getSetupStepIndex(step) + 1;
+}
+
+export type SetupStepStatus = "completed" | "current" | "upcoming";
+
+export function getCompletedSetupStepCount(
+  currentStep: SetupStepSlug,
+  setupComplete = false
+) {
+  if (setupComplete) {
+    return SETUP_STEPS.length;
+  }
+
+  return Math.max(0, getSetupStepIndex(currentStep));
+}
+
+export function getSetupStepStatus(
+  step: SetupStepSlug,
+  currentStep: SetupStepSlug,
+  setupComplete = false
+): SetupStepStatus {
+  if (setupComplete) {
+    return "completed";
+  }
+
+  const stepIndex = getSetupStepIndex(step);
+  const currentIndex = getSetupStepIndex(currentStep);
+
+  if (stepIndex < currentIndex) {
+    return "completed";
+  }
+
+  if (stepIndex === currentIndex) {
+    return "current";
+  }
+
+  return "upcoming";
 }
