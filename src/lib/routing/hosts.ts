@@ -21,7 +21,16 @@ export type ParsedHost =
     };
 
 const LOCALHOST_NAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
-const RESERVED_SUBDOMAINS = new Set(["www"]);
+const RESERVED_SUBDOMAINS = new Set([
+  "admin",
+  "api",
+  "app",
+  "dashboard",
+  "select-school",
+  "status",
+  "support",
+  "www",
+]);
 
 function normalizeHostname(host: string) {
   const forwardedHost = host.split(",")[0]?.trim() || "";
@@ -38,6 +47,10 @@ function normalizeHostname(host: string) {
 
 function normalizeRootDomain(rootDomain: string) {
   return normalizeHostname(rootDomain).replace(/^\./, "");
+}
+
+export function getForwardedHost(headers: Pick<Headers, "get">) {
+  return headers.get("x-forwarded-host") ?? headers.get("host") ?? "";
 }
 
 function parseLocalDevelopmentHost(hostname: string): ParsedHost | null {

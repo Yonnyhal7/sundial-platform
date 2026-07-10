@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSchoolAdminRole, isSuperAdminRole, normalizeAdminRole } from "@/lib/userAccess";
-import { parseSundialHost } from "@/lib/routing/hosts";
+import { getForwardedHost, parseSundialHost } from "@/lib/routing/hosts";
 
 type School = {
   id: string;
@@ -14,7 +14,7 @@ type School = {
 export default async function SelectSchoolPage() {
   const supabase = await createSupabaseServerClient();
   const headerStore = await headers();
-  const parsedHost = parseSundialHost(headerStore.get("host") || "");
+  const parsedHost = parseSundialHost(getForwardedHost(headerStore));
   const {
     data: { user },
   } = await supabase.auth.getUser();

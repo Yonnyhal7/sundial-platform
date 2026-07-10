@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isSystemPath, parseSundialHost } from "@/lib/routing/hosts";
+import {
+  getForwardedHost,
+  isSystemPath,
+  parseSundialHost,
+} from "@/lib/routing/hosts";
 
 export function proxy(req: NextRequest) {
-  const host = req.headers.get("host") || "";
+  const host = getForwardedHost(req.headers);
   const pathname = req.nextUrl.pathname;
 
   // Ignore framework, API, and static asset routes.
@@ -12,15 +16,25 @@ export function proxy(req: NextRequest) {
 
   const parsedHost = parseSundialHost(host);
   const url = req.nextUrl.clone();
+  const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "sundialk12.com";
 
   // sundialk12.com -> marketing/public product site.
   if (parsedHost.kind === "marketing") {
+    if (parsedHost.hostname === `www.${rootDomain}` && pathname.startsWith("/admin/")) {
+      const adminUrl = req.nextUrl.clone();
+      adminUrl.hostname = `admin.${rootDomain}`;
+      adminUrl.pathname = pathname.replace(/^\/admin/, "") || "/";
+      return NextResponse.redirect(adminUrl);
+    }
+
     return NextResponse.next();
   }
 
   // admin.sundialk12.com owns admin-only URLs:
   // / -> /admin, /dashboard -> /admin/dashboard,
   // /select-school -> /admin/select-school, /:school/* -> /:school/admin/*.
+  // This branch must run before generic school subdomain handling so the
+  // reserved "admin" subdomain is never interpreted as a school tenant.
   if (parsedHost.kind === "admin") {
     if (
       pathname === "/admin" ||
@@ -92,8 +106,13 @@ export function proxy(req: NextRequest) {
   // Local subdomains such as deloro.localhost:3000 are also supported.
   if (parsedHost.kind === "school" || (parsedHost.kind === "dev" && parsedHost.school)) {
     const school = parsedHost.school;
+    const schoolPath = `/${school}`;
 
-    url.pathname = `/${school}${pathname}`;
+    if (pathname === schoolPath || pathname.startsWith(`${schoolPath}/`)) {
+      return NextResponse.next();
+    }
+
+    url.pathname = `${schoolPath}${pathname === "/" ? "" : pathname}`;
     return NextResponse.rewrite(url);
   }
 

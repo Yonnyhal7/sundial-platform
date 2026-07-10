@@ -6,7 +6,7 @@ import {
   isSuperAdminRole,
   normalizeAdminRole,
 } from "@/lib/userAccess";
-import { parseSundialHost } from "@/lib/routing/hosts";
+import { getForwardedHost, parseSundialHost } from "@/lib/routing/hosts";
 import type { SetupStepSlug } from "@/lib/setupSteps";
 
 export const ADMIN_PERMISSION_KEYS = [
@@ -46,7 +46,7 @@ export type CurrentAdminUser = {
 
 async function getRequestHost() {
   const headerStore = await headers();
-  return headerStore.get("host") || "";
+  return getForwardedHost(headerStore);
 }
 
 async function getAdminLoginPath(school: string) {
