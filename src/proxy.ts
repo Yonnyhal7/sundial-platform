@@ -5,6 +5,17 @@ import {
   parseSundialHost,
 } from "@/lib/routing/hosts";
 
+const RESERVED_ADMIN_PATHS = new Set([
+  "admin",
+  "api",
+  "dashboard",
+  "schools",
+  "select-school",
+  "status",
+  "support",
+  "www",
+]);
+
 export function proxy(req: NextRequest) {
   const host = getForwardedHost(req.headers);
   const pathname = req.nextUrl.pathname;
@@ -16,6 +27,19 @@ export function proxy(req: NextRequest) {
 
   const parsedHost = parseSundialHost(host);
   const url = req.nextUrl.clone();
+
+  function rewritePreservingHost(destination: URL) {
+    const requestHeaders = new Headers(req.headers);
+
+    requestHeaders.set("x-sundial-forwarded-host", host);
+    requestHeaders.set("x-forwarded-host", host);
+
+    return NextResponse.rewrite(destination, {
+      request: {
+        headers: requestHeaders,
+      },
+    });
+  }
 
   // sundialk12.com -> marketing/public product site.
   if (parsedHost.kind === "marketing") {
@@ -46,13 +70,50 @@ export function proxy(req: NextRequest) {
       return NextResponse.rewrite(url);
     }
 
+    // Keep internal /admin/* paths out of the visible admin-subdomain URL.
+    if (pathname === "/admin") {
+      url.pathname = "/";
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname === "/admin/dashboard") {
+      url.pathname = "/dashboard";
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname.startsWith("/admin/dashboard/")) {
+      url.pathname = pathname.replace(/^\/admin\/dashboard/, "/dashboard");
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname === "/admin/select-school") {
+      url.pathname = "/select-school";
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname.startsWith("/admin/select-school/")) {
+      url.pathname = pathname.replace(/^\/admin\/select-school/, "/select-school");
+      return NextResponse.redirect(url);
+    }
+
+    const segments = pathname.split("/").filter(Boolean);
+    const [school, section, ...rest] = segments;
+
     if (
-      pathname === "/admin" ||
-      pathname === "/admin/dashboard" ||
-      pathname.startsWith("/admin/dashboard/") ||
-      pathname === "/admin/select-school" ||
-      pathname.startsWith("/admin/select-school/")
+      segments.length === 1 &&
+      school &&
+      !RESERVED_ADMIN_PATHS.has(school)
     ) {
+      url.pathname = `/${school}/dashboard`;
+      return NextResponse.redirect(url);
+    }
+
+    if (school && section === "dashboard" && !RESERVED_ADMIN_PATHS.has(school)) {
+      url.pathname = `/${school}/admin${rest.length ? `/${rest.join("/")}` : ""}`;
+      return rewritePreservingHost(url);
+    }
+
+    if (school && section === "login" && !RESERVED_ADMIN_PATHS.has(school)) {
       return NextResponse.next();
     }
 

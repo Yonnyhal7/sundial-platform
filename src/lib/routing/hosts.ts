@@ -50,7 +50,12 @@ function normalizeRootDomain(rootDomain: string) {
 }
 
 export function getForwardedHost(headers: Pick<Headers, "get">) {
-  return headers.get("x-forwarded-host") ?? headers.get("host") ?? "";
+  return (
+    headers.get("x-sundial-forwarded-host") ??
+    headers.get("x-forwarded-host") ??
+    headers.get("host") ??
+    ""
+  );
 }
 
 function parseLocalDevelopmentHost(hostname: string): ParsedHost | null {
