@@ -17,28 +17,35 @@ export function proxy(req: NextRequest) {
   const parsedHost = parseSundialHost(host);
   const url = req.nextUrl.clone();
 
-  function rewritePreservingHost(destination: URL) {
-    const requestHeaders = new Headers(req.headers);
-
-    requestHeaders.set("x-forwarded-host", host);
-
-    return NextResponse.rewrite(destination, {
-      request: {
-        headers: requestHeaders,
-      },
-    });
-  }
-
   // sundialk12.com -> marketing/public product site.
   if (parsedHost.kind === "marketing") {
     return NextResponse.next();
   }
 
   // admin.sundialk12.com is reserved and must never be treated as a school
-  // subdomain. School admin paths render the existing /:school/admin routes.
-  // This branch must run before generic school subdomain handling so the
-  // reserved "admin" subdomain is never interpreted as a school tenant.
+  // subdomain. It only exposes SuperAdmin routes and must run before generic
+  // school subdomain handling.
   if (parsedHost.kind === "admin") {
+    if (pathname === "/") {
+      url.pathname = "/admin";
+      return NextResponse.rewrite(url);
+    }
+
+    if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
+      url.pathname = `/admin${pathname}`;
+      return NextResponse.rewrite(url);
+    }
+
+    if (pathname === "/schools" || pathname.startsWith("/schools/")) {
+      url.pathname = `/admin/dashboard${pathname}`;
+      return NextResponse.rewrite(url);
+    }
+
+    if (pathname === "/select-school" || pathname.startsWith("/select-school/")) {
+      url.pathname = `/admin${pathname}`;
+      return NextResponse.rewrite(url);
+    }
+
     if (
       pathname === "/admin" ||
       pathname === "/admin/dashboard" ||
@@ -49,46 +56,8 @@ export function proxy(req: NextRequest) {
       return NextResponse.next();
     }
 
-    if (pathname.startsWith("/admin/")) {
-      const [, , school, ...rest] = pathname.split("/");
-
-      if (!school) {
-        return NextResponse.next();
-      }
-
-      if (school !== "dashboard" && school !== "select-school") {
-        url.pathname = `/${school}/admin${rest.length ? `/${rest.join("/")}` : ""}`;
-        return rewritePreservingHost(url);
-      }
-    }
-
-    if (pathname === "/") {
-      url.pathname = "/admin";
-      return rewritePreservingHost(url);
-    }
-
-    if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
-      url.pathname = `/admin${pathname}`;
-      return rewritePreservingHost(url);
-    }
-
-    if (pathname === "/select-school" || pathname.startsWith("/select-school/")) {
-      url.pathname = `/admin${pathname}`;
-      return rewritePreservingHost(url);
-    }
-
-    const [, school, maybeAdmin, ...rest] = pathname.split("/");
-
-    if (!school) {
-      return NextResponse.next();
-    }
-
-    url.pathname =
-      maybeAdmin === "admin"
-        ? `/${school}/admin${rest.length ? `/${rest.join("/")}` : ""}`
-        : `/${school}/admin${maybeAdmin ? `/${[maybeAdmin, ...rest].join("/")}` : ""}`;
-
-    return rewritePreservingHost(url);
+    url.pathname = "/admin/dashboard";
+    return NextResponse.redirect(url);
   }
 
   // localhost:3000/admin/:school/* mirrors admin.sundialk12.com/:school/*.

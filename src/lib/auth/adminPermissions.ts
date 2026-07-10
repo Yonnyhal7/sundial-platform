@@ -50,15 +50,17 @@ async function getRequestHost() {
 }
 
 async function getAdminLoginPath(school: string) {
+  const parsedHost = parseSundialHost(await getRequestHost());
+
+  if (parsedHost.kind === "dev" && !parsedHost.school) {
+    return "/admin";
+  }
+
   return `/${school}/login`;
 }
 
 export async function getSchoolAdminPath(school: string) {
   const parsedHost = parseSundialHost(await getRequestHost());
-
-  if (parsedHost.kind === "admin") {
-    return `/${school}`;
-  }
 
   if (parsedHost.kind === "dev" && !parsedHost.school) {
     return `/admin/${school}`;
