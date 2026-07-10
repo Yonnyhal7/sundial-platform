@@ -1,14 +1,10 @@
-import { notFound } from "next/navigation";
 import BellScheduleClient from "@/components/mobile-app/BellScheduleClient";
+import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   sortPeriodsByScheduleOrder,
   type SchedulePeriod,
 } from "@/lib/scheduleTime";
-
-type School = {
-  id: string;
-};
 
 type Schedule = {
   id: string;
@@ -34,15 +30,10 @@ export default async function BellSchedulePage({
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
-  const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", { subdomain_input: school })
-    .single<School>();
-
-  if (!schoolData) {
-    notFound();
-  }
+  const [supabase, schoolData] = await Promise.all([
+    createSupabaseServerClient(),
+    requireMobileAppSchool(school),
+  ]);
 
   const { data: schedules } = await supabase
     .from("schedules")

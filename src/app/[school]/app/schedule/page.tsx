@@ -1,16 +1,12 @@
-import { notFound } from "next/navigation";
 import CalendarScheduleClient, {
   type CalendarScheduleDay,
 } from "@/components/mobile-app/CalendarScheduleClient";
+import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   sortPeriodsByScheduleOrder,
   type SchedulePeriod,
 } from "@/lib/scheduleTime";
-
-type School = {
-  id: string;
-};
 
 type CalendarDay = {
   id: string;
@@ -93,15 +89,10 @@ export default async function MobileSchedulePage({
 }) {
   const { school } = await params;
   const { month } = await searchParams;
-  const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", { subdomain_input: school })
-    .single<School>();
-
-  if (!schoolData) {
-    notFound();
-  }
+  const [supabase, schoolData] = await Promise.all([
+    createSupabaseServerClient(),
+    requireMobileAppSchool(school),
+  ]);
 
   const todayDate = new Date();
   const baseMonth = getBaseMonth(month);

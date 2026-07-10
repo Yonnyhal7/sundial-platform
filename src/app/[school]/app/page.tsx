@@ -1,13 +1,7 @@
-import { notFound } from "next/navigation";
 import AppScheduleDashboard from "@/components/mobile-app/AppScheduleDashboard";
+import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { SchedulePeriod } from "@/lib/scheduleTime";
-
-type School = {
-  id: string;
-  name: string;
-  primary_color: string | null;
-};
 
 type CalendarDay = {
   id: string;
@@ -52,16 +46,11 @@ export default async function MobileAppHome({
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
-  const supabase = await createSupabaseServerClient();
+  const [supabase, schoolData] = await Promise.all([
+    createSupabaseServerClient(),
+    requireMobileAppSchool(school),
+  ]);
   const today = getTodayDateString();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", { subdomain_input: school })
-    .single<School>();
-
-  if (!schoolData) {
-    notFound();
-  }
 
   const { data: calendarDay } = await supabase
     .from("calendar_days")

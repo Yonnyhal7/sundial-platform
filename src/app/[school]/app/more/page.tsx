@@ -1,17 +1,12 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import {
   BellIcon,
   BookIcon,
   CalendarIcon,
   HomeIcon,
 } from "@/components/mobile-app/AppIcons";
+import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-type School = {
-  id: string;
-  name: string;
-};
 
 type Announcement = {
   id: string;
@@ -26,15 +21,10 @@ export default async function MobileMorePage({
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
-  const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", { subdomain_input: school })
-    .single<School>();
-
-  if (!schoolData) {
-    notFound();
-  }
+  const [supabase, schoolData] = await Promise.all([
+    createSupabaseServerClient(),
+    requireMobileAppSchool(school),
+  ]);
 
   const { data: announcements } = await supabase
     .from("announcements")

@@ -1,16 +1,12 @@
-import { notFound } from "next/navigation";
+import Image from "next/image";
 import { CalendarIcon, MapPinIcon } from "@/components/mobile-app/AppIcons";
+import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatPeriodTime } from "@/lib/scheduleTime";
-
-type School = {
-  id: string;
-};
 
 type Event = {
   id: string;
   title: string;
-  description: string | null;
   location: string | null;
   event_date: string;
   start_time: string | null;
@@ -49,19 +45,14 @@ export default async function MobileEventsPage({
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
-  const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", { subdomain_input: school })
-    .single<School>();
-
-  if (!schoolData) {
-    notFound();
-  }
+  const [supabase, schoolData] = await Promise.all([
+    createSupabaseServerClient(),
+    requireMobileAppSchool(school),
+  ]);
 
   const { data: events } = await supabase
     .from("events")
-    .select("id, title, description, location, event_date, start_time, end_time, image_url")
+    .select("id, title, location, event_date, start_time, end_time, image_url")
     .eq("school_id", schoolData.id)
     .eq("is_active", true)
     .gte("event_date", getTodayDateString())
@@ -88,19 +79,32 @@ export default async function MobileEventsPage({
           className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-slate-900 p-6 text-white shadow-sm"
           style={{
             backgroundImage: featured.image_url
-              ? `linear-gradient(180deg, rgb(15 23 42 / 0.25), rgb(15 23 42 / 0.88)), url(${featured.image_url})`
+              ? undefined
               : "linear-gradient(135deg, var(--school-primary), #111827)",
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         >
-          <p className="text-xs font-black uppercase tracking-[0.24em] text-white/75">
+          {featured.image_url && (
+            <>
+              <Image
+                src={featured.image_url}
+                alt=""
+                fill
+                sizes="(max-width: 768px) 100vw, 42rem"
+                className="object-cover"
+                priority
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-slate-950/25 to-slate-950/90" />
+            </>
+          )}
+          <p className="relative text-xs font-black uppercase tracking-[0.24em] text-white/75">
             Featured Event
           </p>
-          <h2 className="mt-16 text-3xl font-black tracking-tight">
+          <h2 className="relative mt-16 text-3xl font-black tracking-tight">
             {featured.title}
           </h2>
-          <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold">
+          <div className="relative mt-4 flex flex-wrap gap-2 text-xs font-bold">
             <span className="rounded-full bg-white/18 px-3 py-1.5 backdrop-blur">
               {formatEventDate(featured.event_date)}
             </span>

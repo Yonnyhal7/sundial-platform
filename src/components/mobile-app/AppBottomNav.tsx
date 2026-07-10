@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import {
   CalendarIcon,
   HomeIcon,
@@ -19,10 +20,16 @@ function AthleticsIcon({ className }: { className?: string }) {
 
 export default function AppBottomNav({ school }: AppBottomNavProps) {
   const pathname = usePathname();
+  const [pendingNavigation, setPendingNavigation] = useState<{
+    href: string;
+    from: string;
+  } | null>(null);
   const base =
     pathname === "/app" || pathname.startsWith("/app/")
       ? "/app"
       : `/${school}/app`;
+  const activePathname =
+    pendingNavigation?.from === pathname ? pendingNavigation.href : pathname;
   const navItems = [
     { label: "Home", href: base, icon: HomeIcon },
     { label: "Schedule", href: `${base}/schedule`, icon: ClockIcon },
@@ -37,13 +44,15 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
           const Icon = item.icon;
           const active =
             item.href === base
-              ? pathname === base
-              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              ? activePathname === base
+              : activePathname === item.href || activePathname.startsWith(`${item.href}/`);
 
           return (
             <Link
               key={item.href}
               href={item.href}
+              prefetch
+              onClick={() => setPendingNavigation({ href: item.href, from: pathname })}
               className={`flex min-h-[3.5rem] sm:min-h-16 w-full flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 sm:py-1 text-[0.7rem] font-semibold transition ${
                 active
                   ? "bg-[color-mix(in_srgb,var(--school-primary)_10%,transparent)] text-[var(--school-primary)]"

@@ -1,13 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import SportIcon from "@/components/SportIcon";
 import { formatGameDateTime } from "@/lib/athletics";
+import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-type School = {
-  id: string;
-  name: string;
-};
 
 type Sport = {
   id: string;
@@ -52,15 +47,10 @@ export default async function MobileAthleticsPage({
   const { school } = await params;
   const { tab } = await searchParams;
   const activeTab = tab === "teams" ? "teams" : "games";
-  const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", { subdomain_input: school })
-    .single<School>();
-
-  if (!schoolData) {
-    notFound();
-  }
+  const [supabase, schoolData] = await Promise.all([
+    createSupabaseServerClient(),
+    requireMobileAppSchool(school),
+  ]);
 
   const sportsResultWithColor = await supabase
     .from("sports")
@@ -68,6 +58,7 @@ export default async function MobileAthleticsPage({
     .eq("school_id", schoolData.id)
     .eq("is_active", true)
     .order("name", { ascending: true })
+    .limit(50)
     .returns<Sport[]>();
   let sports = sportsResultWithColor.data as Sport[] | null;
 
@@ -78,6 +69,7 @@ export default async function MobileAthleticsPage({
       .eq("school_id", schoolData.id)
       .eq("is_active", true)
       .order("name", { ascending: true })
+      .limit(50)
       .returns<Omit<Sport, "icon_color">[]>();
 
     sports = (fallbackSportsResult.data || []).map((sport) => ({
@@ -93,6 +85,7 @@ export default async function MobileAthleticsPage({
       .eq("school_id", schoolData.id)
       .eq("is_active", true)
       .order("name", { ascending: true })
+      .limit(100)
       .returns<Team[]>(),
     supabase
       .from("games")

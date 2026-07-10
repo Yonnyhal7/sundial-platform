@@ -1,28 +1,14 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
-import { notFound } from "next/navigation";
 import AppBottomNav from "@/components/mobile-app/AppBottomNav";
 import AppHeader from "@/components/mobile-app/AppHeader";
+import AppRoutePrefetch from "@/components/mobile-app/AppRoutePrefetch";
+import { getMobileAppQuickLinks, requireMobileAppSchool } from "@/lib/mobileAppData";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type AppLayoutProps = {
   children: ReactNode;
   params: Promise<{ school: string }>;
-};
-
-type School = {
-  id: string;
-  name: string;
-  primary_color: string | null;
-  secondary_color: string | null;
-  logo_url?: string | null;
-};
-
-type QuickLinkResource = {
-  title: string;
-  url: string | null;
-  file_url: string | null;
 };
 
 type AppStyle = CSSProperties & {
@@ -80,32 +66,9 @@ export const viewport: Viewport = {
 
 export default async function AppLayout({ children, params }: AppLayoutProps) {
   const { school } = await params;
-  const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", { subdomain_input: school })
-    .single<School>();
-
-  if (!schoolData) {
-    notFound();
-  }
-
-  const { data: resources } = await supabase
-    .from("resources")
-    .select("title, url, file_url")
-    .eq("school_id", schoolData.id)
-    .eq("is_active", true)
-    .order("title", { ascending: true })
-    .limit(8)
-    .returns<QuickLinkResource[]>();
+  const schoolData = await requireMobileAppSchool(school);
+  const quickLinks = await getMobileAppQuickLinks(school, schoolData.id);
   const schoolTheme = getSchoolThemeModes(schoolData);
-  const quickLinks =
-    resources
-      ?.map((resource) => ({
-        title: resource.title,
-        href: resource.url || resource.file_url || `/${school}/app/resources`,
-      }))
-      .filter((resource) => resource.href) || [];
 
   return (
     <div
@@ -136,6 +99,7 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
           {children}
         </div>
       </div>
+      <AppRoutePrefetch school={school} />
       <AppBottomNav school={school} />
     </div>
   );

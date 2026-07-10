@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import {
   BellIcon,
   BookIcon,
@@ -7,11 +6,8 @@ import {
   LinkIcon,
   MapPinIcon,
 } from "@/components/mobile-app/AppIcons";
+import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-type School = {
-  id: string;
-};
 
 type Resource = {
   id: string;
@@ -28,15 +24,10 @@ export default async function MobileResourcesPage({
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
-  const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", { subdomain_input: school })
-    .single<School>();
-
-  if (!schoolData) {
-    notFound();
-  }
+  const [supabase, schoolData] = await Promise.all([
+    createSupabaseServerClient(),
+    requireMobileAppSchool(school),
+  ]);
 
   const { data: resources } = await supabase
     .from("resources")
@@ -100,15 +91,8 @@ export default async function MobileResourcesPage({
         {resources?.map((resource) => {
           const href = resource.url || resource.file_url || `/${school}/app/resources`;
           const external = Boolean(resource.url || resource.file_url);
-
-          return (
-            <a
-              key={resource.id}
-              href={href}
-              target={external ? "_blank" : undefined}
-              rel={external ? "noreferrer" : undefined}
-              className="flex items-center gap-3 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
-            >
+          const content = (
+            <>
               <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-slate-500 dark:bg-[#181818] dark:text-[#a3a3a3]">
                 <LinkIcon className="h-5 w-5" />
               </div>
@@ -120,7 +104,27 @@ export default async function MobileResourcesPage({
                   {resource.description || resource.category || "Open resource"}
                 </p>
               </div>
+            </>
+          );
+
+          return external ? (
+            <a
+              key={resource.id}
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-3 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
+            >
+              {content}
             </a>
+          ) : (
+            <Link
+              key={resource.id}
+              href={href}
+              className="flex items-center gap-3 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
+            >
+              {content}
+            </Link>
           );
         })}
 
