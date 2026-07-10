@@ -1,5 +1,6 @@
 import AppScheduleDashboard from "@/components/mobile-app/AppScheduleDashboard";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
+import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { SchedulePeriod } from "@/lib/scheduleTime";
 
@@ -46,16 +47,18 @@ export default async function MobileAppHome({
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
+  const navTiming = createNavDiagnostics("home", school);
   const [supabase, schoolData] = await Promise.all([
     createSupabaseServerClient(),
-    requireMobileAppSchool(school),
+    navTiming.query("school", () => requireMobileAppSchool(school)),
   ]);
   const today = getTodayDateString();
 
-  const { data: calendarDay } = await supabase
-    .from("calendar_days")
-    .select(
-      `
+  const { data: calendarDay } = await navTiming.query("calendar", () =>
+    supabase
+      .from("calendar_days")
+      .select(
+        `
       id,
       date,
       label,
@@ -67,20 +70,23 @@ export default async function MobileAppHome({
         schedule_type
       )
     `
-    )
-    .eq("school_id", schoolData.id)
-    .eq("date", today)
-    .maybeSingle<CalendarDay>();
+      )
+      .eq("school_id", schoolData.id)
+      .eq("date", today)
+      .maybeSingle<CalendarDay>()
+  );
 
   let periods: SchedulePeriod[] = [];
 
   if (calendarDay?.schedule_id && calendarDay.is_school_day !== false) {
-    const { data: periodData } = await supabase
-      .from("periods")
-      .select("id, name, start_time, end_time, sort_order")
-      .eq("schedule_id", calendarDay.schedule_id)
-      .order("sort_order", { ascending: true })
-      .order("start_time", { ascending: true });
+    const { data: periodData } = await navTiming.query("periods", () =>
+      supabase
+        .from("periods")
+        .select("id, name, start_time, end_time, sort_order")
+        .eq("schedule_id", calendarDay.schedule_id)
+        .order("sort_order", { ascending: true })
+        .order("start_time", { ascending: true })
+    );
 
     periods = periodData || [];
   }
@@ -101,6 +107,7 @@ export default async function MobileAppHome({
     day: "numeric",
   });
   const greeting = getGreeting();
+  navTiming.log();
 
   return (
     <main className="space-y-[clamp(1.25rem,3.2vw,1.75rem)]">

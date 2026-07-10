@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CalendarIcon,
   HomeIcon,
   ClockIcon,
 } from "@/components/mobile-app/AppIcons";
 import SportIcon from "@/components/SportIcon";
+import {
+  APP_TAB_PENDING_EVENT,
+  type AppTabPendingEventDetail,
+  getAppTabs,
+} from "@/lib/appTabs";
 
 type AppBottomNavProps = {
   school: string;
@@ -24,17 +29,34 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
     href: string;
     from: string;
   } | null>(null);
-  const base =
-    pathname === "/app" || pathname.startsWith("/app/")
-      ? "/app"
-      : `/${school}/app`;
+
+  useEffect(() => {
+    function handlePendingNavigation(event: Event) {
+      const detail = (event as CustomEvent<AppTabPendingEventDetail>).detail;
+
+      if (!detail?.href || !detail.from) {
+        return;
+      }
+
+      setPendingNavigation({ href: detail.href, from: detail.from });
+    }
+
+    window.addEventListener(APP_TAB_PENDING_EVENT, handlePendingNavigation);
+
+    return () => {
+      window.removeEventListener(APP_TAB_PENDING_EVENT, handlePendingNavigation);
+    };
+  }, []);
+
+  const tabs = getAppTabs(school, pathname);
+  const base = tabs[0].href;
   const activePathname =
     pendingNavigation?.from === pathname ? pendingNavigation.href : pathname;
   const navItems = [
-    { label: "Home", href: base, icon: HomeIcon },
-    { label: "Schedule", href: `${base}/schedule`, icon: ClockIcon },
-    { label: "Events", href: `${base}/events`, icon: CalendarIcon },
-    { label: "Athletics", href: `${base}/athletics`, icon: AthleticsIcon },
+    { ...tabs[0], icon: HomeIcon },
+    { ...tabs[1], icon: ClockIcon },
+    { ...tabs[2], icon: CalendarIcon },
+    { ...tabs[3], icon: AthleticsIcon },
   ];
 
   return (

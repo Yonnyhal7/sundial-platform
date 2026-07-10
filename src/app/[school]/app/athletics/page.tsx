@@ -2,6 +2,7 @@ import Link from "next/link";
 import SportIcon from "@/components/SportIcon";
 import { formatGameDateTime } from "@/lib/athletics";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
+import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type Sport = {
@@ -47,30 +48,57 @@ export default async function MobileAthleticsPage({
   const { school } = await params;
   const { tab } = await searchParams;
   const activeTab = tab === "teams" ? "teams" : "games";
+  const navTiming = createNavDiagnostics("athletics", school);
   const [supabase, schoolData] = await Promise.all([
     createSupabaseServerClient(),
-    requireMobileAppSchool(school),
+    navTiming.query("school", () => requireMobileAppSchool(school)),
   ]);
 
-  const sportsResultWithColor = await supabase
-    .from("sports")
-    .select("id, name, icon, icon_color")
-    .eq("school_id", schoolData.id)
-    .eq("is_active", true)
-    .order("name", { ascending: true })
-    .limit(50)
-    .returns<Sport[]>();
+  const [sportsResultWithColor, { data: teams }, { data: games }] = await Promise.all([
+    navTiming.query("sports", () =>
+      supabase
+        .from("sports")
+        .select("id, name, icon, icon_color")
+        .eq("school_id", schoolData.id)
+        .eq("is_active", true)
+        .order("name", { ascending: true })
+        .limit(50)
+        .returns<Sport[]>()
+    ),
+    navTiming.query("teams", () =>
+      supabase
+        .from("teams")
+        .select("id, sport_id, name, level, gender")
+        .eq("school_id", schoolData.id)
+        .eq("is_active", true)
+        .order("name", { ascending: true })
+        .limit(100)
+        .returns<Team[]>()
+    ),
+    navTiming.query("games", () =>
+      supabase
+        .from("games")
+        .select("id, team_id, opponent, game_date, location, is_home")
+        .eq("school_id", schoolData.id)
+        .gte("game_date", getTodayDateString())
+        .order("game_date", { ascending: true })
+        .limit(30)
+        .returns<Game[]>()
+    ),
+  ]);
   let sports = sportsResultWithColor.data as Sport[] | null;
 
   if (sportsResultWithColor.error?.code === "42703") {
-    const fallbackSportsResult = await supabase
-      .from("sports")
-      .select("id, name, icon")
-      .eq("school_id", schoolData.id)
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      .limit(50)
-      .returns<Omit<Sport, "icon_color">[]>();
+    const fallbackSportsResult = await navTiming.query("sports_fallback", () =>
+      supabase
+        .from("sports")
+        .select("id, name, icon")
+        .eq("school_id", schoolData.id)
+        .eq("is_active", true)
+        .order("name", { ascending: true })
+        .limit(50)
+        .returns<Omit<Sport, "icon_color">[]>()
+    );
 
     sports = (fallbackSportsResult.data || []).map((sport) => ({
       ...sport,
@@ -78,27 +106,9 @@ export default async function MobileAthleticsPage({
     }));
   }
 
-  const [{ data: teams }, { data: games }] = await Promise.all([
-    supabase
-      .from("teams")
-      .select("id, sport_id, name, level, gender")
-      .eq("school_id", schoolData.id)
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      .limit(100)
-      .returns<Team[]>(),
-    supabase
-      .from("games")
-      .select("id, team_id, opponent, game_date, location, is_home")
-      .eq("school_id", schoolData.id)
-      .gte("game_date", getTodayDateString())
-      .order("game_date", { ascending: true })
-      .limit(30)
-      .returns<Game[]>(),
-  ]);
-
   const sportById = new Map((sports || []).map((sport) => [sport.id, sport]));
   const teamById = new Map((teams || []).map((team) => [team.id, team]));
+  navTiming.log();
 
   return (
     <main className="space-y-5">

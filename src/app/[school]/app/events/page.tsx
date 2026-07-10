@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { CalendarIcon, MapPinIcon } from "@/components/mobile-app/AppIcons";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
+import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatPeriodTime } from "@/lib/scheduleTime";
 
@@ -45,23 +46,27 @@ export default async function MobileEventsPage({
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
+  const navTiming = createNavDiagnostics("events", school);
   const [supabase, schoolData] = await Promise.all([
     createSupabaseServerClient(),
-    requireMobileAppSchool(school),
+    navTiming.query("school", () => requireMobileAppSchool(school)),
   ]);
 
-  const { data: events } = await supabase
-    .from("events")
-    .select("id, title, location, event_date, start_time, end_time, image_url")
-    .eq("school_id", schoolData.id)
-    .eq("is_active", true)
-    .gte("event_date", getTodayDateString())
-    .order("event_date", { ascending: true })
-    .limit(12)
-    .returns<Event[]>();
+  const { data: events } = await navTiming.query("events", () =>
+    supabase
+      .from("events")
+      .select("id, title, location, event_date, start_time, end_time, image_url")
+      .eq("school_id", schoolData.id)
+      .eq("is_active", true)
+      .gte("event_date", getTodayDateString())
+      .order("event_date", { ascending: true })
+      .limit(12)
+      .returns<Event[]>()
+  );
 
   const featured = events?.[0];
   const upcoming = featured ? events?.slice(1) || [] : events || [];
+  navTiming.log();
 
   return (
     <main className="space-y-5">

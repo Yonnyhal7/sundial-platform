@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import { recordSchoolCacheMiss } from "@/lib/navDiagnostics";
 
 export type MobileAppSchool = {
   id: string;
@@ -41,6 +42,7 @@ function createPublicSupabaseClient() {
 
 export const getMobileAppSchool = unstable_cache(
   async (school: string) => {
+    recordSchoolCacheMiss(school);
     const supabase = createPublicSupabaseClient();
     const { data } = await supabase
       .rpc("get_school_by_subdomain", { subdomain_input: school })

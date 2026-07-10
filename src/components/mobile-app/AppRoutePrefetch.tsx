@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { getAppTabs } from "@/lib/appTabs";
 
 export default function AppRoutePrefetch({ school }: { school: string }) {
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    router.prefetch(`/${school}/app`);
-    router.prefetch(`/${school}/app/schedule`);
-    router.prefetch(`/${school}/app/events`);
-    router.prefetch(`/${school}/app/athletics`);
-  }, [router, school]);
+    for (const tab of getAppTabs(school, pathname)) {
+      router.prefetch(tab.href);
+    }
+  }, [pathname, router, school]);
 
   return null;
 }

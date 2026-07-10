@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import AppBottomNav from "@/components/mobile-app/AppBottomNav";
 import AppHeader from "@/components/mobile-app/AppHeader";
 import AppRoutePrefetch from "@/components/mobile-app/AppRoutePrefetch";
+import AppSwipeNavigation from "@/components/mobile-app/AppSwipeNavigation";
 import { getMobileAppQuickLinks, requireMobileAppSchool } from "@/lib/mobileAppData";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
 
@@ -96,7 +97,7 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
           quickLinks={quickLinks}
         />
         <div className="mt-[clamp(1.25rem,3.2vw,1.75rem)]">
-          {children}
+          <AppSwipeNavigation school={school}>{children}</AppSwipeNavigation>
         </div>
       </div>
       <AppRoutePrefetch school={school} />

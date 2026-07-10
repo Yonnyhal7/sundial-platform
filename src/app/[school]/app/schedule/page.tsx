@@ -2,6 +2,7 @@ import CalendarScheduleClient, {
   type CalendarScheduleDay,
 } from "@/components/mobile-app/CalendarScheduleClient";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
+import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   sortPeriodsByScheduleOrder,
@@ -89,9 +90,10 @@ export default async function MobileSchedulePage({
 }) {
   const { school } = await params;
   const { month } = await searchParams;
+  const navTiming = createNavDiagnostics("schedule", school);
   const [supabase, schoolData] = await Promise.all([
     createSupabaseServerClient(),
-    requireMobileAppSchool(school),
+    navTiming.query("school", () => requireMobileAppSchool(school)),
   ]);
 
   const todayDate = new Date();
@@ -100,10 +102,11 @@ export default async function MobileSchedulePage({
   const startDate = formatDate(monthDates[0]);
   const endDate = formatDate(monthDates[monthDates.length - 1]);
 
-  const { data: calendarDays } = await supabase
-    .from("calendar_days")
-    .select(
-      `
+  const { data: calendarDays } = await navTiming.query("calendar", () =>
+    supabase
+      .from("calendar_days")
+      .select(
+        `
       id,
       date,
       label,
@@ -115,12 +118,13 @@ export default async function MobileSchedulePage({
         schedule_type
       )
     `
-    )
-    .eq("school_id", schoolData.id)
-    .gte("date", startDate)
-    .lte("date", endDate)
-    .order("date", { ascending: true })
-    .returns<CalendarDay[]>();
+      )
+      .eq("school_id", schoolData.id)
+      .gte("date", startDate)
+      .lte("date", endDate)
+      .order("date", { ascending: true })
+      .returns<CalendarDay[]>()
+  );
 
   const scheduleIds = Array.from(
     new Set((calendarDays || []).map((day) => day.schedule_id).filter(Boolean))
@@ -128,11 +132,13 @@ export default async function MobileSchedulePage({
   let periodsByScheduleId: Record<string, SchedulePeriod[]> = {};
 
   if (scheduleIds.length > 0) {
-    const { data: periodData } = await supabase
-      .from("periods")
-      .select("id, schedule_id, name, start_time, end_time, sort_order")
-      .in("schedule_id", scheduleIds)
-      .returns<PeriodWithSchedule[]>();
+    const { data: periodData } = await navTiming.query("periods", () =>
+      supabase
+        .from("periods")
+        .select("id, schedule_id, name, start_time, end_time, sort_order")
+        .in("schedule_id", scheduleIds)
+        .returns<PeriodWithSchedule[]>()
+    );
 
     periodsByScheduleId = (periodData || []).reduce<Record<string, SchedulePeriod[]>>(
       (acc, period) => {
@@ -184,6 +190,7 @@ export default async function MobileSchedulePage({
       periods: sortPeriodsByScheduleOrder(periods),
     };
   });
+  navTiming.log();
 
   return (
     <main className="space-y-5">
