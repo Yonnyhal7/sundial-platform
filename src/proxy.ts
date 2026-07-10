@@ -17,22 +17,37 @@ export function proxy(req: NextRequest) {
   const parsedHost = parseSundialHost(host);
   const url = req.nextUrl.clone();
   const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "sundialk12.com";
+  const canonicalAdminHost = `www.${rootDomain}`;
+
+  function redirectToCanonicalSchoolAdmin(
+    school: string,
+    restSegments: string[] = []
+  ) {
+    const destination = new URL(`https://${canonicalAdminHost}`);
+
+    destination.pathname = `/${school}/admin${
+      restSegments.length ? `/${restSegments.join("/")}` : ""
+    }`;
+    destination.search = req.nextUrl.search;
+
+    return NextResponse.redirect(destination);
+  }
 
   // sundialk12.com -> marketing/public product site.
   if (parsedHost.kind === "marketing") {
     if (parsedHost.hostname === `www.${rootDomain}` && pathname.startsWith("/admin/")) {
-      const adminUrl = req.nextUrl.clone();
-      adminUrl.hostname = `admin.${rootDomain}`;
-      adminUrl.pathname = pathname.replace(/^\/admin/, "") || "/";
-      return NextResponse.redirect(adminUrl);
+      const [, , school, ...rest] = pathname.split("/");
+
+      if (school && school !== "dashboard" && school !== "select-school") {
+        return redirectToCanonicalSchoolAdmin(school, rest);
+      }
     }
 
     return NextResponse.next();
   }
 
-  // admin.sundialk12.com owns admin-only URLs:
-  // / -> /admin, /dashboard -> /admin/dashboard,
-  // /select-school -> /admin/select-school, /:school/* -> /:school/admin/*.
+  // admin.sundialk12.com is reserved and must never be treated as a school
+  // subdomain. School admin paths redirect to the canonical /:school/admin URL.
   // This branch must run before generic school subdomain handling so the
   // reserved "admin" subdomain is never interpreted as a school tenant.
   if (parsedHost.kind === "admin") {
@@ -53,13 +68,13 @@ export function proxy(req: NextRequest) {
         return NextResponse.next();
       }
 
-      url.pathname = `/${school}/admin${rest.length ? `/${rest.join("/")}` : ""}`;
-      return NextResponse.rewrite(url);
+      if (school !== "dashboard" && school !== "select-school") {
+        return redirectToCanonicalSchoolAdmin(school, rest);
+      }
     }
 
     if (pathname === "/") {
-      url.pathname = "/admin";
-      return NextResponse.rewrite(url);
+      return NextResponse.redirect(new URL(`https://${canonicalAdminHost}`));
     }
 
     if (pathname === "/dashboard" || pathname.startsWith("/dashboard/")) {
@@ -75,15 +90,17 @@ export function proxy(req: NextRequest) {
     const [, school, maybeAdmin, ...rest] = pathname.split("/");
 
     if (!school) {
-      return NextResponse.next();
+      return NextResponse.redirect(new URL(`https://${canonicalAdminHost}`));
     }
 
-    url.pathname =
+    return redirectToCanonicalSchoolAdmin(
+      school,
       maybeAdmin === "admin"
-        ? `/${school}/admin${rest.length ? `/${rest.join("/")}` : ""}`
-        : `/${school}/admin${maybeAdmin ? `/${[maybeAdmin, ...rest].join("/")}` : ""}`;
-
-    return NextResponse.rewrite(url);
+        ? rest
+        : maybeAdmin
+          ? [maybeAdmin, ...rest]
+          : []
+    );
   }
 
   // localhost:3000/admin/:school/* mirrors admin.sundialk12.com/:school/*.
