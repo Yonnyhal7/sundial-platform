@@ -73,7 +73,7 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
 
   return (
     <div
-      className="mobile-app-theme min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white"
+      className="mobile-app-theme min-h-dvh bg-slate-50 text-slate-950 dark:bg-black dark:text-white"
       style={
         {
           "--school-primary": schoolTheme.light.schoolColor,
@@ -89,15 +89,20 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
         } as AppStyle
       }
     >
-      <div className="mx-auto min-h-screen max-w-md px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] md:max-w-2xl md:px-6">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] md:max-w-2xl md:px-6">
         <AppHeader
           school={school}
           schoolName={schoolData.name}
           logoUrl={schoolData.logo_url || null}
           quickLinks={quickLinks}
         />
-        <div className="mt-[clamp(1.25rem,3.2vw,1.75rem)]">
-          <AppSwipeNavigation school={school}>{children}</AppSwipeNavigation>
+        <div className="mt-[clamp(1.25rem,3.2vw,1.75rem)] flex min-h-0 flex-1 flex-col">
+          <AppSwipeNavigation
+            school={school}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            {children}
+          </AppSwipeNavigation>
         </div>
       </div>
       <AppRoutePrefetch school={school} />

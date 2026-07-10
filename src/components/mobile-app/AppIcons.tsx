@@ -76,6 +76,27 @@ export function ClockIcon({ className }: IconProps) {
   );
 }
 
+export function TrophyIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M8 4h8v3.5a4 4 0 0 1-8 0V4Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 6H5.5A1.5 1.5 0 0 0 4 7.5v.75A3.75 3.75 0 0 0 7.75 12H8M16 6h2.5A1.5 1.5 0 0 1 20 7.5v.75A3.75 3.75 0 0 1 16.25 12H16M12 11.5V16M9 20h6M10 16h4l.75 4h-5.5L10 16Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function MapPinIcon({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">

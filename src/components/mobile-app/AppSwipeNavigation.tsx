@@ -12,6 +12,7 @@ import {
 type AppSwipeNavigationProps = {
   school: string;
   children: ReactNode;
+  className?: string;
 };
 
 type SwipeGesture = {
@@ -33,14 +34,32 @@ const SWIPE_DISTANCE_THRESHOLD = 72;
 const SWIPE_VELOCITY_THRESHOLD = 0.42;
 const HORIZONTAL_LOCK_DISTANCE = 10;
 const MAX_DRAG_OFFSET = 46;
+const SWIPE_IGNORE_SELECTOR = [
+  "a",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "[contenteditable='true']",
+  "[data-swipe-nav-ignore]",
+].join(",");
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function classNames(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function isInteractiveSwipeTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest(SWIPE_IGNORE_SELECTOR));
+}
+
 export default function AppSwipeNavigation({
   school,
   children,
+  className,
 }: AppSwipeNavigationProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -61,7 +80,11 @@ export default function AppSwipeNavigation({
   }
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "mouse" || activeIndex === -1) {
+    if (
+      event.pointerType === "mouse" ||
+      activeIndex === -1 ||
+      isInteractiveSwipeTarget(event.target)
+    ) {
       return;
     }
 
@@ -124,6 +147,9 @@ export default function AppSwipeNavigation({
     }
 
     gestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
 
     if (!gesture.horizontal) {
       resetDrag();
@@ -166,14 +192,17 @@ export default function AppSwipeNavigation({
 
   return (
     <div
+      className={classNames(
+        "relative flex min-h-0 flex-1 flex-col touch-pan-y",
+        className,
+      )}
       onPointerCancel={handlePointerEnd}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
-      style={{ touchAction: "pan-y" }}
     >
       <div
-        className="will-change-transform"
+        className="flex min-h-0 flex-1 flex-col will-change-transform"
         style={{
           transform: visibleDragX
             ? `translate3d(${visibleDragX}px, 0, 0)`

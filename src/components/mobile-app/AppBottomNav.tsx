@@ -7,8 +7,8 @@ import {
   CalendarIcon,
   HomeIcon,
   ClockIcon,
+  TrophyIcon,
 } from "@/components/mobile-app/AppIcons";
-import SportIcon from "@/components/SportIcon";
 import {
   APP_TAB_PENDING_EVENT,
   type AppTabPendingEventDetail,
@@ -18,10 +18,6 @@ import {
 type AppBottomNavProps = {
   school: string;
 };
-
-function AthleticsIcon({ className }: { className?: string }) {
-  return <SportIcon icon="football" className={className} />;
-}
 
 export default function AppBottomNav({ school }: AppBottomNavProps) {
   const pathname = usePathname();
@@ -53,10 +49,10 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
   const activePathname =
     pendingNavigation?.from === pathname ? pendingNavigation.href : pathname;
   const navItems = [
-    { ...tabs[0], icon: HomeIcon },
-    { ...tabs[1], icon: ClockIcon },
-    { ...tabs[2], icon: CalendarIcon },
-    { ...tabs[3], icon: AthleticsIcon },
+    { ...tabs[0], icon: HomeIcon, iconClassName: "h-7 w-7" },
+    { ...tabs[1], icon: ClockIcon, iconClassName: "h-7 w-7" },
+    { ...tabs[2], icon: CalendarIcon, iconClassName: "h-7 w-7" },
+    { ...tabs[3], icon: TrophyIcon, iconClassName: "h-8 w-8" },
   ];
 
   return (
@@ -81,7 +77,7 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
                   : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#a3a3a3] dark:hover:bg-[#181818] dark:hover:text-white"
               }`}
             >
-              <Icon className="h-7 w-7" />
+              <Icon className={item.iconClassName} />
               <span className="mt-0.5 text-center leading-tight max-[480px]:sr-only">
                 {item.label}
               </span>
