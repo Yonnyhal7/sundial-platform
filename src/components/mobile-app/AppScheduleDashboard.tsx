@@ -201,9 +201,9 @@ export default function AppScheduleDashboard({
           <Link
             href={`/${school}/app/schedule`}
             className="inline-flex items-center gap-[clamp(0.25rem,0.8vw,0.5rem)] text-[clamp(0.8rem,1.9vw,0.95rem)] font-black uppercase text-[var(--school-primary)]"
-            aria-label="View full schedule"
+            aria-label="View calendar"
           >
-            View Full Schedule
+            View Calendar
             <ChevronRightIcon className="h-[clamp(0.9rem,2.4vw,1.25rem)] w-[clamp(0.9rem,2.4vw,1.25rem)]" />
           </Link>
         </div>

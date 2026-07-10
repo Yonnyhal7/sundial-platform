@@ -1,6 +1,6 @@
 export const APP_TAB_DEFINITIONS = [
   { key: "home", label: "Home", segment: "" },
-  { key: "schedule", label: "Schedule", segment: "schedule" },
+  { key: "schedule", label: "Calendar", segment: "schedule" },
   { key: "events", label: "Events", segment: "events" },
   { key: "athletics", label: "Athletics", segment: "athletics" },
 ] as const;

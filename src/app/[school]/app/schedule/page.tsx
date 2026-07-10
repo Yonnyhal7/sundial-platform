@@ -196,10 +196,10 @@ export default async function MobileSchedulePage({
     <main className="space-y-5">
       <header>
         <p className="text-sm font-bold text-[var(--school-primary)]">
-          Schedule
+          Calendar
         </p>
         <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950 dark:text-white">
-          Schedule
+          Calendar
         </h1>
         <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
           Tap a date to view that day&apos;s schedule
