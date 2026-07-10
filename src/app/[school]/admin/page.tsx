@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getSchoolSetupStepPath, requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
+import { getSchoolAdminPath, getSchoolSetupStepPath, requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
 import { ADMIN_TAB_ICONS } from "@/components/admin/AdminNavIcons";
 import { notFound, redirect } from "next/navigation";
 import { getSchoolForSetup, isSchoolSetupComplete } from "@/lib/schools";
@@ -61,6 +61,9 @@ export default async function SchoolAdminPage({
   const AnnouncementsIcon = ADMIN_TAB_ICONS.announcements;
   const EventsIcon = ADMIN_TAB_ICONS.events;
   const SchedulesIcon = ADMIN_TAB_ICONS.schedules;
+  const announcementsNewHref = `${await getSchoolAdminPath(school)}/announcements/new`;
+  const eventsNewHref = `${await getSchoolAdminPath(school)}/events/new`;
+  const schedulesHref = `${await getSchoolAdminPath(school)}/schedules`;
 
   const now = new Date();
   const today = getLocalDateString(now);
@@ -179,7 +182,7 @@ export default async function SchoolAdminPage({
           <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-5">
             {canAccess("announcements") && (
               <Link
-                href={`/${school}/admin/announcements/new`}
+                href={announcementsNewHref}
                 className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
               >
                 <QuickActionIcon icon={AnnouncementsIcon} />
@@ -189,7 +192,7 @@ export default async function SchoolAdminPage({
 
             {canAccess("events") && (
               <Link
-                href={`/${school}/admin/events/new`}
+                href={eventsNewHref}
                 className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
               >
                 <QuickActionIcon icon={EventsIcon} />
@@ -199,7 +202,7 @@ export default async function SchoolAdminPage({
 
             {canAccess("schedules") && (
               <Link
-                href={`/${school}/admin/schedules`}
+                href={schedulesHref}
                 className="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--school-primary)] hover:shadow-md dark:border-[#3a3a3a] dark:bg-[#242424]"
               >
                 <QuickActionIcon icon={SchedulesIcon} />

@@ -18,6 +18,7 @@ import {
   normalizeSetupStep,
   SETUP_STEPS,
 } from "@/lib/setupSteps";
+import { getSchoolAdminBasePath } from "@/lib/routing/paths";
 import { setupAccent } from "@/lib/ui/setupStyles";
 
 type AdminSidebarProps = {
@@ -59,20 +60,6 @@ function SettingsGearIcon({ className = "" }: { className?: string }) {
   );
 }
 
-function normalizeAdminPathname(pathname: string, school: string) {
-  const canonicalBase = `/${school}/admin`;
-
-  if (pathname === canonicalBase) {
-    return `/admin/${school}`;
-  }
-
-  if (pathname.startsWith(`${canonicalBase}/`)) {
-    return `/admin/${school}${pathname.slice(canonicalBase.length)}`;
-  }
-
-  return pathname;
-}
-
 export default function AdminSidebar({
   school,
   schoolName,
@@ -83,8 +70,8 @@ export default function AdminSidebar({
   setupStep,
 }: AdminSidebarProps) {
   const pathname = usePathname();
-  const activePathname = normalizeAdminPathname(pathname, school);
-  const base = `/admin/${school}`;
+  const base = getSchoolAdminBasePath(school, pathname, "");
+  const activePathname = pathname;
   const isSetupIncomplete = setupComplete === false;
 
   const iconClass = "h-5 w-5 shrink-0";

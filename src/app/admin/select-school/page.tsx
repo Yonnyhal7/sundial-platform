@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getSchoolAdminPath } from "@/lib/auth/adminPermissions";
 import { isSchoolAdminRole, isSuperAdminRole, normalizeAdminRole } from "@/lib/userAccess";
 import { getForwardedHost, parseSundialHost } from "@/lib/routing/hosts";
 
@@ -56,6 +57,12 @@ export default async function SelectSchoolPage() {
           .eq("id", profile.school_id)
           .returns<School[]>()
       : { data: [] };
+  const schoolRows = await Promise.all(
+    (schools || []).map(async (school) => ({
+      school,
+      href: await getSchoolAdminPath(school.subdomain),
+    }))
+  );
 
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-10 text-white">
@@ -66,14 +73,10 @@ export default async function SelectSchoolPage() {
         <h1 className="mt-3 text-4xl font-bold tracking-tight">Select School</h1>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          {schools?.map((school) => (
+          {schoolRows.map(({ school, href }) => (
             <Link
               key={school.id}
-              href={
-                parsedHost.kind === "dev"
-                  ? `/admin/${school.subdomain}`
-                  : `/${school.subdomain}`
-              }
+              href={href}
               className="rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:border-white/30 hover:bg-white/10"
             >
               <h2 className="text-xl font-semibold">{school.name}</h2>
@@ -84,7 +87,7 @@ export default async function SelectSchoolPage() {
           ))}
         </div>
 
-        {!schools?.length && (
+        {!schoolRows.length && (
           <p className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
             No schools are available for this admin account.
           </p>

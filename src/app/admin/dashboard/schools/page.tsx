@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireSuperAdminAccess } from "@/lib/auth/adminPermissions";
+import { getSchoolAdminPath, requireSuperAdminAccess } from "@/lib/auth/adminPermissions";
 import {
   getSchoolSetupStatus,
   getSchoolSetupStatusLabel,
@@ -24,6 +24,12 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
     .select("id, name, subdomain, is_active, created_at")
     .order("created_at", { ascending: false })
     .returns<School[]>();
+  const schoolRows = await Promise.all(
+    (schools || []).map(async (school) => ({
+      school,
+      href: await getSchoolAdminPath(school.subdomain),
+    }))
+  );
 
   return (
     <div className="w-full max-w-7xl">
@@ -58,7 +64,7 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
       )}
 
       <section className="mt-8 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
-        {schools?.length ? (
+        {schoolRows.length ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[58rem] text-left text-sm">
               <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">
@@ -71,9 +77,8 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {schools.map((school) => {
+                {schoolRows.map(({ school, href: schoolHref }) => {
                   const status = getSchoolSetupStatus(school);
-                  const schoolHref = `/admin/${school.subdomain}`;
 
                   return (
                     <tr

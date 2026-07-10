@@ -34,15 +34,29 @@ export function getSchoolAdminBasePath(
   pathname: string,
   hostname: string
 ) {
-  if (hostname.startsWith("admin.")) {
-    return `/${school}`;
+  if (pathname === `/${school}/dashboard` || pathname.startsWith(`/${school}/dashboard/`)) {
+    return `/${school}/dashboard`;
   }
 
-  if (isLocalhost(hostname) && pathname.startsWith(`/admin/${school}`)) {
+  if (hostname.startsWith("admin.")) {
+    return `/${school}/dashboard`;
+  }
+
+  if (pathname === `/admin/${school}` || pathname.startsWith(`/admin/${school}/`)) {
     return `/admin/${school}`;
   }
 
   return `/${school}/admin`;
+}
+
+export function getSchoolAdminPath(
+  school: string,
+  pathname: string,
+  hostname: string,
+  section?: string
+) {
+  const base = getSchoolAdminBasePath(school, pathname, hostname);
+  return section ? `${base}/${section}` : base;
 }
 
 export function getAdminUtilityPath(pathname: string, hostname: string, path: string) {

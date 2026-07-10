@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireSuperAdminAccess } from "@/lib/auth/adminPermissions";
+import { getSchoolAdminPath, requireSuperAdminAccess } from "@/lib/auth/adminPermissions";
 import {
   getSchoolSetupStatus,
   getSchoolSetupStatusLabel,
@@ -39,6 +39,12 @@ export default async function SuperAdminDashboardPage() {
     (school) => getSchoolSetupStatus(school) === "active"
   ).length;
   const setupIncomplete = (schoolStatusRows || []).length - activeSchools;
+  const recentSchoolRows = await Promise.all(
+    (recentSchools || []).map(async (school) => ({
+      school,
+      href: await getSchoolAdminPath(school.subdomain),
+    }))
+  );
 
   const statCards = [
     { label: "Total Schools", value: totalSchools || 0 },
@@ -94,7 +100,7 @@ export default async function SuperAdminDashboardPage() {
             View all
           </Link>
         </div>
-        {recentSchools?.length ? (
+        {recentSchoolRows.length ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[44rem] text-left text-sm">
               <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">
@@ -106,9 +112,8 @@ export default async function SuperAdminDashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {recentSchools.map((school) => {
+                {recentSchoolRows.map(({ school, href: schoolHref }) => {
                   const status = getSchoolSetupStatus(school);
-                  const schoolHref = `/admin/${school.subdomain}`;
 
                   return (
                     <tr

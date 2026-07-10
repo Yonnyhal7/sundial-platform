@@ -108,6 +108,11 @@ export function proxy(req: NextRequest) {
       return NextResponse.redirect(url);
     }
 
+    if (school && section === "admin" && !RESERVED_ADMIN_PATHS.has(school)) {
+      url.pathname = `/${school}/dashboard${rest.length ? `/${rest.join("/")}` : ""}`;
+      return NextResponse.redirect(url);
+    }
+
     if (school && section === "dashboard" && !RESERVED_ADMIN_PATHS.has(school)) {
       url.pathname = `/${school}/admin${rest.length ? `/${rest.join("/")}` : ""}`;
       return rewritePreservingHost(url);
