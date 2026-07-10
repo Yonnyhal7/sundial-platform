@@ -286,6 +286,14 @@ function revalidateAppearanceRoutes(school: string) {
   revalidatePath("/admin/[school]/setup", "layout");
 }
 
+function revalidateSetupProgressRoutes(school: string) {
+  // The setup progress sidebar lives in the school admin layout. Revalidate the
+  // internal route destination used by localhost, www, and admin-host rewrites.
+  revalidatePath(`/${school}/admin`, "layout");
+  revalidatePath(`/${school}/admin/setup`, "layout");
+  revalidatePath("/[school]/admin", "layout");
+}
+
 function revalidateSetupLogoRoutes(school: string) {
   const paths = [
     `/${school}`,
@@ -386,6 +394,7 @@ export async function continueSetupStepAction(formData: FormData) {
   );
 
   await updateSchoolSetupStep(serviceSupabase, schoolData.id, nextStep);
+  revalidateSetupProgressRoutes(school);
   if (currentStep === "appearance") {
     revalidateAppearanceRoutes(school);
   }
@@ -403,6 +412,7 @@ export async function finishSchoolSetupAction(formData: FormData) {
 
   await updateSchoolSetupStep(serviceSupabase, schoolData.id, "complete");
   await updateSchoolSetupComplete(serviceSupabase, schoolData.id, true);
+  revalidateSetupProgressRoutes(school);
   if (currentStep === "appearance") {
     revalidateAppearanceRoutes(school);
   }
@@ -419,6 +429,7 @@ export async function saveSetupProgressAction(formData: FormData) {
   );
 
   await updateSchoolSetupStep(serviceSupabase, schoolData.id, currentStep);
+  revalidateSetupProgressRoutes(school);
   if (currentStep === "appearance") {
     revalidateAppearanceRoutes(school);
   }
