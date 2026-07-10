@@ -38,15 +38,38 @@ type AppStyle = CSSProperties & {
   "--school-accent-visible-primary-dark": string;
 };
 
-export const metadata: Metadata = {
-  title: "Sundial App",
-  description: "Student and staff school app",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "Sundial",
-  },
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ school: string }>;
+}): Promise<Metadata> {
+  const { school } = await params;
+
+  return {
+    title: "Sundial App",
+    description: "Student and staff school app",
+    manifest: `/${school}/manifest.webmanifest`,
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "default",
+      title: "Sundial",
+    },
+    icons: {
+      icon: [
+        { url: "/favicon.ico" },
+        { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+        { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+      ],
+      apple: [
+        {
+          url: "/apple-touch-icon.png",
+          type: "image/png",
+          sizes: "180x180",
+        },
+      ],
+    },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: [
