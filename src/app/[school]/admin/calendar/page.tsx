@@ -1,8 +1,12 @@
 import { notFound } from "next/navigation";
-import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
+import {
+  getSchoolAdminPath,
+  requireAdminSectionAccess,
+} from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import CalendarClient from "./calendar-client";
-import {revalidatePath} from "next/cache";
+import { revalidatePath } from "next/cache";
+import Link from "next/link";
 
 export default async function AdminCalendarPage({
   params,
@@ -24,6 +28,7 @@ export default async function AdminCalendarPage({
 
   const schoolId = schoolData.id;
   await requireAdminSectionAccess(schoolId, "calendar", school);
+  const calendarWizardHref = `${await getSchoolAdminPath(school)}/calendar/wizard`;
 
   const { data: schedules, error: schedulesError } = await supabase
     .from("schedules")
@@ -79,7 +84,8 @@ export default async function AdminCalendarPage({
       {
         school_id: schoolId,
         date,
-        schedule_id: scheduleId || null,
+        schedule_id: isSchoolDay ? scheduleId || null : null,
+        base_schedule_id: isSchoolDay ? scheduleId || null : null,
         label: label || null,
         is_school_day: isSchoolDay,
       },
@@ -99,7 +105,7 @@ export default async function AdminCalendarPage({
   return (
     <main className="calendar-admin-page min-h-screen bg-slate-100 text-slate-950 dark:bg-black dark:text-white">
       <div className="mx-auto max-w-6xl px-6 py-8">
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-sm text-slate-500 dark:text-slate-400">{schoolData.name} Admin</p>
             <h1 className="mt-1 text-3xl font-bold">Calendar</h1>
@@ -108,6 +114,12 @@ export default async function AdminCalendarPage({
             </p>
           </div>
 
+          <Link
+            href={calendarWizardHref}
+            className="inline-flex items-center justify-center rounded-lg bg-[var(--school-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--school-primary-text)] shadow-sm transition hover:opacity-90"
+          >
+            Create School-Year Calendar
+          </Link>
         </div>
 
         <CalendarClient
