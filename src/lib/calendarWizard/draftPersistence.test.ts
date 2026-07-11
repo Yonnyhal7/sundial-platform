@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  AI_CALENDAR_WIZARD_DRAFT_TYPE,
   chooseCalendarWizardDraftSource,
+  getCalendarWizardFlowForDraft,
+  getDraftTypeForCalendarWizardFlow,
+  GUIDED_CALENDAR_WIZARD_DRAFT_TYPE,
   getInitialCalendarWizardHydrationState,
   migrateCalendarWizardStoredData,
   serializeCalendarWizardDraft,
@@ -107,6 +111,39 @@ describe("calendar wizard draft persistence", () => {
     expect(serialized?.data.draft.aiImport?.resolutions[0]?.reviewedName).toContain("Reviewed");
     expect(serialized?.data.draft.aiImport?.resolutions[0]?.setupChoice).toBe("add_later");
     expect(serialized?.data.draft.aiImport?.warningResolutions?.[0]?.status).toBe("acknowledged");
+  });
+
+  it("uses separate draft types for AI import and guided setup", () => {
+    expect(getDraftTypeForCalendarWizardFlow("ai")).toBe(AI_CALENDAR_WIZARD_DRAFT_TYPE);
+    expect(getDraftTypeForCalendarWizardFlow("guided")).toBe(GUIDED_CALENDAR_WIZARD_DRAFT_TYPE);
+  });
+
+  it("classifies legacy AI drafts for AI migration", () => {
+    const importResult = createMockAiCalendarImportResult();
+    const serialized = serializeCalendarWizardDraft({
+      currentStep: "normal-schedule",
+      draft: manualDraft({
+        aiImport: {
+          state: "review",
+          fileName: "calendar.pdf",
+          result: importResult,
+          resolutions: matchDetectedSchedules(importResult.detectedSchedules, []),
+          warnings: importResult.warnings,
+          warningResolutions: [],
+        },
+      }),
+    });
+
+    expect(serialized?.data && getCalendarWizardFlowForDraft(serialized.data)).toBe("ai");
+  });
+
+  it("classifies legacy manual drafts for guided migration", () => {
+    const serialized = serializeCalendarWizardDraft({
+      currentStep: "normal-schedule",
+      draft: manualDraft(),
+    });
+
+    expect(serialized?.data && getCalendarWizardFlowForDraft(serialized.data)).toBe("guided");
   });
 
   it("does not persist PDF bytes, base64 data, OpenAI file ids, or raw envelopes", () => {

@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
+  getDetectedScheduleUsageCounts,
   getRequiredDetectedScheduleIds,
 } from "./aiImportConversion";
+import { isDateString } from "./dateUtils";
+import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
 import type {
   AiCalendarImportResult,
   AiImportWarning,
@@ -9,6 +12,7 @@ import type {
   DetectedScheduleResolution,
 } from "./aiImportTypes";
 import { normalizeScheduleNameForMatching } from "./aiScheduleMatching";
+import type { CalendarDayInsertRow } from "./persistence";
 import type {
   CalendarGenerationWarning,
   CalendarGenerationWarningCode,
@@ -38,6 +42,36 @@ export type AiScheduleResolutionPlan = {
   schedulesNeedingTimes: Array<{ id: string; name: string }>;
   conflict?: string;
 };
+
+export type RemovedAiScheduleRecord = NonNullable<
+  import("./aiImportTypes").AiImportDraftMetadata["removedSchedules"]
+>[number];
+
+export type AiScheduleRemovalAction =
+  | { type: "remove_unused" }
+  | { type: "reassign"; replacementScheduleId: string }
+  | { type: "mark_no_school" };
+
+export type AiScheduleUsageDetails = {
+  tempId: string;
+  calendarDayCount: number;
+  dates: string[];
+  patternReferenceCount: number;
+  specialDayReferenceCount: number;
+  isReferenced: boolean;
+};
+
+export type AiScheduleRemovalResult =
+  | {
+      success: true;
+      importResult: AiCalendarImportResult;
+      removedSchedule: RemovedAiScheduleRecord;
+      affectedDayCount: number;
+    }
+  | {
+      success: false;
+      message: string;
+    };
 
 type ClassifiableCalendarWarning =
   | AiImportWarning
@@ -211,7 +245,262 @@ export function inferAiScheduleType(name: string) {
 }
 
 export function containsTemporaryScheduleId(value: string | null | undefined) {
-  return Boolean(value && /^(ai-|temp-|mock-)/i.test(value));
+  return Boolean(value && /^(ai-|temp-|mock-|sched-)/i.test(value));
+}
+
+export function isUuid(value: string | null | undefined) {
+  return Boolean(
+    value &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value
+      )
+  );
+}
+
+export function isNoSchoolLikeDetectedScheduleName(name: string) {
+  const normalized = normalizeScheduleNameForMatching(name);
+  return [
+    "no classes scheduled",
+    "no school",
+    "holiday",
+    "school closed",
+    "district closed",
+    "recess",
+  ].some((phrase) => normalized === phrase || normalized.includes(phrase));
+}
+
+export function getAiScheduleUsageDetails(
+  importResult: AiCalendarImportResult,
+  tempId: string
+): AiScheduleUsageDetails {
+  const usageCounts = getDetectedScheduleUsageCounts(importResult);
+  const config = buildAiCalendarConfig(importResult, {});
+  const generated = generateSchoolYearCalendar(config);
+  const dates = generated.days
+    .filter((day) => day.isSchoolDay && day.scheduleId === tempId)
+    .map((day) => day.date);
+  const patternReferenceCount = importResult.pattern.scheduleTempIds.filter(
+    (scheduleTempId) => scheduleTempId === tempId
+  ).length;
+  const specialDayReferenceCount = importResult.specialDays.filter(
+    (day) => day.isInstructional && day.scheduleTempId === tempId
+  ).length;
+
+  return {
+    tempId,
+    calendarDayCount: usageCounts[tempId] || dates.length,
+    dates,
+    patternReferenceCount,
+    specialDayReferenceCount,
+    isReferenced: patternReferenceCount > 0 || specialDayReferenceCount > 0 || dates.length > 0,
+  };
+}
+
+function replaceScheduleReferences(
+  importResult: AiCalendarImportResult,
+  tempId: string,
+  replacementScheduleId: string
+): AiCalendarImportResult {
+  return {
+    ...importResult,
+    detectedSchedules: importResult.detectedSchedules.filter(
+      (schedule) => schedule.tempId !== tempId
+    ),
+    pattern: {
+      ...importResult.pattern,
+      scheduleTempIds: importResult.pattern.scheduleTempIds.map((scheduleTempId) =>
+        scheduleTempId === tempId ? replacementScheduleId : scheduleTempId
+      ),
+    },
+    specialDays: importResult.specialDays.map((day) =>
+      day.scheduleTempId === tempId
+        ? { ...day, scheduleTempId: replacementScheduleId }
+        : day
+    ),
+  };
+}
+
+function removeScheduleReferencesAsNoSchool(
+  importResult: AiCalendarImportResult,
+  tempId: string,
+  name: string,
+  affectedDates: string[]
+): AiCalendarImportResult | null {
+  const nextPatternIds = importResult.pattern.scheduleTempIds.filter(
+    (scheduleTempId) => scheduleTempId !== tempId
+  );
+
+  if (nextPatternIds.length === 0) return null;
+
+  const convertedSpecialDays = importResult.specialDays.filter(
+    (day) => !(day.isInstructional && day.scheduleTempId === tempId)
+  );
+  const specialNoSchoolRanges = importResult.specialDays
+    .filter((day) => day.isInstructional && day.scheduleTempId === tempId)
+    .map((day) => ({
+      id: `ai-removed-${tempId}-${day.id}`,
+      startDate: day.startDate,
+      endDate: day.endDate,
+      label: day.label || name,
+      type: "No School",
+      confidence: day.confidence,
+      evidence: day.evidence,
+    }));
+  const existingNoSchoolKeys = new Set(
+    importResult.noSchoolRanges.map((range) => `${range.startDate}|${range.endDate}|${range.label}`)
+  );
+  const dateNoSchoolRanges = affectedDates
+    .map((date) => ({
+      id: `ai-removed-${tempId}-${date}`,
+      startDate: date,
+      endDate: date,
+      label: name,
+      type: "No School",
+      confidence: "review" as const,
+    }))
+    .filter((range) => {
+      const key = `${range.startDate}|${range.endDate}|${range.label}`;
+      if (existingNoSchoolKeys.has(key)) return false;
+      existingNoSchoolKeys.add(key);
+      return true;
+    });
+  const affectedDayCount = new Set(affectedDates).size;
+
+  return {
+    ...importResult,
+    expectedInstructionalDayCount:
+      typeof importResult.expectedInstructionalDayCount === "number"
+        ? Math.max(0, importResult.expectedInstructionalDayCount - affectedDayCount)
+        : importResult.expectedInstructionalDayCount,
+    detectedSchedules: importResult.detectedSchedules.filter(
+      (schedule) => schedule.tempId !== tempId
+    ),
+    pattern: {
+      ...importResult.pattern,
+      scheduleTempIds: nextPatternIds,
+    },
+    noSchoolRanges: [
+      ...importResult.noSchoolRanges,
+      ...specialNoSchoolRanges,
+      ...dateNoSchoolRanges,
+    ].sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    specialDays: convertedSpecialDays,
+  };
+}
+
+export function removeAiDetectedSchedule({
+  importResult,
+  tempId,
+  action,
+  removedAt = new Date().toISOString(),
+}: {
+  importResult: AiCalendarImportResult;
+  tempId: string;
+  action: AiScheduleRemovalAction;
+  removedAt?: string;
+}): AiScheduleRemovalResult {
+  const schedule = importResult.detectedSchedules.find((item) => item.tempId === tempId);
+  if (!schedule) {
+    return { success: false, message: "That detected schedule is no longer available." };
+  }
+
+  const name = schedule.detectedName;
+  const usage = getAiScheduleUsageDetails(importResult, tempId);
+
+  if (action.type === "remove_unused") {
+    if (usage.isReferenced) {
+      return {
+        success: false,
+        message: "Choose how Sundial should handle dates that use this schedule.",
+      };
+    }
+
+    return {
+      success: true,
+      affectedDayCount: 0,
+      importResult: {
+        ...importResult,
+        detectedSchedules: importResult.detectedSchedules.filter(
+          (item) => item.tempId !== tempId
+        ),
+      },
+      removedSchedule: {
+        tempId,
+        name,
+        removedAt,
+        action: "removed",
+        affectedDayCount: 0,
+      },
+    };
+  }
+
+  if (action.type === "reassign") {
+    if (!action.replacementScheduleId || action.replacementScheduleId === tempId) {
+      return { success: false, message: "Choose a replacement schedule." };
+    }
+
+    return {
+      success: true,
+      affectedDayCount: usage.calendarDayCount,
+      importResult: replaceScheduleReferences(
+        importResult,
+        tempId,
+        action.replacementScheduleId
+      ),
+      removedSchedule: {
+        tempId,
+        name,
+        removedAt,
+        action: "reassigned",
+        affectedDayCount: usage.calendarDayCount,
+      },
+    };
+  }
+
+  const nextImportResult = removeScheduleReferencesAsNoSchool(
+    importResult,
+    tempId,
+    name,
+    usage.dates
+  );
+
+  if (!nextImportResult) {
+    return {
+      success: false,
+      message: "This schedule is the final normal pattern schedule. Reassign it before removing.",
+    };
+  }
+
+  return {
+    success: true,
+    affectedDayCount: usage.calendarDayCount,
+    importResult: nextImportResult,
+    removedSchedule: {
+      tempId,
+      name,
+      removedAt,
+      action: "marked_no_school",
+      affectedDayCount: usage.calendarDayCount,
+    },
+  };
+}
+
+export function collectReferencedScheduleIds(importResult: AiCalendarImportResult) {
+  const ids = new Set(importResult.pattern.scheduleTempIds);
+  for (const day of importResult.specialDays) {
+    if (day.isInstructional && day.scheduleTempId) ids.add(day.scheduleTempId);
+  }
+  return [...ids];
+}
+
+export function collectReferencedRemovedScheduleIds(
+  importResult: AiCalendarImportResult,
+  removedSchedules: RemovedAiScheduleRecord[] = []
+) {
+  const referenced = new Set(collectReferencedScheduleIds(importResult));
+  return removedSchedules
+    .map((schedule) => schedule.tempId)
+    .filter((tempId) => referenced.has(tempId));
 }
 
 function reviewedName(resolution: DetectedScheduleResolution) {
@@ -229,9 +518,11 @@ export function planAiSchedulePersistence({
   existingSchedules: ExistingScheduleForAiPersistence[];
   createId?: () => string;
 }): AiScheduleResolutionPlan {
-  const requiredTempIds = getRequiredDetectedScheduleIds(importResult);
   const resolutionsByTempId = new Map(
     resolutions.map((resolution) => [resolution.tempId, resolution])
+  );
+  const requiredTempIds = getRequiredDetectedScheduleIds(importResult).filter(
+    (scheduleId) => !isUuid(scheduleId) || resolutionsByTempId.has(scheduleId)
   );
   const existingById = new Map(existingSchedules.map((schedule) => [schedule.id, schedule]));
   const existingByNormalized = new Map(
@@ -336,7 +627,7 @@ function mapTempId(id: string | undefined, mapping: Record<string, string>) {
   return mapping[id] || id;
 }
 
-export function buildAiCalendarConfig(
+export function resolveAiScheduleReferences(
   importResult: AiCalendarImportResult,
   tempToScheduleId: Record<string, string>
 ): CalendarWizardConfig {
@@ -403,6 +694,13 @@ export function buildAiCalendarConfig(
   };
 }
 
+export function buildAiCalendarConfig(
+  importResult: AiCalendarImportResult,
+  tempToScheduleId: Record<string, string>
+): CalendarWizardConfig {
+  return resolveAiScheduleReferences(importResult, tempToScheduleId);
+}
+
 export function collectUnmappedTemporaryScheduleIds(config: CalendarWizardConfig) {
   const ids = new Set<string>();
 
@@ -429,6 +727,53 @@ export function collectUnmappedTemporaryScheduleIds(config: CalendarWizardConfig
   }
 
   return [...ids];
+}
+
+export type AiCalendarRpcRowValidationResult =
+  | { success: true }
+  | {
+      success: false;
+      invalidIds: string[];
+      fieldErrors: Record<string, string>;
+    };
+
+function collectInvalidScheduleId(
+  row: Pick<CalendarDayInsertRow, "date" | "schedule_id" | "base_schedule_id">,
+  field: "schedule_id" | "base_schedule_id",
+  invalidIds: Set<string>,
+  fieldErrors: Record<string, string>
+) {
+  const value = row[field];
+  if (value === null) return;
+  if (isUuid(value)) return;
+
+  invalidIds.add(value);
+  fieldErrors[`${row.date}.${field}`] = `${field} must be a valid schedule UUID.`;
+}
+
+export function validateAiCalendarRpcRows(
+  rows: Array<Pick<CalendarDayInsertRow, "date" | "schedule_id" | "base_schedule_id">>
+): AiCalendarRpcRowValidationResult {
+  const invalidIds = new Set<string>();
+  const fieldErrors: Record<string, string> = {};
+
+  for (const row of rows) {
+    if (!isDateString(row.date)) {
+      fieldErrors[`${row.date || "unknown"}.date`] = "Calendar row date must be valid.";
+    }
+    collectInvalidScheduleId(row, "schedule_id", invalidIds, fieldErrors);
+    collectInvalidScheduleId(row, "base_schedule_id", invalidIds, fieldErrors);
+  }
+
+  if (invalidIds.size > 0 || Object.keys(fieldErrors).length > 0) {
+    return {
+      success: false,
+      invalidIds: [...invalidIds],
+      fieldErrors,
+    };
+  }
+
+  return { success: true };
 }
 
 export function blockingAiWarningsResolved(

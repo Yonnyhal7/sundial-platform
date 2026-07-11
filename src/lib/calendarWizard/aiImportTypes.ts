@@ -150,6 +150,13 @@ export type AiImportDraftMetadata = {
   appliedAt?: string;
   banner?: string;
   unresolvedRequiredScheduleIds?: string[];
+  removedSchedules?: Array<{
+    tempId: string;
+    name: string;
+    removedAt: string;
+    action: "removed" | "reassigned" | "marked_no_school";
+    affectedDayCount?: number;
+  }>;
   warnings?: AiImportWarning[];
   warningResolutions?: AiImportWarningResolution[];
 };

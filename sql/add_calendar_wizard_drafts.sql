@@ -9,13 +9,28 @@ create table if not exists public.calendar_wizard_drafts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint calendar_wizard_drafts_type_check
-    check (draft_type in ('school_year_calendar')),
+    check (draft_type in (
+      'school_year_calendar',
+      'school_year_calendar_ai',
+      'school_year_calendar_guided'
+    )),
   constraint calendar_wizard_drafts_school_type_unique
     unique (school_id, draft_type)
 );
 
 create index if not exists calendar_wizard_drafts_school_id_idx
 on public.calendar_wizard_drafts (school_id);
+
+alter table public.calendar_wizard_drafts
+  drop constraint if exists calendar_wizard_drafts_type_check;
+
+alter table public.calendar_wizard_drafts
+  add constraint calendar_wizard_drafts_type_check
+  check (draft_type in (
+    'school_year_calendar',
+    'school_year_calendar_ai',
+    'school_year_calendar_guided'
+  ));
 
 alter table public.calendar_wizard_drafts enable row level security;
 

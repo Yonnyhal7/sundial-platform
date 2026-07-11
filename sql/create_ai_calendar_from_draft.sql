@@ -76,7 +76,7 @@ begin
   from public.calendar_wizard_drafts d
   where d.id = p_draft_id
     and d.school_id = p_school_id
-    and d.draft_type = 'school_year_calendar'
+    and d.draft_type in ('school_year_calendar_ai', 'school_year_calendar')
   for update;
 
   if v_draft_updated_at is null then
@@ -252,7 +252,7 @@ begin
   delete from public.calendar_wizard_drafts
   where id = p_draft_id
     and school_id = p_school_id
-    and draft_type = 'school_year_calendar';
+    and draft_type in ('school_year_calendar_ai', 'school_year_calendar');
 
   return jsonb_build_object(
     'status', 'success',

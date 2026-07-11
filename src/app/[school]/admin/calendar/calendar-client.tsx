@@ -173,8 +173,6 @@ export default function CalendarClient({
 
             const isSelected = selectedDate === dateString;
 
-            
-
             const indicatorValue =
               calendarDay?.is_school_day === false
                 ? "no school"
@@ -209,12 +207,16 @@ export default function CalendarClient({
 
                 {hasIndicator && (
                   <span
-                    className={`absolute bottom-1.5 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full sm:bottom-2 sm:h-2 sm:w-2 ${dotClassFor(
-                      indicatorValue,
-                      "regular"
-                    )}`}
+                    className="absolute bottom-2 left-1/2 flex max-w-[calc(100%-0.75rem)] -translate-x-1/2 items-center justify-center gap-1 sm:bottom-2.5 sm:gap-1.5"
                     aria-hidden="true"
-                  />
+                  >
+                    <span
+                      className={`h-2.5 w-2.5 shrink-0 rounded-full sm:h-3 sm:w-3 ${dotClassFor(
+                        indicatorValue,
+                        "regular"
+                      )}`}
+                    />
+                  </span>
                 )}
               </button>
             );

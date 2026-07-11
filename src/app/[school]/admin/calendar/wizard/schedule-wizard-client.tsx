@@ -15,17 +15,25 @@ import {
   convertAiImportToWizardDraft,
   getAiImportReadinessSummary,
   getDetectedScheduleUsageCounts,
+  getRequiredDetectedScheduleIds,
   unresolvedRequiredSchedulesBlockFinalReadiness,
 } from "@/lib/calendarWizard/aiImportConversion";
 import {
   chooseCalendarWizardDraftSource,
+  getDraftTypeForCalendarWizardFlow,
   serializeCalendarWizardDraft,
+  type CalendarWizardFlowType,
   type CalendarWizardDraftRecord,
   type CalendarWizardStoredData,
 } from "@/lib/calendarWizard/draftPersistence";
 import {
   classifyCalendarWarnings,
+  getAiScheduleUsageDetails,
   getAiCreateCalendarReadiness,
+  isNoSchoolLikeDetectedScheduleName,
+  removeAiDetectedSchedule,
+  type AiScheduleRemovalAction,
+  type AiScheduleUsageDetails,
 } from "@/lib/calendarWizard/aiQuickSetupPersistence";
 import {
   confidenceLabel,
@@ -843,6 +851,7 @@ export default function ScheduleWizardClient({
   schedules,
   existingCalendarRange,
   initialSavedDraft,
+  flowMode = "guided",
 }: {
   schoolId: string;
   schoolSlug: string;
@@ -851,8 +860,23 @@ export default function ScheduleWizardClient({
   schedules: WizardScheduleSummary[];
   existingCalendarRange: ExistingCalendarRangeSummary;
   initialSavedDraft: CalendarWizardDraftRecord | null;
+  flowMode?: CalendarWizardFlowType;
 }) {
-  const storageKey = `sundial:schedule-wizard:${schoolId}:${schoolSlug}`;
+  const draftType = getDraftTypeForCalendarWizardFlow(flowMode);
+  const isAiMode = flowMode === "ai";
+  const isGuidedMode = flowMode === "guided";
+  const storageKey = `calendar-wizard-${flowMode}:${schoolSlug}`;
+  const legacyStorageKey = `sundial:schedule-wizard:${schoolId}:${schoolSlug}`;
+  const pageTitle = isAiMode ? "AI Calendar Import" : "Guided Calendar Setup";
+  const pageDescription = isAiMode
+    ? "Upload your school calendar PDF, review Sundial's draft, and create the calendar."
+    : "Build a school-year calendar from your normal schedule, closures, and special school days.";
+  const alternateFlowHref = isAiMode
+    ? `${adminBasePath}/calendar/wizard/guided`
+    : `${adminBasePath}/calendar/wizard/ai`;
+  const alternateFlowLabel = isAiMode
+    ? "Use Guided Setup instead"
+    : "Use AI Calendar Import instead";
   const [draft, setDraft] = useState<WizardDraft>(() => createDefaultDraft(schedules));
   const [currentStep, setCurrentStep] = useState<WizardStep>("school-year");
   const [draftLoading, setDraftLoading] = useState(true);
@@ -898,6 +922,7 @@ export default function ScheduleWizardClient({
     const result = await saveCalendarWizardDraft(schoolSlug, {
       wizardData: storedData,
       lastKnownUpdatedAt,
+      draftType,
     });
 
     if (result.status === "success" && result.draft) {
@@ -926,7 +951,16 @@ export default function ScheduleWizardClient({
 
   useEffect(() => {
     window.setTimeout(() => {
-      const localStored = parseLocalStoredDraft(window.sessionStorage.getItem(storageKey));
+      let localStored = parseLocalStoredDraft(window.sessionStorage.getItem(storageKey));
+      const legacyStored = parseLocalStoredDraft(window.sessionStorage.getItem(legacyStorageKey));
+      if (!localStored && legacyStored) {
+        const legacyFlow = legacyStored.data.draft.aiImport?.result ? "ai" : "guided";
+        if (legacyFlow === flowMode) {
+          localStored = legacyStored;
+          window.sessionStorage.setItem(storageKey, window.sessionStorage.getItem(legacyStorageKey) || "");
+          window.sessionStorage.removeItem(legacyStorageKey);
+        }
+      }
       const source = chooseCalendarWizardDraftSource({
         databaseUpdatedAt: initialSavedDraft?.updated_at,
         sessionUpdatedAt: localStored?.updatedAt,
@@ -1074,13 +1108,13 @@ export default function ScheduleWizardClient({
   async function startOver() {
     if (
       isMeaningfulDraft(draft) &&
-      !window.confirm("Clear this schedule wizard draft and start over?")
+      !window.confirm(`Clear this ${isAiMode ? "AI Calendar Import" : "Guided Setup"} draft and start over?`)
     ) {
       return;
     }
 
     setDraftSaveStatus("saving");
-    const result = await deleteCalendarWizardDraft(schoolSlug);
+    const result = await deleteCalendarWizardDraft(schoolSlug, draftType);
     if (result.status !== "success") {
       setDraftSaveStatus("error");
       setLastSavedMessage(result.message);
@@ -1116,7 +1150,7 @@ export default function ScheduleWizardClient({
 
       if (result.status === "success") {
         window.sessionStorage.removeItem(storageKey);
-        await deleteCalendarWizardDraft(schoolSlug);
+        await deleteCalendarWizardDraft(schoolSlug, draftType);
         setCompletionSummary(result.summary);
         setShowGenerateModal(false);
         setSaveResult(null);
@@ -1196,7 +1230,7 @@ export default function ScheduleWizardClient({
   }
 
   async function saveAndOpenSchedule(tempId: string, detectedName: string) {
-    const returnTo = `${adminBasePath}/calendar/wizard`;
+    const returnTo = `${adminBasePath}/calendar/wizard/ai`;
     const href = `${adminBasePath}/schedules/new?name=${encodeURIComponent(
       detectedName
     )}&aiTempId=${encodeURIComponent(tempId)}&returnTo=${encodeURIComponent(returnTo)}`;
@@ -1226,11 +1260,10 @@ export default function ScheduleWizardClient({
                 {schoolName} Admin
               </p>
               <h1 className="mt-1 text-3xl font-bold tracking-tight">
-                Schedule Wizard
+                {pageTitle}
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                Build a school-year calendar from your normal schedule, closures,
-                and special school days.
+                {pageDescription}
               </p>
             </div>
           </div>
@@ -1260,12 +1293,11 @@ export default function ScheduleWizardClient({
             <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
               {schoolName} Admin
             </p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">
-              Schedule Wizard
+              <h1 className="mt-1 text-3xl font-bold tracking-tight">
+              {pageTitle}
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Build a school-year calendar from your normal schedule, closures,
-              and special school days.
+              {pageDescription}
             </p>
           </div>
 
@@ -1273,6 +1305,9 @@ export default function ScheduleWizardClient({
             <button type="button" onClick={startOver} className={subtleButtonClass}>
               Start Over
             </button>
+            <Link href={alternateFlowHref} className={secondaryButtonClass}>
+              {alternateFlowLabel}
+            </Link>
             <Link href={`${adminBasePath}/calendar`} className={secondaryButtonClass}>
               Back to Calendar
             </Link>
@@ -1288,7 +1323,7 @@ export default function ScheduleWizardClient({
           </div>
         )}
 
-        {!isAiQuickReview && (
+        {isGuidedMode && !isAiQuickReview && (
           <WizardProgress
             currentStep={currentStep}
             completedSteps={draft.completedSteps}
@@ -1306,7 +1341,7 @@ export default function ScheduleWizardClient({
             </div>
           )}
 
-          {isAiQuickReview ? (
+          {isAiMode ? (
             <AiCalendarImportCard
               schoolSlug={schoolSlug}
               schedules={schedules}
@@ -1319,22 +1354,10 @@ export default function ScheduleWizardClient({
             />
           ) : currentStep === "school-year" && (
             <div className="space-y-7">
-              <AiCalendarImportCard
-                schoolSlug={schoolSlug}
-                schedules={schedules}
-                draft={draft}
-                onAddTimesNow={saveAndOpenSchedule}
-                onImmediateSave={saveCurrentDraft}
-                onCreateCalendar={openAiCreateModal}
-                updateDraft={updateDraft}
-                setCurrentStep={setCurrentStep}
-              />
-              {!isAiQuickReview && (
-                <SchoolYearStep draft={draft} errors={errors} updateDraft={updateDraft} />
-              )}
+              <SchoolYearStep draft={draft} errors={errors} updateDraft={updateDraft} />
             </div>
           )}
-          {currentStep === "normal-schedule" && (
+          {isGuidedMode && currentStep === "normal-schedule" && (
             <NormalScheduleStep
               draft={draft}
               schedules={schedules}
@@ -1345,10 +1368,10 @@ export default function ScheduleWizardClient({
               updateDraft={updateDraft}
             />
           )}
-          {currentStep === "no-school" && (
+          {isGuidedMode && currentStep === "no-school" && (
             <NoSchoolDaysStep draft={draft} errors={errors} updateDraft={updateDraft} />
           )}
-          {currentStep === "special-days" && (
+          {isGuidedMode && currentStep === "special-days" && (
             <SpecialSchoolDaysStep
               draft={draft}
               schedules={schedules}
@@ -1357,7 +1380,7 @@ export default function ScheduleWizardClient({
               updateDraft={updateDraft}
             />
           )}
-          {currentStep === "review" && (
+          {isGuidedMode && currentStep === "review" && (
             <ReviewCalendarStep
               draft={draft}
               result={generationResult}
@@ -1367,7 +1390,7 @@ export default function ScheduleWizardClient({
             />
           )}
 
-          {!isAiQuickReview && (
+          {isGuidedMode && !isAiQuickReview && (
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 dark:border-[#3a3a3a]">
             <button
               type="button"
@@ -1799,6 +1822,64 @@ function AiCalendarImportCard({
     });
   }
 
+  function removeDetectedSchedule(
+    tempId: string,
+    action: AiScheduleRemovalAction
+  ) {
+    updateDraft((previousDraft) => {
+      if (!previousDraft.aiImport?.result) return previousDraft;
+      const removal = removeAiDetectedSchedule({
+        importResult: previousDraft.aiImport.result,
+        tempId,
+        action,
+      });
+
+      if (!removal.success) {
+        window.alert(removal.message);
+        return previousDraft;
+      }
+
+      const nextResolutions = previousDraft.aiImport.resolutions.filter(
+        (resolution) => resolution.tempId !== tempId
+      );
+      const nextResolutionMap = new Map(
+        nextResolutions.map((resolution) => [resolution.tempId, resolution])
+      );
+      const removedSchedules = [
+        ...(previousDraft.aiImport.removedSchedules || []),
+        removal.removedSchedule,
+      ];
+      const usageMessage =
+        removal.affectedDayCount > 0
+          ? ` ${pluralize(removal.affectedDayCount, "date")} ${
+              removal.removedSchedule.action === "marked_no_school"
+                ? removal.affectedDayCount === 1
+                  ? "was changed to a no-school day."
+                  : "were changed to no-school days."
+                : "were updated."
+            }`
+          : "";
+
+      return {
+        ...previousDraft,
+        aiImport: {
+          ...previousDraft.aiImport,
+          state: "review",
+          result: removal.importResult,
+          resolutions: nextResolutions,
+          removedSchedules,
+          unresolvedRequiredScheduleIds: getRequiredDetectedScheduleIds(
+            removal.importResult
+          ).filter((requiredTempId) => /^(ai-|temp-|mock-)/i.test(requiredTempId)).filter((requiredTempId) => {
+            const resolution = nextResolutionMap.get(requiredTempId);
+            return !resolution || !resolution.matchedExistingScheduleId;
+          }),
+          banner: `Removed '${removal.removedSchedule.name}' from the imported calendar.${usageMessage}`,
+        },
+      };
+    });
+  }
+
   function startAiReviewOver() {
     setSelectedFile(null);
     setStatus("idle");
@@ -1901,6 +1982,7 @@ function AiCalendarImportCard({
           onNameChange={updateReviewedName}
           onSetupChoiceChange={updateSetupChoice}
           onWarningResolutionChange={updateWarningResolution}
+          onRemoveSchedule={removeDetectedSchedule}
           onCreateCalendar={onCreateCalendar}
           onContinueManually={continueManually}
           onAdvancedEdit={applyImport}
@@ -1921,6 +2003,7 @@ function AiImportReview({
   onNameChange,
   onSetupChoiceChange,
   onWarningResolutionChange,
+  onRemoveSchedule,
   onCreateCalendar,
   onContinueManually,
   onAdvancedEdit,
@@ -1941,11 +2024,18 @@ function AiImportReview({
     code: string,
     status: AiImportWarningResolution["status"]
   ) => void;
+  onRemoveSchedule: (tempId: string, action: AiScheduleRemovalAction) => void;
   onCreateCalendar: () => Promise<void>;
   onContinueManually: () => void;
   onAdvancedEdit: () => void;
   onStartOver: () => void;
 }) {
+  const [removalTarget, setRemovalTarget] = useState<{
+    tempId: string;
+    name: string;
+    usage: AiScheduleUsageDetails;
+  } | null>(null);
+  const [replacementScheduleId, setReplacementScheduleId] = useState("");
   const schedulesNeedingTimes = resolutions.filter(
     (resolution) =>
       !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
@@ -1972,6 +2062,36 @@ function AiImportReview({
   const canCreateCalendar = warningReadiness.canCreateCalendar;
   const matchedCount = resolutions.filter((resolution) => resolution.matchedExistingScheduleId).length;
   const newScheduleCount = schedulesNeedingTimes.length;
+
+  function requestRemoveSchedule(resolution: DetectedScheduleResolution) {
+    const usage = getAiScheduleUsageDetails(importResult, resolution.tempId);
+    const name = reviewedScheduleName(resolution);
+
+    if (!usage.isReferenced) {
+      onRemoveSchedule(resolution.tempId, { type: "remove_unused" });
+      return;
+    }
+
+    setRemovalTarget({ tempId: resolution.tempId, name, usage });
+    setReplacementScheduleId("");
+  }
+
+  function confirmReassign() {
+    if (!removalTarget || !replacementScheduleId) return;
+    onRemoveSchedule(removalTarget.tempId, {
+      type: "reassign",
+      replacementScheduleId,
+    });
+    setRemovalTarget(null);
+    setReplacementScheduleId("");
+  }
+
+  function confirmNoSchool() {
+    if (!removalTarget) return;
+    onRemoveSchedule(removalTarget.tempId, { type: "mark_no_school" });
+    setRemovalTarget(null);
+    setReplacementScheduleId("");
+  }
 
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-[#242424]">
@@ -2137,12 +2257,100 @@ function AiImportReview({
                       </button>
                     </>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => requestRemoveSchedule(resolution)}
+                    className="inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50 dark:border-red-900/60 dark:text-red-200 dark:hover:bg-red-950/30"
+                  >
+                    Remove
+                  </button>
                 </div>
               </div>
             );
           })}
         </div>
       </ReviewPanel>
+
+      {removalTarget && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-4 py-8">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remove-detected-schedule-title"
+            className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-[#242424]"
+          >
+            <h3 id="remove-detected-schedule-title" className="text-2xl font-bold">
+              Remove detected schedule?
+            </h3>
+            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              {removalTarget.name} is used on{" "}
+              {pluralize(removalTarget.usage.calendarDayCount, "calendar day")}. Choose what
+              should happen to those dates.
+            </p>
+            {isNoSchoolLikeDetectedScheduleName(removalTarget.name) && (
+              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                Recommended: Mark these dates as no-school days.
+              </p>
+            )}
+
+            <div className="mt-5 space-y-4">
+              <label className="block text-sm font-bold">
+                Reassign to another schedule
+                <select
+                  value={replacementScheduleId}
+                  onChange={(event) => setReplacementScheduleId(event.target.value)}
+                  className={`mt-2 ${inputClass}`}
+                >
+                  <option value="">Choose a replacement</option>
+                  <optgroup label="Detected schedules">
+                    {resolutions
+                      .filter((resolution) => resolution.tempId !== removalTarget.tempId)
+                      .map((resolution) => (
+                        <option key={resolution.tempId} value={resolution.tempId}>
+                          {reviewedScheduleName(resolution)} · will be created
+                        </option>
+                      ))}
+                  </optgroup>
+                  <optgroup label="Existing Sundial schedules">
+                    {schedules.map((schedule) => (
+                      <option key={schedule.id} value={schedule.id}>
+                        {schedule.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </label>
+
+              <div className="flex flex-wrap justify-between gap-3 border-t border-slate-200 pt-4 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setRemovalTarget(null)}
+                  className={secondaryButtonClass}
+                >
+                  Cancel
+                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={confirmNoSchool}
+                    className={secondaryButtonClass}
+                  >
+                    Mark dates as no school
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmReassign}
+                    disabled={!replacementScheduleId}
+                    className={sundialPrimaryButtonClass("px-4")}
+                  >
+                    Reassign and remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ReviewPanel title="Readiness Checklist" className="mt-4">
         <div className="grid gap-4 md:grid-cols-2">

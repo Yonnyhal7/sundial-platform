@@ -7,7 +7,33 @@ import type { AiImportDraftMetadata } from "./aiImportTypes";
 import type { Weekday } from "./types";
 
 export const CALENDAR_WIZARD_DRAFT_VERSION = 1;
-export const CALENDAR_WIZARD_DRAFT_TYPE = "school_year_calendar";
+export const LEGACY_CALENDAR_WIZARD_DRAFT_TYPE = "school_year_calendar";
+export const AI_CALENDAR_WIZARD_DRAFT_TYPE = "school_year_calendar_ai";
+export const GUIDED_CALENDAR_WIZARD_DRAFT_TYPE = "school_year_calendar_guided";
+export const CALENDAR_WIZARD_DRAFT_TYPE = GUIDED_CALENDAR_WIZARD_DRAFT_TYPE;
+
+export const CALENDAR_WIZARD_DRAFT_TYPES = [
+  AI_CALENDAR_WIZARD_DRAFT_TYPE,
+  GUIDED_CALENDAR_WIZARD_DRAFT_TYPE,
+  LEGACY_CALENDAR_WIZARD_DRAFT_TYPE,
+] as const;
+
+export type CalendarWizardDraftType = (typeof CALENDAR_WIZARD_DRAFT_TYPES)[number];
+export type CalendarWizardFlowType = "ai" | "guided";
+
+export function getDraftTypeForCalendarWizardFlow(
+  flow: CalendarWizardFlowType
+): CalendarWizardDraftType {
+  return flow === "ai"
+    ? AI_CALENDAR_WIZARD_DRAFT_TYPE
+    : GUIDED_CALENDAR_WIZARD_DRAFT_TYPE;
+}
+
+export function getCalendarWizardFlowForDraft(
+  data: CalendarWizardStoredData
+): CalendarWizardFlowType {
+  return data.draft.aiImport?.result ? "ai" : "guided";
+}
 
 export const CALENDAR_WIZARD_STEPS = [
   "school-year",
@@ -118,6 +144,25 @@ function normalizeAiImport(aiImport: unknown): AiImportDraftMetadata | null {
       ? stripped.unresolvedRequiredScheduleIds.filter(
           (id): id is string => typeof id === "string"
         )
+      : [],
+    removedSchedules: Array.isArray(stripped.removedSchedules)
+      ? stripped.removedSchedules.filter(isRecord).map((removed) => {
+          const action: "removed" | "reassigned" | "marked_no_school" =
+            removed.action === "reassigned" || removed.action === "marked_no_school"
+              ? removed.action
+              : "removed";
+
+          return {
+            tempId: typeof removed.tempId === "string" ? removed.tempId : "",
+            name: typeof removed.name === "string" ? removed.name : "",
+            removedAt: typeof removed.removedAt === "string" ? removed.removedAt : "",
+            action,
+            affectedDayCount:
+              typeof removed.affectedDayCount === "number"
+                ? removed.affectedDayCount
+                : undefined,
+          };
+        }).filter((removed) => removed.tempId && removed.name)
       : [],
     warnings: Array.isArray(stripped.warnings) ? stripped.warnings : [],
     warningResolutions: Array.isArray(stripped.warningResolutions)

@@ -5,19 +5,25 @@ import { notFound } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { compareDateStrings, isDateString } from "@/lib/calendarWizard/dateUtils";
 import {
-  CALENDAR_WIZARD_DRAFT_TYPE,
+  AI_CALENDAR_WIZARD_DRAFT_TYPE,
+  GUIDED_CALENDAR_WIZARD_DRAFT_TYPE,
+  LEGACY_CALENDAR_WIZARD_DRAFT_TYPE,
+  getCalendarWizardFlowForDraft,
   serializeCalendarWizardDraft,
+  type CalendarWizardDraftType,
   type CalendarWizardDraftRecord,
   type CalendarWizardStoredData,
 } from "@/lib/calendarWizard/draftPersistence";
 import { generateSchoolYearCalendar } from "@/lib/calendarWizard/generateSchoolYearCalendar";
 import { mapGeneratedCalendarDaysToRows } from "@/lib/calendarWizard/persistence";
 import {
-  buildAiCalendarConfig,
   classifyCalendarWarnings,
+  collectReferencedRemovedScheduleIds,
   collectUnmappedTemporaryScheduleIds,
   logCalendarWarningClassification,
   planAiSchedulePersistence,
+  resolveAiScheduleReferences,
+  validateAiCalendarRpcRows,
   type ExistingScheduleForAiPersistence,
 } from "@/lib/calendarWizard/aiQuickSetupPersistence";
 import type {
@@ -134,16 +140,30 @@ function safeDraftRecord(row: {
   };
 }
 
+function normalizeDraftType(draftType?: CalendarWizardDraftType): CalendarWizardDraftType {
+  return draftType === AI_CALENDAR_WIZARD_DRAFT_TYPE ||
+    draftType === GUIDED_CALENDAR_WIZARD_DRAFT_TYPE ||
+    draftType === LEGACY_CALENDAR_WIZARD_DRAFT_TYPE
+    ? draftType
+    : GUIDED_CALENDAR_WIZARD_DRAFT_TYPE;
+}
+
+function expectedFlowForDraftType(draftType: CalendarWizardDraftType) {
+  return draftType === AI_CALENDAR_WIZARD_DRAFT_TYPE ? "ai" : "guided";
+}
+
 export async function loadCalendarWizardDraft(
-  school: string
+  school: string,
+  draftType: CalendarWizardDraftType = GUIDED_CALENDAR_WIZARD_DRAFT_TYPE
 ): Promise<CalendarWizardDraftActionResult> {
   try {
+    const targetDraftType = normalizeDraftType(draftType);
     const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
     const { data, error } = await adminUser.supabase
       .from("calendar_wizard_drafts")
       .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
       .eq("school_id", schoolData.id)
-      .eq("draft_type", CALENDAR_WIZARD_DRAFT_TYPE)
+      .eq("draft_type", targetDraftType)
       .maybeSingle();
 
     if (error) {
@@ -154,9 +174,50 @@ export async function loadCalendarWizardDraft(
       };
     }
 
+    const draft = data ? safeDraftRecord(data) : null;
+    if (draft || targetDraftType === LEGACY_CALENDAR_WIZARD_DRAFT_TYPE) {
+      return { status: "success", draft };
+    }
+
+    const { data: legacyData, error: legacyError } = await adminUser.supabase
+      .from("calendar_wizard_drafts")
+      .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
+      .eq("school_id", schoolData.id)
+      .eq("draft_type", LEGACY_CALENDAR_WIZARD_DRAFT_TYPE)
+      .maybeSingle();
+
+    if (legacyError) {
+      console.error("Load legacy calendar wizard draft error:", JSON.stringify(legacyError, null, 2));
+      return { status: "success", draft: null };
+    }
+
+    const legacyDraft = legacyData ? safeDraftRecord(legacyData) : null;
+    if (!legacyDraft) return { status: "success", draft: null };
+
+    if (getCalendarWizardFlowForDraft(legacyDraft.wizard_data) !== expectedFlowForDraftType(targetDraftType)) {
+      return { status: "success", draft: null };
+    }
+
+    const { data: migratedData, error: migratedError } = await adminUser.supabase
+      .from("calendar_wizard_drafts")
+      .update({
+        draft_type: targetDraftType,
+        updated_at: new Date().toISOString(),
+        updated_by: adminUser.profile.id,
+      })
+      .eq("id", legacyDraft.id)
+      .eq("draft_type", LEGACY_CALENDAR_WIZARD_DRAFT_TYPE)
+      .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
+      .single();
+
+    if (migratedError) {
+      console.error("Migrate legacy calendar wizard draft error:", JSON.stringify(migratedError, null, 2));
+      return { status: "success", draft: legacyDraft };
+    }
+
     return {
       status: "success",
-      draft: data ? safeDraftRecord(data) : null,
+      draft: migratedData ? safeDraftRecord(migratedData) : legacyDraft,
     };
   } catch (error) {
     if (isNextControlFlowError(error)) throw error;
@@ -173,9 +234,11 @@ export async function saveCalendarWizardDraft(
   input: {
     wizardData: unknown;
     lastKnownUpdatedAt?: string | null;
+    draftType?: CalendarWizardDraftType;
   }
 ): Promise<CalendarWizardDraftActionResult> {
   try {
+    const targetDraftType = normalizeDraftType(input.draftType);
     const serialized = serializeCalendarWizardDraft(input.wizardData);
     if (!serialized) {
       return {
@@ -189,7 +252,7 @@ export async function saveCalendarWizardDraft(
       .from("calendar_wizard_drafts")
       .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
       .eq("school_id", schoolData.id)
-      .eq("draft_type", CALENDAR_WIZARD_DRAFT_TYPE)
+      .eq("draft_type", targetDraftType)
       .maybeSingle();
 
     if (existingError) {
@@ -215,7 +278,7 @@ export async function saveCalendarWizardDraft(
 
     const row = {
       school_id: schoolData.id,
-      draft_type: CALENDAR_WIZARD_DRAFT_TYPE,
+      draft_type: targetDraftType,
       school_year_label: serialized.summary.schoolYearLabel,
       wizard_data: serialized.data,
       updated_by: adminUser.profile.id,
@@ -237,6 +300,24 @@ export async function saveCalendarWizardDraft(
       };
     }
 
+    const { data: legacyData } = await adminUser.supabase
+      .from("calendar_wizard_drafts")
+      .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
+      .eq("school_id", schoolData.id)
+      .eq("draft_type", LEGACY_CALENDAR_WIZARD_DRAFT_TYPE)
+      .maybeSingle();
+    const legacyDraft = legacyData ? safeDraftRecord(legacyData) : null;
+    if (
+      legacyDraft &&
+      getCalendarWizardFlowForDraft(legacyDraft.wizard_data) ===
+        expectedFlowForDraftType(targetDraftType)
+    ) {
+      await adminUser.supabase
+        .from("calendar_wizard_drafts")
+        .delete()
+        .eq("id", legacyDraft.id);
+    }
+
     revalidatePath(`/${school}/admin/calendar`);
 
     return {
@@ -254,15 +335,17 @@ export async function saveCalendarWizardDraft(
 }
 
 export async function deleteCalendarWizardDraft(
-  school: string
+  school: string,
+  draftType: CalendarWizardDraftType = GUIDED_CALENDAR_WIZARD_DRAFT_TYPE
 ): Promise<CalendarWizardDraftActionResult> {
   try {
+    const targetDraftType = normalizeDraftType(draftType);
     const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
     const { error } = await adminUser.supabase
       .from("calendar_wizard_drafts")
       .delete()
       .eq("school_id", schoolData.id)
-      .eq("draft_type", CALENDAR_WIZARD_DRAFT_TYPE);
+      .eq("draft_type", targetDraftType);
 
     if (error) {
       console.error("Delete calendar wizard draft error:", JSON.stringify(error, null, 2));
@@ -292,7 +375,7 @@ export async function connectDetectedScheduleInDraft(
     scheduleId: string;
   }
 ): Promise<CalendarWizardDraftActionResult> {
-  const loaded = await loadCalendarWizardDraft(school);
+  const loaded = await loadCalendarWizardDraft(school, AI_CALENDAR_WIZARD_DRAFT_TYPE);
   if (loaded.status !== "success" || !loaded.draft) return loaded;
 
   const data: CalendarWizardStoredData = {
@@ -325,6 +408,7 @@ export async function connectDetectedScheduleInDraft(
   return saveCalendarWizardDraft(school, {
     wizardData: data,
     lastKnownUpdatedAt: loaded.draft.updated_at,
+    draftType: AI_CALENDAR_WIZARD_DRAFT_TYPE,
   });
 }
 
@@ -563,7 +647,7 @@ export async function createAiCalendarFromDraftAction(
       .from("calendar_wizard_drafts")
       .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
       .eq("school_id", schoolData.id)
-      .eq("draft_type", CALENDAR_WIZARD_DRAFT_TYPE)
+      .eq("draft_type", AI_CALENDAR_WIZARD_DRAFT_TYPE)
       .maybeSingle();
 
     if (draftError) {
@@ -611,6 +695,20 @@ export async function createAiCalendarFromDraftAction(
       );
     }
 
+    const referencedRemovedScheduleIds = collectReferencedRemovedScheduleIds(
+      importResult,
+      aiImport.removedSchedules || []
+    );
+    if (referencedRemovedScheduleIds.length > 0) {
+      return validationError(
+        "Fix these calendar issues before creating the calendar:",
+        {
+          schedules:
+            "A removed detected schedule is still referenced by the imported calendar.",
+        }
+      );
+    }
+
     const { data: existingSchedules, error: scheduleError } = await adminUser.supabase
       .from("schedules")
       .select("id, schedule_name, active, setup_status")
@@ -645,7 +743,7 @@ export async function createAiCalendarFromDraftAction(
       };
     }
 
-    const config = buildAiCalendarConfig(importResult, plan.tempToScheduleId);
+    const config = resolveAiScheduleReferences(importResult, plan.tempToScheduleId);
     const shapeError = validateConfigShape(config, {
       allowInstructionalSpecialDayWithoutScheduleOverride: true,
     });
@@ -691,6 +789,17 @@ export async function createAiCalendarFromDraftAction(
       return validationError(
         "One of the calendar labels is too long. Shorten labels before creating the calendar.",
         { label: `The label on ${labelTooLong.date} is too long.` }
+      );
+    }
+
+    const rpcRowValidation = validateAiCalendarRpcRows(rows);
+    if (!rpcRowValidation.success) {
+      console.error("AI calendar RPC row validation blocked unresolved schedule IDs:", {
+        invalidIds: rpcRowValidation.invalidIds,
+      });
+      return validationError(
+        "Some imported schedules could not be connected. Please review the detected schedules and try again.",
+        { schedules: "Detected schedule references need review." }
       );
     }
 

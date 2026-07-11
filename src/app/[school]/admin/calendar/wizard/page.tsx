@@ -1,36 +1,16 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAdminSectionAccess, getSchoolAdminPath } from "@/lib/auth/adminPermissions";
+import { getSchoolAdminPath, requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
+import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import ScheduleWizardClient, {
-  type WizardScheduleSummary,
-  type ExistingCalendarRangeSummary,
-} from "./schedule-wizard-client";
-import { loadCalendarWizardDraft } from "./actions";
-import { normalizeScheduleSetupStatus } from "@/lib/scheduleStatus";
 
-type ScheduleRow = {
-  id: string;
-  schedule_name: string;
-  schedule_type: string | null;
-  active: boolean;
-  setup_status: string | null;
-};
-
-type PeriodRow = {
-  schedule_id: string;
-  name: string;
-  start_time: string;
-  end_time: string;
-};
-
-export default async function ScheduleWizardPage({
+export default async function CalendarWizardChoicePage({
   params,
 }: {
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
   const supabase = await createSupabaseServerClient();
-
   const { data: schoolData } = await supabase
     .rpc("get_school_by_subdomain", {
       subdomain_input: school,
@@ -42,88 +22,92 @@ export default async function ScheduleWizardPage({
   }
 
   await requireAdminSectionAccess(schoolData.id, "calendar", school);
-
-  const { data: schedules, error: schedulesError } = await supabase
-    .from("schedules")
-    .select("id, schedule_name, schedule_type, active, setup_status")
-    .eq("school_id", schoolData.id)
-    .eq("active", true)
-    .order("schedule_name", { ascending: true })
-    .returns<ScheduleRow[]>();
-
-  if (schedulesError) {
-    console.error("Schedule wizard schedules error:", JSON.stringify(schedulesError, null, 2));
-  }
-
-  const scheduleIds = (schedules || []).map((schedule) => schedule.id);
-  const { data: periods, error: periodsError } = scheduleIds.length
-    ? await supabase
-        .from("periods")
-        .select("schedule_id, name, start_time, end_time")
-        .in("schedule_id", scheduleIds)
-        .order("start_time", { ascending: true })
-        .returns<PeriodRow[]>()
-    : { data: [], error: null };
-
-  if (periodsError) {
-    console.error("Schedule wizard periods error:", JSON.stringify(periodsError, null, 2));
-  }
-
-  const [{ data: firstCalendarDay }, { data: lastCalendarDay }] = await Promise.all([
-    supabase
-      .from("calendar_days")
-      .select("date")
-      .eq("school_id", schoolData.id)
-      .order("date", { ascending: true })
-      .limit(1)
-      .maybeSingle<{ date: string }>(),
-    supabase
-      .from("calendar_days")
-      .select("date")
-      .eq("school_id", schoolData.id)
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle<{ date: string }>(),
-  ]);
-
-  const periodMap = new Map<string, PeriodRow[]>();
-  for (const period of periods || []) {
-    periodMap.set(period.schedule_id, [...(periodMap.get(period.schedule_id) || []), period]);
-  }
-
-  const scheduleSummaries: WizardScheduleSummary[] = (schedules || []).map((schedule) => {
-    const schedulePeriods = periodMap.get(schedule.id) || [];
-    return {
-      id: schedule.id,
-      name: schedule.schedule_name,
-      type: schedule.schedule_type,
-      active: schedule.active,
-      setupStatus: normalizeScheduleSetupStatus(schedule.setup_status, schedulePeriods),
-      periodCount: schedulePeriods.length,
-      firstStartTime: schedulePeriods[0]?.start_time || null,
-      lastEndTime: schedulePeriods[schedulePeriods.length - 1]?.end_time || null,
-    };
-  });
-
-  const existingCalendarRange: ExistingCalendarRangeSummary = {
-    firstDate: firstCalendarDay?.date || null,
-    lastDate: lastCalendarDay?.date || null,
-  };
-
   const adminBasePath = await getSchoolAdminPath(school);
-  const savedDraftResult = await loadCalendarWizardDraft(school);
+
+  const options = [
+    {
+      title: "AI Calendar Import",
+      badge: "Beta",
+      description:
+        "Upload your school calendar PDF and let Sundial build the calendar draft for you.",
+      highlights: [
+        "Upload a PDF",
+        "Review detected dates and schedules",
+        "Create missing schedules automatically",
+        "Add bell times now or later",
+      ],
+      href: `${adminBasePath}/calendar/wizard/ai`,
+      cta: "Use AI Import",
+    },
+    {
+      title: "Guided Setup",
+      description: "Build your school-year calendar step by step.",
+      highlights: [
+        "Set school-year dates",
+        "Choose the normal schedule pattern",
+        "Add no-school days",
+        "Add special days",
+        "Review before creating",
+      ],
+      href: `${adminBasePath}/calendar/wizard/guided`,
+      cta: "Start Guided Setup",
+    },
+  ];
 
   return (
-    <ScheduleWizardClient
-      schoolId={schoolData.id}
-      schoolSlug={school}
-      schoolName={schoolData.name}
-      adminBasePath={adminBasePath}
-      schedules={scheduleSummaries}
-      existingCalendarRange={existingCalendarRange}
-      initialSavedDraft={
-        savedDraftResult.status === "success" ? savedDraftResult.draft : null
-      }
-    />
+    <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
+      <div className="mx-auto max-w-6xl px-5 py-8 lg:px-8">
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+              {schoolData.name} Admin
+            </p>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight">
+              Create School-Year Calendar
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+              How would you like to build your calendar?
+            </p>
+          </div>
+          <Link href={`${adminBasePath}/calendar`} className="text-sm font-bold text-slate-600 transition hover:text-slate-950 dark:text-slate-300 dark:hover:text-white">
+            Back to Calendar
+          </Link>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-2">
+          {options.map((option) => (
+            <section
+              key={option.title}
+              className="flex min-h-full flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-2xl font-bold">{option.title}</h2>
+                {option.badge && (
+                  <span className="rounded-full bg-[#D4A017]/15 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-[#9A7209] dark:text-[#F6C64A]">
+                    {option.badge}
+                  </span>
+                )}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                {option.description}
+              </p>
+              <ul className="mt-5 flex-1 space-y-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                {option.highlights.map((highlight) => (
+                  <li key={highlight} className="flex gap-3">
+                    <span className="mt-1 h-2 w-2 rounded-full bg-[#D4A017]" aria-hidden="true" />
+                    <span>{highlight}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-6">
+                <Link href={option.href} className={sundialPrimaryButtonClass("w-full sm:w-auto")}>
+                  {option.cta}
+                </Link>
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    </main>
   );
 }

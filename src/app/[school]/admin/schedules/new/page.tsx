@@ -157,7 +157,12 @@ function getSafeScheduleReturnPath(value: string, school: string) {
     `/${school}/dashboard/calendar/wizard`,
   ];
 
-  return allowedPrefixes.some((prefix) => value === prefix || value.startsWith(`${prefix}?`))
+  return allowedPrefixes.some(
+    (prefix) =>
+      value === prefix ||
+      value.startsWith(`${prefix}?`) ||
+      value.startsWith(`${prefix}/`)
+  )
     ? value
     : null;
 }
