@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { normalizeScheduleSetupStatus } from "@/lib/scheduleStatus";
 
 export default async function AdminSchedulesPage({
   params,
@@ -52,7 +53,7 @@ export default async function AdminSchedulesPage({
   const { data: schedules, error } = await supabase
     .from("schedules")
     .select(
-      "id, school_id, schedule_name, schedule_type, active, created_at, updated_at"
+      "id, school_id, schedule_name, schedule_type, active, setup_status, created_at, updated_at"
     )
     .eq("school_id", schoolId)
     .order("created_at", { ascending: false });
@@ -99,7 +100,9 @@ export default async function AdminSchedulesPage({
               </p>
             </div>
           ) : (
-            schedules.map((schedule) => (
+            schedules.map((schedule) => {
+              const setupStatus = normalizeScheduleSetupStatus(schedule.setup_status);
+              return (
               <article
                 key={schedule.id}
                 className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
@@ -114,6 +117,11 @@ export default async function AdminSchedulesPage({
                       {schedule.active && (
                         <span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-700 ring-1 ring-green-500/30 dark:text-green-300">
                           Active
+                        </span>
+                      )}
+                      {setupStatus === "needs_times" && (
+                        <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-500/30 dark:text-amber-200">
+                          Bell times needed
                         </span>
                       )}
                     </div>
@@ -131,7 +139,7 @@ export default async function AdminSchedulesPage({
                     href={`/${school}/admin/schedules/${schedule.id}/edit`}
                     className="cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
                   >
-                    Edit Schedule
+                    {setupStatus === "needs_times" ? "Add Bell Times" : "Edit Schedule"}
                   </Link>
 
                   <form action={deleteSchedule}>
@@ -150,7 +158,8 @@ export default async function AdminSchedulesPage({
                   </form>
                 </div>
               </article>
-            ))
+            );
+            })
           )}
         </section>
       </div>

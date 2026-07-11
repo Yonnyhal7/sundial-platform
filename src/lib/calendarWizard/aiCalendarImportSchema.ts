@@ -61,7 +61,7 @@ export const aiCalendarImportJsonSchema = {
         properties: {
           id: { type: "string" },
           startDate: { type: "string" },
-          endDate: { type: ["string", "null"] },
+          endDate: { type: "string" },
           label: { type: "string" },
           type: { type: ["string", "null"] },
           confidence: { enum: ["high", "review", "uncertain"] },
@@ -78,7 +78,7 @@ export const aiCalendarImportJsonSchema = {
         properties: {
           id: { type: "string" },
           startDate: { type: "string" },
-          endDate: { type: ["string", "null"] },
+          endDate: { type: "string" },
           label: { type: "string" },
           type: { type: ["string", "null"] },
           scheduleTempId: { type: ["string", "null"] },

@@ -47,7 +47,7 @@ export type AiDetectedPattern = {
 export type AiDetectedNoSchoolRange = {
   id: string;
   startDate: string;
-  endDate?: string;
+  endDate: string;
   label: string;
   type?: string;
   confidence: AiImportConfidence;
@@ -57,7 +57,7 @@ export type AiDetectedNoSchoolRange = {
 export type AiDetectedSpecialDay = {
   id: string;
   startDate: string;
-  endDate?: string;
+  endDate: string;
   label: string;
   type?: string;
   scheduleTempId?: string;
@@ -78,6 +78,12 @@ export type AiImportWarning = {
   code: string;
   message: string;
   severity: "info" | "review" | "blocking";
+};
+
+export type AiImportWarningResolution = {
+  code: string;
+  status: "unreviewed" | "accepted_suggestion" | "kept_original" | "edited_manually" | "acknowledged";
+  note?: string;
 };
 
 export type AiCalendarImportResult = {
@@ -109,16 +115,20 @@ export type AiCalendarImportResult = {
 export type DetectedScheduleResolutionStatus =
   | "matched_automatically"
   | "matched_by_admin"
+  | "needs_times"
+  /** Legacy session drafts used unresolved before detected schedules were treated as valid concepts. */
   | "unresolved"
   | "ignored";
 
 export type DetectedScheduleResolution = {
   tempId: string;
   detectedName: string;
+  reviewedName?: string;
   normalizedName: string;
   matchedExistingScheduleId: string | null;
   status: DetectedScheduleResolutionStatus;
   needsSetup: boolean;
+  setupChoice?: "add_now" | "add_later";
 };
 
 export type AiImportReviewState =
@@ -141,6 +151,7 @@ export type AiImportDraftMetadata = {
   banner?: string;
   unresolvedRequiredScheduleIds?: string[];
   warnings?: AiImportWarning[];
+  warningResolutions?: AiImportWarningResolution[];
 };
 
 export type AiImportValidationResult =
@@ -189,10 +200,6 @@ function assertDate(value: unknown, path: string, errors: string[]) {
   if (typeof value !== "string" || !isDateString(value)) {
     errors.push(`${path} must be a YYYY-MM-DD date.`);
   }
-}
-
-function assertOptionalDate(value: unknown, path: string, errors: string[]) {
-  if (value !== undefined) assertDate(value, path, errors);
 }
 
 function assertString(value: unknown, path: string, errors: string[]) {
@@ -284,7 +291,7 @@ export function validateAiCalendarImportResult(value: unknown): AiImportValidati
       }
       assertString(range.id, `noSchoolRanges.${index}.id`, errors);
       assertDate(range.startDate, `noSchoolRanges.${index}.startDate`, errors);
-      assertOptionalDate(range.endDate, `noSchoolRanges.${index}.endDate`, errors);
+      assertDate(range.endDate, `noSchoolRanges.${index}.endDate`, errors);
       assertString(range.label, `noSchoolRanges.${index}.label`, errors);
       assertConfidence(range.confidence, `noSchoolRanges.${index}.confidence`, errors);
     });
@@ -300,7 +307,7 @@ export function validateAiCalendarImportResult(value: unknown): AiImportValidati
       }
       assertString(day.id, `specialDays.${index}.id`, errors);
       assertDate(day.startDate, `specialDays.${index}.startDate`, errors);
-      assertOptionalDate(day.endDate, `specialDays.${index}.endDate`, errors);
+      assertDate(day.endDate, `specialDays.${index}.endDate`, errors);
       assertString(day.label, `specialDays.${index}.label`, errors);
       if (typeof day.isInstructional !== "boolean") {
         errors.push(`specialDays.${index}.isInstructional must be boolean.`);

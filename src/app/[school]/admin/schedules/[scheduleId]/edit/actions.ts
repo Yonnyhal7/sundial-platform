@@ -19,6 +19,13 @@ export async function updateScheduleAction(
   const scheduleName = String(formData.get("schedule_name") || "");
   const scheduleType = String(formData.get("schedule_type") || "");
   const active = formData.get("active") === "on";
+  const periodIds = formData.getAll("period_id").map(String);
+  const periodNames = formData.getAll("period_name").map(String);
+  const startTimes = formData.getAll("start_time").map(String);
+  const endTimes = formData.getAll("end_time").map(String);
+  const hasValidPeriods = periodNames.some((name, index) =>
+    Boolean(name && startTimes[index] && endTimes[index])
+  );
 
   const { error: scheduleError } = await supabase
     .from("schedules")
@@ -26,6 +33,7 @@ export async function updateScheduleAction(
       schedule_name: scheduleName,
       schedule_type: scheduleType || null,
       active,
+      setup_status: hasValidPeriods ? "ready" : "needs_times",
       updated_at: new Date().toISOString(),
     })
     .eq("id", scheduleId)
@@ -35,11 +43,6 @@ export async function updateScheduleAction(
     console.error("Update schedule error:", JSON.stringify(scheduleError, null, 2));
     redirect(`/${school}/admin/schedules/${scheduleId}/edit?error=1`);
   }
-
-  const periodIds = formData.getAll("period_id").map(String);
-  const periodNames = formData.getAll("period_name").map(String);
-  const startTimes = formData.getAll("start_time").map(String);
-  const endTimes = formData.getAll("end_time").map(String);
 
   const submittedExistingIds = periodIds.filter((id) => !id.startsWith("new-"));
 

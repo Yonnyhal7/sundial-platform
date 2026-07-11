@@ -53,6 +53,7 @@ type KioskDisplayProps = {
   schoolMascot?: string | null;
   schoolLogoUrl?: string | null;
   dayType: string;
+  scheduleNeedsTimes?: boolean;
   periods: Period[];
   events: EventItem[];
   games: GameItem[];
@@ -194,6 +195,7 @@ export default function KioskDisplay({
   schoolMascot,
   schoolLogoUrl,
   dayType,
+  scheduleNeedsTimes = false,
   periods,
   events,
   games,
@@ -271,7 +273,9 @@ export default function KioskDisplay({
       };
     }
 
-    const state = getTodayScheduleState(schedulePeriods, now);
+    const state = getTodayScheduleState(schedulePeriods, now, {
+      needsTimes: scheduleNeedsTimes,
+    });
     const byId = new Map(sortedPeriods.map((period) => [period.id, period]));
 
     return {
@@ -285,7 +289,7 @@ export default function KioskDisplay({
       progressPercent: state.progressPercent,
       isDayComplete: state.status === "after_school",
     };
-  }, [now, schedulePeriods, sortedPeriods]);
+  }, [now, scheduleNeedsTimes, schedulePeriods, sortedPeriods]);
 
   if (!now) {
     return null;
@@ -295,7 +299,9 @@ export default function KioskDisplay({
   const nextPeriod = periodState.nextPeriod;
   const currentPeriodTitle = periodState.isDayComplete
     ? "School Day Complete"
-    : currentPeriod?.name ?? "No Active Period";
+    : scheduleNeedsTimes
+      ? dayType
+      : currentPeriod?.name ?? "No Active Period";
   const countdownIsLong = periodState.countdown.includes("hr");
   const schoolTheme = getSchoolThemeModes({
     primary_color: schoolPrimaryColor,
@@ -390,12 +396,19 @@ export default function KioskDisplay({
                 {currentPeriodTitle}
               </h2>
 
-              {currentPeriod && (
+              {currentPeriod && !scheduleNeedsTimes && (
                 <p className="mt-[0.6dvh] text-[clamp(1rem,1.55vw,1.75rem)] text-slate-500">
                   {currentPeriod.startTime} – {currentPeriod.endTime}
                 </p>
               )}
 
+              {scheduleNeedsTimes ? (
+                <div className="mt-[5dvh] max-w-[48rem] rounded-3xl bg-slate-50 px-[3vw] py-[4dvh] text-center">
+                  <p className="text-[clamp(1.15rem,1.55vw,1.85rem)] font-semibold text-slate-500">
+                    Bell times have not been added yet.
+                  </p>
+                </div>
+              ) : (
               <div className="relative mt-[2dvh] h-[min(45dvh,450px)] w-[min(45dvh,450px)]">
                 <svg
                   className="h-full w-full -rotate-90"
@@ -438,6 +451,7 @@ export default function KioskDisplay({
                   </p>
                 </div>
               </div>
+              )}
 
               <div className="mt-auto w-full border-t border-slate-200 pt-[1.8dvh]">
                 <div className="mx-auto grid max-w-[780px] grid-cols-[1fr_auto_1fr] items-center gap-[1.8vw]">
@@ -450,7 +464,7 @@ export default function KioskDisplay({
                         Next Period
                       </p>
                       <p className="text-[clamp(0.95rem,1.35vw,1.6rem)] font-extrabold">
-                        {nextPeriod?.name ?? "End of Day"}
+                        {scheduleNeedsTimes ? "Bell times needed" : (nextPeriod?.name ?? "End of Day")}
                       </p>
                     </div>
                   </div>
@@ -483,7 +497,17 @@ export default function KioskDisplay({
                   gridTemplateRows: `repeat(${Math.max(sortedPeriods.length, 1)}, minmax(0, 1fr))`,
                 }}
               >
-                {sortedPeriods.map((period) => {
+                {scheduleNeedsTimes ? (
+                  <div className="flex h-full flex-col justify-center rounded-xl bg-slate-50 px-[1vw] text-center">
+                    <p className="text-[clamp(1rem,1.35vw,1.6rem)] font-extrabold">
+                      {dayType}
+                    </p>
+                    <p className="mt-[0.8dvh] text-[clamp(0.85rem,1vw,1.2rem)] font-semibold text-slate-500">
+                      Bell times have not been added yet.
+                    </p>
+                  </div>
+                ) : (
+                sortedPeriods.map((period) => {
                   const isCurrent = period.id === currentPeriod?.id;
                   const isComplete = periodState.completedPeriodIds.includes(period.id);
 
@@ -513,7 +537,8 @@ export default function KioskDisplay({
                       </div>
                     </div>
                   );
-                })}
+                })
+                )}
               </div>
             </Card>
 

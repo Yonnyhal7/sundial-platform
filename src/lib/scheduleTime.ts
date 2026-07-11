@@ -11,7 +11,8 @@ export type ScheduleStatus =
   | "in_period"
   | "passing"
   | "after_school"
-  | "no_schedule";
+  | "no_schedule"
+  | "needs_times";
 
 export type TodayScheduleState = {
   currentPeriod: SchedulePeriod | null;
@@ -72,8 +73,21 @@ export function formatCountdownDuration(milliseconds: number) {
 
 export function getTodayScheduleState(
   periods: SchedulePeriod[],
-  now: Date
+  now: Date,
+  options: { needsTimes?: boolean } = {}
 ): TodayScheduleState {
+  if (options.needsTimes) {
+    return {
+      currentPeriod: null,
+      nextPeriod: null,
+      status: "needs_times",
+      countdownLabel: "Starts In",
+      countdownTarget: null,
+      completedPeriodIds: [],
+      progressPercent: 0,
+    };
+  }
+
   const sortedPeriods = sortPeriodsByScheduleOrder(periods);
 
   if (sortedPeriods.length === 0) {

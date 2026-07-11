@@ -10,16 +10,18 @@ type CalendarDay = {
   label: string | null;
   is_school_day: boolean;
   schedule_id: string | null;
-  schedule:
+      schedule:
     | {
         id: string;
         schedule_name: string;
         schedule_type: string | null;
+        setup_status: string | null;
       }
     | {
         id: string;
         schedule_name: string;
         schedule_type: string | null;
+        setup_status: string | null;
       }[]
     | null;
 };
@@ -67,7 +69,8 @@ export default async function MobileAppHome({
       schedule:schedules (
         id,
         schedule_name,
-        schedule_type
+        schedule_type,
+        setup_status
       )
     `
       )
@@ -98,6 +101,7 @@ export default async function MobileAppHome({
     ? calendarDay.label || "No School"
     : assignedSchedule?.schedule_name || "No Schedule Assigned";
   const scheduleType = assignedSchedule?.schedule_type || "";
+  const scheduleNeedsTimes = assignedSchedule?.setup_status === "needs_times";
   const todayScheduleLabel = scheduleType
     ? `${scheduleName} (${scheduleType})`
     : scheduleName;
@@ -129,6 +133,7 @@ export default async function MobileAppHome({
         periods={periods}
         todayScheduleLabel={todayScheduleLabel}
         noSchool={calendarDay?.is_school_day === false}
+        scheduleNeedsTimes={scheduleNeedsTimes}
       />
     </main>
   );

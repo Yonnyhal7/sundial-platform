@@ -5,16 +5,20 @@ import ScheduleWizardClient, {
   type WizardScheduleSummary,
   type ExistingCalendarRangeSummary,
 } from "./schedule-wizard-client";
+import { loadCalendarWizardDraft } from "./actions";
+import { normalizeScheduleSetupStatus } from "@/lib/scheduleStatus";
 
 type ScheduleRow = {
   id: string;
   schedule_name: string;
   schedule_type: string | null;
   active: boolean;
+  setup_status: string | null;
 };
 
 type PeriodRow = {
   schedule_id: string;
+  name: string;
   start_time: string;
   end_time: string;
 };
@@ -41,7 +45,7 @@ export default async function ScheduleWizardPage({
 
   const { data: schedules, error: schedulesError } = await supabase
     .from("schedules")
-    .select("id, schedule_name, schedule_type, active")
+    .select("id, schedule_name, schedule_type, active, setup_status")
     .eq("school_id", schoolData.id)
     .eq("active", true)
     .order("schedule_name", { ascending: true })
@@ -55,7 +59,7 @@ export default async function ScheduleWizardPage({
   const { data: periods, error: periodsError } = scheduleIds.length
     ? await supabase
         .from("periods")
-        .select("schedule_id, start_time, end_time")
+        .select("schedule_id, name, start_time, end_time")
         .in("schedule_id", scheduleIds)
         .order("start_time", { ascending: true })
         .returns<PeriodRow[]>()
@@ -94,6 +98,7 @@ export default async function ScheduleWizardPage({
       name: schedule.schedule_name,
       type: schedule.schedule_type,
       active: schedule.active,
+      setupStatus: normalizeScheduleSetupStatus(schedule.setup_status, schedulePeriods),
       periodCount: schedulePeriods.length,
       firstStartTime: schedulePeriods[0]?.start_time || null,
       lastEndTime: schedulePeriods[schedulePeriods.length - 1]?.end_time || null,
@@ -106,6 +111,7 @@ export default async function ScheduleWizardPage({
   };
 
   const adminBasePath = await getSchoolAdminPath(school);
+  const savedDraftResult = await loadCalendarWizardDraft(school);
 
   return (
     <ScheduleWizardClient
@@ -115,6 +121,9 @@ export default async function ScheduleWizardPage({
       adminBasePath={adminBasePath}
       schedules={scheduleSummaries}
       existingCalendarRange={existingCalendarRange}
+      initialSavedDraft={
+        savedDraftResult.status === "success" ? savedDraftResult.draft : null
+      }
     />
   );
 }

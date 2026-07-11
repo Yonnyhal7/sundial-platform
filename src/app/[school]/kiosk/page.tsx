@@ -18,16 +18,18 @@ type CalendarDay = {
   is_school_day: boolean;
   label: string | null;
   schedule_id: string | null;
-  schedule:
+      schedule:
     | {
         id: string;
         schedule_name: string;
         schedule_type: string | null;
+        setup_status: string | null;
       }
     | {
         id: string;
         schedule_name: string;
         schedule_type: string | null;
+        setup_status: string | null;
       }[]
     | null;
 };
@@ -129,7 +131,8 @@ export default async function KioskPage({
       schedule:schedules (
         id,
         schedule_name,
-        schedule_type
+        schedule_type,
+        setup_status
       )
     `
     )
@@ -142,6 +145,7 @@ export default async function KioskPage({
     : calendarDay?.schedule;
   const scheduleName = assignedSchedule?.schedule_name || "No Schedule Assigned";
   const scheduleType = assignedSchedule?.schedule_type || "";
+  const scheduleNeedsTimes = assignedSchedule?.setup_status === "needs_times";
   const dayType = scheduleType ? `${scheduleName} (${scheduleType})` : scheduleName;
   let periods: Period[] = [];
 
@@ -225,6 +229,7 @@ export default async function KioskPage({
       schoolMascot={schoolData.mascot}
       schoolLogoUrl={schoolData.logo_url || null}
       dayType={dayType}
+      scheduleNeedsTimes={scheduleNeedsTimes}
       periods={periods.map((period) => ({
         id: period.id,
         name: period.name,

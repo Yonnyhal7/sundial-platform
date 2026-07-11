@@ -2,16 +2,22 @@ import { notFound, redirect } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ScheduleForm from "@/components/admin/ScheduleForm";
+import { connectDetectedScheduleInDraft } from "../../calendar/wizard/actions";
 
 export default async function NewSchedulePage({
   params,
   searchParams,
 }: {
   params: Promise<{ school: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    name?: string;
+    aiTempId?: string;
+    returnTo?: string;
+  }>;
 }) {
   const { school } = await params;
-  const { error: errorParam } = await searchParams;
+  const { error: errorParam, name: nameParam, aiTempId, returnTo } = await searchParams;
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
@@ -39,6 +45,17 @@ export default async function NewSchedulePage({
     const scheduleName = String(formData.get("schedule_name") || "");
     const scheduleType = String(formData.get("schedule_type") || "");
     const active = formData.get("active") === "on";
+    const periodNames = formData.getAll("period_name").map(String);
+    const startTimes = formData.getAll("start_time").map(String);
+    const endTimes = formData.getAll("end_time").map(String);
+    const validPeriodInputs = periodNames
+      .map((name, index) => ({
+        name,
+        start_time: startTimes[index] || null,
+        end_time: endTimes[index] || null,
+        sort_order: index + 1,
+      }))
+      .filter((period) => period.name && period.start_time && period.end_time);
 
     const { data: schedule, error: scheduleError } = await supabase
       .from("schedules")
@@ -47,6 +64,7 @@ export default async function NewSchedulePage({
         schedule_name: scheduleName,
         schedule_type: scheduleType || null,
         active,
+        setup_status: validPeriodInputs.length > 0 ? "ready" : "needs_times",
       })
       .select("id")
       .single();
@@ -59,19 +77,11 @@ export default async function NewSchedulePage({
       redirect(`/${school}/admin/schedules/new?error=1`);
     }
 
-    const periodNames = formData.getAll("period_name").map(String);
-    const startTimes = formData.getAll("start_time").map(String);
-    const endTimes = formData.getAll("end_time").map(String);
-
-    const periods = periodNames
-      .map((name, index) => ({
+    const periods = validPeriodInputs
+      .map((period) => ({
         schedule_id: schedule.id,
-        name,
-        start_time: startTimes[index] || null,
-        end_time: endTimes[index] || null,
-        sort_order: index + 1,
-      }))
-      .filter((period) => period.name && period.start_time && period.end_time);
+        ...period,
+      }));
 
     if (periods.length > 0) {
       const { error: periodsError } = await supabase
@@ -84,6 +94,23 @@ export default async function NewSchedulePage({
           JSON.stringify(periodsError, null, 2)
         );
         redirect(`/${school}/admin/schedules/new?error=1`);
+      }
+    }
+
+    const safeReturnTo = getSafeScheduleReturnPath(
+      String(formData.get("return_to") || ""),
+      school
+    );
+    const detectedTempId = String(formData.get("ai_temp_id") || "");
+
+    if (safeReturnTo && detectedTempId) {
+      const result = await connectDetectedScheduleInDraft(school, {
+        tempId: detectedTempId,
+        scheduleId: schedule.id,
+      });
+
+      if (result.status === "success") {
+        redirect(safeReturnTo);
       }
     }
 
@@ -107,8 +134,30 @@ export default async function NewSchedulePage({
           </p>
         )}
 
-        <ScheduleForm school={school} action={createSchedule} submitLabel="Create Schedule" />
+        <ScheduleForm
+          school={school}
+          action={createSchedule}
+          submitLabel="Create Schedule"
+          initialScheduleName={nameParam || ""}
+          hiddenFields={{
+            ai_temp_id: aiTempId || "",
+            return_to: returnTo || "",
+          }}
+        />
       </div>
     </main>
   );
+}
+
+function getSafeScheduleReturnPath(value: string, school: string) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  const allowedPrefixes = [
+    `/${school}/admin/calendar/wizard`,
+    `/admin/${school}/calendar/wizard`,
+    `/${school}/dashboard/calendar/wizard`,
+  ];
+
+  return allowedPrefixes.some((prefix) => value === prefix || value.startsWith(`${prefix}?`))
+    ? value
+    : null;
 }

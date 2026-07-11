@@ -2,8 +2,10 @@ import type {
   AiCalendarImportResult,
   AiImportDraftMetadata,
   DetectedScheduleResolution,
+  AiImportWarning,
 } from "./aiImportTypes";
-import type { Weekday } from "./types";
+import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
+import type { CalendarWizardConfig, Weekday } from "./types";
 
 export type AiWizardStep =
   | "school-year"
@@ -26,14 +28,14 @@ export type AiWizardDraftShape = {
   noSchoolRanges: Array<{
     id?: string;
     startDate: string;
-    endDate?: string;
+    endDate: string;
     label: string;
     type: string;
   }>;
   specialDays: Array<{
     id?: string;
     startDate: string;
-    endDate?: string;
+    endDate: string;
     scheduleId: string | null;
     label: string;
     type: string;
@@ -79,6 +81,124 @@ function getUnresolvedRequiredScheduleIds(
   }
 
   return [...required].filter((tempId) => !scheduleIdFor(tempId, resolutionsByTempId));
+}
+
+export function getRequiredDetectedScheduleIds(importResult: AiCalendarImportResult) {
+  const required = new Set(importResult.pattern.scheduleTempIds);
+
+  for (const specialDay of importResult.specialDays) {
+    if (specialDay.isInstructional && specialDay.scheduleTempId) {
+      required.add(specialDay.scheduleTempId);
+    }
+  }
+
+  return [...required];
+}
+
+export function getDetectedScheduleUsageCounts(importResult: AiCalendarImportResult) {
+  const config: CalendarWizardConfig = {
+    schoolYear: {
+      name: importResult.schoolYear.label,
+      startDate: importResult.schoolYear.startDate,
+      endDate: importResult.schoolYear.endDate,
+    },
+    operatingWeekdays: importResult.schoolYear.operatingWeekdays,
+    pattern:
+      importResult.pattern.type === "same"
+        ? {
+            type: "same",
+            scheduleId: importResult.pattern.scheduleTempIds[0] || "",
+          }
+        : importResult.pattern.type === "weekday"
+          ? {
+              type: "weekday",
+              schedulesByWeekday: Object.fromEntries(
+                importResult.schoolYear.operatingWeekdays.map((weekday, index) => [
+                  weekday,
+                  importResult.pattern.scheduleTempIds[index] ||
+                    importResult.pattern.scheduleTempIds[0] ||
+                    "",
+                ])
+              ) as Partial<Record<Weekday, string>>,
+            }
+          : {
+              type: "repeating",
+              scheduleIds: importResult.pattern.scheduleTempIds,
+            },
+    noSchoolRanges: importResult.noSchoolRanges,
+    specialDays: importResult.specialDays.map((day) => ({
+      ...day,
+      scheduleId: day.isInstructional ? day.scheduleTempId || null : null,
+    })),
+    informationalDates: importResult.informationalDates,
+  };
+
+  return generateSchoolYearCalendar(config).summary.countByActualSchedule;
+}
+
+export type AiImportReadinessSummary = {
+  percentComplete: number;
+  completedTaskCount: number;
+  totalTaskCount: number;
+  remainingTasks: string[];
+};
+
+export function getAiImportReadinessSummary({
+  importResult,
+  resolutions,
+  completedSteps = [],
+  warnings = importResult.warnings,
+}: {
+  importResult: AiCalendarImportResult;
+  resolutions: DetectedScheduleResolution[];
+  completedSteps?: AiWizardStep[];
+  warnings?: AiImportWarning[];
+}): AiImportReadinessSummary {
+  const requiredScheduleIds = getRequiredDetectedScheduleIds(importResult);
+  const resolutionsByTempId = resolutionMap(resolutions);
+  const tasks: Array<{ complete: boolean; remainingLabel: string }> = [
+    {
+      complete: completedSteps.includes("school-year"),
+      remainingLabel: "Confirm the school year dates",
+    },
+    {
+      complete: completedSteps.includes("normal-schedule"),
+      remainingLabel: "Confirm the normal schedule pattern",
+    },
+    {
+      complete: completedSteps.includes("no-school"),
+      remainingLabel: "Review no-school dates",
+    },
+    {
+      complete: completedSteps.includes("special-days"),
+      remainingLabel: "Review special schedule days",
+    },
+    ...requiredScheduleIds.map((tempId) => {
+      const resolution = resolutionsByTempId.get(tempId);
+      return {
+        complete: Boolean(resolution?.matchedExistingScheduleId) || resolution?.setupChoice === "add_later",
+        remainingLabel: `Confirm ${resolution?.reviewedName || resolution?.detectedName || tempId}`,
+      };
+    }),
+    ...warnings.map((warning) => ({
+      complete:
+        completedSteps.includes("review") ||
+        warning.severity !== "blocking",
+      remainingLabel: `Review ${warning.message}`,
+    })),
+  ];
+
+  const totalTaskCount = Math.max(tasks.length, 1);
+  const completedTaskCount = tasks.filter((task) => task.complete).length;
+
+  return {
+    percentComplete: Math.round((completedTaskCount / totalTaskCount) * 100),
+    completedTaskCount,
+    totalTaskCount,
+    remainingTasks: tasks
+      .filter((task) => !task.complete)
+      .map((task) => task.remainingLabel),
+  };
 }
 
 function hasReviewConfidence(importResult: AiCalendarImportResult) {
@@ -128,9 +248,7 @@ export function convertAiImportToWizardDraft<TDraft extends AiWizardDraftShape>(
   }
 
   const earliestStep: AiWizardStep =
-    unresolvedRequiredScheduleIds.length > 0
-      ? "normal-schedule"
-      : hasReviewConfidence(importResult)
+    hasReviewConfidence(importResult)
         ? "school-year"
         : "review";
 

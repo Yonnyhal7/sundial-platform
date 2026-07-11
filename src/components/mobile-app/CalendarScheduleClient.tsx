@@ -19,6 +19,7 @@ export type CalendarScheduleDay = {
   isSchoolDay: boolean | null;
   scheduleName: string | null;
   scheduleType: string | null;
+  scheduleSetupStatus: string | null;
   label: string | null;
   periods: SchedulePeriod[];
 };
@@ -72,7 +73,9 @@ export default function CalendarScheduleClient({
       return getTodayScheduleState([], new Date());
     }
 
-    return getTodayScheduleState(selectedDay.periods, now);
+    return getTodayScheduleState(selectedDay.periods, now, {
+      needsTimes: selectedDay.scheduleSetupStatus === "needs_times",
+    });
   }, [now, selectedDay, selectedIsToday]);
 
   function selectDate(date: string) {
@@ -174,6 +177,11 @@ export default function CalendarScheduleClient({
             <EmptyScheduleMessage
               title="No schedule assigned"
               body="A bell schedule has not been assigned for this date yet."
+            />
+          ) : selectedDay.scheduleSetupStatus === "needs_times" ? (
+            <EmptyScheduleMessage
+              title={selectedDay.scheduleName}
+              body="Bell times have not been added yet."
             />
           ) : selectedDay.periods.length === 0 ? (
             <EmptyScheduleMessage

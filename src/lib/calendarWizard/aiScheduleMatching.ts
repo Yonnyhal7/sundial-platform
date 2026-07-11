@@ -44,6 +44,7 @@ export function matchDetectedSchedules(
       return {
         ...previous,
         detectedName: detectedSchedule.detectedName,
+        reviewedName: previous.reviewedName || previous.detectedName || detectedSchedule.detectedName,
         normalizedName: detectedSchedule.normalizedName,
         needsSetup: detectedSchedule.needsSetup,
       };
@@ -58,20 +59,24 @@ export function matchDetectedSchedules(
       return {
         tempId: detectedSchedule.tempId,
         detectedName: detectedSchedule.detectedName,
+        reviewedName: detectedSchedule.detectedName,
         normalizedName: normalized,
         matchedExistingScheduleId: candidates[0].id,
         status: "matched_automatically",
         needsSetup: false,
+        setupChoice: "add_later",
       };
     }
 
     return {
       tempId: detectedSchedule.tempId,
       detectedName: detectedSchedule.detectedName,
+      reviewedName: detectedSchedule.detectedName,
       normalizedName: normalized,
       matchedExistingScheduleId: null,
-      status: "unresolved",
+      status: "needs_times",
       needsSetup: true,
+      setupChoice: "add_later",
     };
   });
 }

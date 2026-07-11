@@ -19,7 +19,74 @@ export type CalendarAnalyzerResult =
       retryable?: boolean;
     };
 
+export type OpenAiCalendarAnalysisStage =
+  | "preparing_file"
+  | "uploading_file"
+  | "file_uploaded"
+  | "creating_response"
+  | "reading_response"
+  | "normalizing_response"
+  | "complete";
+
+export type OpenAiErrorDiagnosticContext = {
+  model: string;
+  stage: OpenAiCalendarAnalysisStage;
+  fileUploadSucceeded: boolean;
+  responsesApiCallBegan: boolean;
+  durationMs: number;
+};
+
 const TRANSIENT_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+export const DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS = 180_000;
+export const MIN_OPENAI_CALENDAR_TIMEOUT_MS = 30_000;
+export const MAX_OPENAI_CALENDAR_TIMEOUT_MS = 300_000;
+
+export class OpenAiCalendarApplicationTimeoutError extends Error {
+  timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    super("Calendar analysis aborted after configured application timeout.");
+    this.name = "OpenAiCalendarApplicationTimeoutError";
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export function parseOpenAiCalendarTimeoutMs(value: string | null | undefined) {
+  if (!value?.trim()) return DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS;
+
+  const parsed = Number(value.trim());
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+    return DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS;
+  }
+
+  return Math.min(
+    MAX_OPENAI_CALENDAR_TIMEOUT_MS,
+    Math.max(MIN_OPENAI_CALENDAR_TIMEOUT_MS, parsed)
+  );
+}
+
+export function getOpenAiCalendarTimeoutMs() {
+  return parseOpenAiCalendarTimeoutMs(process.env.OPENAI_CALENDAR_TIMEOUT_MS);
+}
+
+export function createOpenAiCalendarTimeoutController(timeoutMs: number) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new OpenAiCalendarApplicationTimeoutError(timeoutMs));
+  }, timeoutMs);
+
+  return {
+    controller,
+    clear() {
+      clearTimeout(timeout);
+    },
+    get timedOut() {
+      return timedOut;
+    },
+  };
+}
 
 export function getCalendarImportMode() {
   const mode = process.env.AI_CALENDAR_IMPORT_MODE?.trim().toLowerCase();
@@ -28,6 +95,7 @@ export function getCalendarImportMode() {
 
 export function shouldRetryOpenAiError(error: unknown, attempt: number) {
   if (attempt > 0) return false;
+  if (error instanceof OpenAiCalendarApplicationTimeoutError) return false;
   if (error instanceof RateLimitError) return true;
   if (error instanceof APIConnectionError || error instanceof APIConnectionTimeoutError) return true;
   if (error instanceof APIError && error.status && TRANSIENT_STATUS_CODES.has(error.status)) {
@@ -37,6 +105,13 @@ export function shouldRetryOpenAiError(error: unknown, attempt: number) {
 }
 
 export function mapOpenAiError(error: unknown): CalendarAnalyzerResult {
+  if (error instanceof OpenAiCalendarApplicationTimeoutError) {
+    return {
+      status: "analysis_failed",
+      message: "Calendar analysis took longer than expected. Please try again or continue manually.",
+    };
+  }
+
   if (error instanceof AuthenticationError) {
     return {
       status: "configuration_error",
@@ -116,4 +191,30 @@ export function openAiResponseHasRefusal(response: {
       );
     })
   );
+}
+
+export function buildOpenAiErrorDiagnostics(
+  error: unknown,
+  context: OpenAiErrorDiagnosticContext
+) {
+  const apiError = error instanceof APIError ? error : null;
+
+  return {
+    constructorName:
+      error && typeof error === "object" && "constructor" in error
+        ? (error as { constructor?: { name?: string } }).constructor?.name
+        : undefined,
+    message: error instanceof Error ? error.message : undefined,
+    status: apiError?.status,
+    code: apiError?.code,
+    type: apiError?.type,
+    param: apiError?.param,
+    request_id: apiError?.requestID,
+    requestId: apiError?.requestID,
+    model: context.model,
+    stage: context.stage,
+    fileUploadSucceeded: context.fileUploadSucceeded,
+    responsesApiCallBegan: context.responsesApiCallBegan,
+    durationMs: context.durationMs,
+  };
 }

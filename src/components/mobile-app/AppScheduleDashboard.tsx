@@ -16,6 +16,7 @@ type AppScheduleDashboardProps = {
   periods: SchedulePeriod[];
   todayScheduleLabel: string;
   noSchool?: boolean;
+  scheduleNeedsTimes?: boolean;
 };
 
 export default function AppScheduleDashboard({
@@ -23,6 +24,7 @@ export default function AppScheduleDashboard({
   periods,
   todayScheduleLabel,
   noSchool = false,
+  scheduleNeedsTimes = false,
 }: AppScheduleDashboardProps) {
   const [now, setNow] = useState<Date | null>(null);
 
@@ -47,11 +49,11 @@ export default function AppScheduleDashboard({
 
   const scheduleState = useMemo(() => {
     if (!now || noSchool) {
-      return getTodayScheduleState([], new Date());
+      return getTodayScheduleState([], new Date(), { needsTimes: scheduleNeedsTimes });
     }
 
-    return getTodayScheduleState(sortedPeriods, now);
-  }, [noSchool, now, sortedPeriods]);
+    return getTodayScheduleState(sortedPeriods, now, { needsTimes: scheduleNeedsTimes });
+  }, [noSchool, now, scheduleNeedsTimes, sortedPeriods]);
 
   const countdown = scheduleState.countdownTarget && now
     ? formatCountdownDuration(scheduleState.countdownTarget.getTime() - now.getTime())
@@ -61,12 +63,16 @@ export default function AppScheduleDashboard({
   const background = `conic-gradient(var(--school-accent-visible-card) ${ringProgress}%, #e6e8ee ${ringProgress}% 100%)`;
   const currentTitle = noSchool
     ? "No School"
-    : scheduleState.status === "after_school"
+    : scheduleNeedsTimes
+      ? todayScheduleLabel
+      : scheduleState.status === "after_school"
       ? "School Day Complete"
       : activePeriod?.name || "No Active Period";
   const nextPeriodLabel = scheduleState.status === "after_school"
     ? "End of Day"
-    : scheduleState.nextPeriod?.name || "End of Day";
+    : scheduleNeedsTimes
+      ? "Bell times needed"
+      : scheduleState.nextPeriod?.name || "End of Day";
 
   return (
     <>
@@ -77,13 +83,18 @@ export default function AppScheduleDashboard({
         <h2 className="mt-4 text-[clamp(1.35rem,4vw,2rem)] font-black leading-tight tracking-tight text-slate-950 dark:text-white">
           {currentTitle}
         </h2>
-        {activePeriod && (
+        {activePeriod && !scheduleNeedsTimes && (
           <p className="mt-4 text-[clamp(0.95rem,2.2vw,1.1rem)] font-semibold text-slate-500 dark:text-[#a3a3a3]">
             {formatPeriodTime(activePeriod.start_time)} -{" "}
             {formatPeriodTime(activePeriod.end_time)}
           </p>
         )}
 
+        {scheduleNeedsTimes ? (
+          <p className="mx-auto mt-[clamp(1.25rem,3.5vw,1.75rem)] max-w-sm rounded-[clamp(1rem,2.8vw,1.25rem)] bg-slate-50 p-[clamp(1rem,3vw,1.25rem)] text-sm font-bold text-slate-600 dark:bg-[#181818] dark:text-[#d4d4d4]">
+            Bell times have not been added yet.
+          </p>
+        ) : (
         <div className="mt-[clamp(1.25rem,3.5vw,1.75rem)] flex justify-center">
           <div
             className="grid h-[clamp(10rem,38vw,12.5rem)] w-[clamp(10rem,38vw,12.5rem)] place-items-center rounded-full p-[clamp(0.7rem,2.3vw,0.85rem)]"
@@ -99,6 +110,7 @@ export default function AppScheduleDashboard({
             </div>
           </div>
         </div>
+        )}
 
         <div className="mt-[clamp(1.5rem,4vw,2rem)] border-t border-slate-200 pt-[clamp(1.25rem,3.5vw,1.5rem)] dark:border-[#3a3a3a]">
           <div className="mx-auto grid max-w-[clamp(20rem,82vw,34rem)] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-[clamp(0.75rem,2.6vw,1.25rem)]">
@@ -137,7 +149,11 @@ export default function AppScheduleDashboard({
             Today&apos;s Schedule
           </h2>
         </div>
-        {sortedPeriods.length === 0 || noSchool ? (
+        {scheduleNeedsTimes ? (
+          <p className="mx-[clamp(1rem,4vw,1.5rem)] mb-[clamp(1rem,3vw,1.5rem)] rounded-[clamp(1rem,2.8vw,1.25rem)] bg-slate-50 p-[clamp(0.9rem,2.6vw,1rem)] text-sm font-medium text-slate-500 dark:bg-[#181818] dark:text-[#a3a3a3]">
+            Bell times have not been added yet.
+          </p>
+        ) : sortedPeriods.length === 0 || noSchool ? (
           <p className="mx-[clamp(1rem,4vw,1.5rem)] mb-[clamp(1rem,3vw,1.5rem)] rounded-[clamp(1rem,2.8vw,1.25rem)] bg-slate-50 p-[clamp(0.9rem,2.6vw,1rem)] text-sm font-medium text-slate-500 dark:bg-[#181818] dark:text-[#a3a3a3]">
             No periods are scheduled for today.
           </p>

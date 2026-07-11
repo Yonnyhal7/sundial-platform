@@ -9,6 +9,7 @@ type BellSchedule = {
   id: string;
   name: string;
   type: string | null;
+  setupStatus: string | null;
   periods: SchedulePeriod[];
 };
 
@@ -69,6 +70,11 @@ export default function BellScheduleClient({
               </h2>
             </div>
 
+            {schedule.setupStatus === "needs_times" ? (
+              <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-bold text-slate-500 dark:bg-[#181818] dark:text-[#a3a3a3]">
+                Bell times have not been added yet.
+              </p>
+            ) : (
             <div className="space-y-2">
               {schedule.periods.map((period) => (
                 <div
@@ -90,6 +96,7 @@ export default function BellScheduleClient({
                 </div>
               ))}
             </div>
+            )}
           </section>
         ))
       )}

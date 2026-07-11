@@ -28,6 +28,15 @@ type Period = {
 const inputClass =
   "rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[var(--school-primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--school-primary)_20%,transparent)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white";
 
+function createInitialPeriod(index: number): Period {
+  return {
+    id: `new-period-${index + 1}`,
+    name: `Period ${index + 1}`,
+    start_time: "",
+    end_time: "",
+  };
+}
+
 function SortablePeriodRow({
   period,
   index,
@@ -112,6 +121,7 @@ export default function ScheduleForm({
   initialScheduleType = "",
   initialActive = true,
   initialPeriods = [],
+  hiddenFields = {},
 }: {
   school: string;
   action: (formData: FormData) => void;
@@ -120,18 +130,10 @@ export default function ScheduleForm({
   initialScheduleType?: string;
   initialActive?: boolean;
   initialPeriods?: Period[];
+  hiddenFields?: Record<string, string>;
 }) {
   const [periods, setPeriods] = useState<Period[]>(
-    initialPeriods.length > 0
-      ? initialPeriods
-      : [
-          {
-            id: `new-${crypto.randomUUID()}`,
-            name: "Period 1",
-            start_time: "",
-            end_time: "",
-          },
-        ]
+    initialPeriods.length > 0 ? initialPeriods : [createInitialPeriod(0)]
   );
 
   const sensors = useSensors(useSensor(PointerSensor));
@@ -140,7 +142,7 @@ export default function ScheduleForm({
     setPeriods([
       ...periods,
       {
-        id: `new-${crypto.randomUUID()}`,
+        id: `new-period-${periods.length + 1}`,
         name: `Period ${periods.length + 1}`,
         start_time: "",
         end_time: "",
@@ -179,6 +181,10 @@ export default function ScheduleForm({
       className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
     >
       <div className="space-y-5">
+        {Object.entries(hiddenFields).map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
+
         <input
           name="schedule_name"
           required
@@ -220,6 +226,7 @@ export default function ScheduleForm({
           </div>
 
           <DndContext
+            id="schedule-periods-dnd"
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}

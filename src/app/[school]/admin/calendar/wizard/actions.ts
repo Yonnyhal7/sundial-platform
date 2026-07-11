@@ -4,8 +4,22 @@ import { revalidatePath } from "next/cache";
 import { notFound } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { compareDateStrings, isDateString } from "@/lib/calendarWizard/dateUtils";
+import {
+  CALENDAR_WIZARD_DRAFT_TYPE,
+  serializeCalendarWizardDraft,
+  type CalendarWizardDraftRecord,
+  type CalendarWizardStoredData,
+} from "@/lib/calendarWizard/draftPersistence";
 import { generateSchoolYearCalendar } from "@/lib/calendarWizard/generateSchoolYearCalendar";
 import { mapGeneratedCalendarDaysToRows } from "@/lib/calendarWizard/persistence";
+import {
+  buildAiCalendarConfig,
+  classifyCalendarWarnings,
+  collectUnmappedTemporaryScheduleIds,
+  logCalendarWarningClassification,
+  planAiSchedulePersistence,
+  type ExistingScheduleForAiPersistence,
+} from "@/lib/calendarWizard/aiQuickSetupPersistence";
 import type {
   CalendarGenerationSummary,
   CalendarGenerationWarning,
@@ -29,6 +43,10 @@ export type CalendarCompletionSummary = {
   specialInstructionalDayCount: number;
   warningCount: number;
   warnings: CalendarGenerationWarning[];
+  schedulesCreated?: Array<{ id: string; name: string }>;
+  matchedScheduleCount?: number;
+  schedulesNeedingTimes?: Array<{ id: string; name: string }>;
+  warningsRemaining?: number;
 };
 
 export type GenerateCalendarActionResult =
@@ -53,10 +71,262 @@ export type GenerateCalendarActionResult =
       message: string;
     }
   | {
+      status: "schedule_conflict" | "draft_conflict";
+      message: string;
+    }
+  | {
       status: "server_error";
       message: string;
       severity?: "high";
     };
+
+export type CreateAiCalendarFromDraftActionInput = {
+  replaceExisting?: boolean;
+  expectedDraftUpdatedAt?: string | null;
+};
+
+export type CalendarWizardDraftActionResult =
+  | {
+      status: "success";
+      draft: CalendarWizardDraftRecord | null;
+    }
+  | {
+      status: "draft_conflict";
+      message: string;
+      draft: CalendarWizardDraftRecord | null;
+    }
+  | {
+      status: "validation_error" | "permission_error" | "server_error";
+      message: string;
+    };
+
+async function getCalendarDraftSchoolContext(school: string) {
+  const supabase = await createSupabaseServerClient();
+  const { data: schoolData } = await supabase
+    .rpc("get_school_by_subdomain", {
+      subdomain_input: school,
+    })
+    .single<{ id: string; name: string }>();
+
+  if (!schoolData) {
+    notFound();
+  }
+
+  const adminUser = await requireAdminSectionAccess(schoolData.id, "calendar", school);
+  return { schoolData, adminUser };
+}
+
+function safeDraftRecord(row: {
+  id: string;
+  school_id: string;
+  draft_type: string;
+  school_year_label: string | null;
+  wizard_data: unknown;
+  created_at: string;
+  updated_at: string;
+}): CalendarWizardDraftRecord | null {
+  const serialized = serializeCalendarWizardDraft(row.wizard_data);
+  if (!serialized) return null;
+
+  return {
+    ...row,
+    wizard_data: serialized.data,
+  };
+}
+
+export async function loadCalendarWizardDraft(
+  school: string
+): Promise<CalendarWizardDraftActionResult> {
+  try {
+    const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    const { data, error } = await adminUser.supabase
+      .from("calendar_wizard_drafts")
+      .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
+      .eq("school_id", schoolData.id)
+      .eq("draft_type", CALENDAR_WIZARD_DRAFT_TYPE)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Load calendar wizard draft error:", JSON.stringify(error, null, 2));
+      return {
+        status: "server_error",
+        message: "Sundial could not load the saved calendar draft.",
+      };
+    }
+
+    return {
+      status: "success",
+      draft: data ? safeDraftRecord(data) : null,
+    };
+  } catch (error) {
+    if (isNextControlFlowError(error)) throw error;
+    console.error("Load calendar wizard draft unexpected error:", error);
+    return {
+      status: "server_error",
+      message: "Sundial could not load the saved calendar draft.",
+    };
+  }
+}
+
+export async function saveCalendarWizardDraft(
+  school: string,
+  input: {
+    wizardData: unknown;
+    lastKnownUpdatedAt?: string | null;
+  }
+): Promise<CalendarWizardDraftActionResult> {
+  try {
+    const serialized = serializeCalendarWizardDraft(input.wizardData);
+    if (!serialized) {
+      return {
+        status: "validation_error",
+        message: "This calendar draft could not be saved because it is malformed.",
+      };
+    }
+
+    const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    const { data: existing, error: existingError } = await adminUser.supabase
+      .from("calendar_wizard_drafts")
+      .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
+      .eq("school_id", schoolData.id)
+      .eq("draft_type", CALENDAR_WIZARD_DRAFT_TYPE)
+      .maybeSingle();
+
+    if (existingError) {
+      console.error("Read calendar wizard draft before save error:", JSON.stringify(existingError, null, 2));
+      return {
+        status: "server_error",
+        message: "Sundial could not save the calendar draft.",
+      };
+    }
+
+    if (
+      existing &&
+      input.lastKnownUpdatedAt &&
+      existing.updated_at !== input.lastKnownUpdatedAt
+    ) {
+      return {
+        status: "draft_conflict",
+        message:
+          "This calendar draft was updated by another administrator. Reload the latest version before continuing.",
+        draft: safeDraftRecord(existing),
+      };
+    }
+
+    const row = {
+      school_id: schoolData.id,
+      draft_type: CALENDAR_WIZARD_DRAFT_TYPE,
+      school_year_label: serialized.summary.schoolYearLabel,
+      wizard_data: serialized.data,
+      updated_by: adminUser.profile.id,
+      updated_at: new Date().toISOString(),
+      ...(existing ? {} : { created_by: adminUser.profile.id }),
+    };
+
+    const { data, error } = await adminUser.supabase
+      .from("calendar_wizard_drafts")
+      .upsert(row, { onConflict: "school_id,draft_type" })
+      .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
+      .single();
+
+    if (error || !data) {
+      console.error("Save calendar wizard draft error:", JSON.stringify(error, null, 2));
+      return {
+        status: "server_error",
+        message: "Sundial could not save the calendar draft.",
+      };
+    }
+
+    revalidatePath(`/${school}/admin/calendar`);
+
+    return {
+      status: "success",
+      draft: safeDraftRecord(data),
+    };
+  } catch (error) {
+    if (isNextControlFlowError(error)) throw error;
+    console.error("Save calendar wizard draft unexpected error:", error);
+    return {
+      status: "server_error",
+      message: "Sundial could not save the calendar draft.",
+    };
+  }
+}
+
+export async function deleteCalendarWizardDraft(
+  school: string
+): Promise<CalendarWizardDraftActionResult> {
+  try {
+    const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    const { error } = await adminUser.supabase
+      .from("calendar_wizard_drafts")
+      .delete()
+      .eq("school_id", schoolData.id)
+      .eq("draft_type", CALENDAR_WIZARD_DRAFT_TYPE);
+
+    if (error) {
+      console.error("Delete calendar wizard draft error:", JSON.stringify(error, null, 2));
+      return {
+        status: "server_error",
+        message: "Sundial could not delete the saved calendar draft.",
+      };
+    }
+
+    revalidatePath(`/${school}/admin/calendar`);
+
+    return { status: "success", draft: null };
+  } catch (error) {
+    if (isNextControlFlowError(error)) throw error;
+    console.error("Delete calendar wizard draft unexpected error:", error);
+    return {
+      status: "server_error",
+      message: "Sundial could not delete the saved calendar draft.",
+    };
+  }
+}
+
+export async function connectDetectedScheduleInDraft(
+  school: string,
+  input: {
+    tempId: string;
+    scheduleId: string;
+  }
+): Promise<CalendarWizardDraftActionResult> {
+  const loaded = await loadCalendarWizardDraft(school);
+  if (loaded.status !== "success" || !loaded.draft) return loaded;
+
+  const data: CalendarWizardStoredData = {
+    ...loaded.draft.wizard_data,
+    draft: {
+      ...loaded.draft.wizard_data.draft,
+      aiImport: loaded.draft.wizard_data.draft.aiImport
+        ? {
+            ...loaded.draft.wizard_data.draft.aiImport,
+            resolutions: loaded.draft.wizard_data.draft.aiImport.resolutions.map((resolution) =>
+              resolution.tempId === input.tempId
+                ? {
+                    ...resolution,
+                    matchedExistingScheduleId: input.scheduleId,
+                    status: "matched_by_admin",
+                    needsSetup: false,
+                    setupChoice: "add_now",
+                  }
+                : resolution
+            ),
+            unresolvedRequiredScheduleIds:
+              loaded.draft.wizard_data.draft.aiImport.unresolvedRequiredScheduleIds?.filter(
+                (tempId) => tempId !== input.tempId
+              ) || [],
+          }
+        : null,
+    },
+  };
+
+  return saveCalendarWizardDraft(school, {
+    wizardData: data,
+    lastKnownUpdatedAt: loaded.draft.updated_at,
+  });
+}
 
 function isNextControlFlowError(error: unknown) {
   return (
@@ -72,8 +342,32 @@ type ScheduleRow = {
   id: string;
 };
 
+type ExistingScheduleRow = {
+  id: string;
+  schedule_name: string;
+  active: boolean | null;
+  setup_status: string | null;
+};
+
 type ExistingCalendarRow = {
   date: string;
+};
+
+type AiCalendarRpcResult = {
+  status:
+    | "success"
+    | "replacement_required"
+    | "validation_error"
+    | "permission_error"
+    | "schedule_conflict"
+    | "draft_conflict"
+    | "server_error";
+  message?: string;
+  existingCount?: number;
+  firstExistingDate?: string | null;
+  lastExistingDate?: string | null;
+  createdScheduleCount?: number;
+  insertedRowCount?: number;
 };
 
 function validationError(
@@ -85,6 +379,12 @@ function validationError(
     message,
     fieldErrors,
   };
+}
+
+function warningIssueList(warnings: Array<{ message: string }>) {
+  return Object.fromEntries(
+    warnings.map((warning, index) => [`warning.${index + 1}`, warning.message])
+  );
 }
 
 function isWeekday(value: unknown): value is Weekday {
@@ -147,7 +447,10 @@ function collectScheduleIds(config: CalendarWizardConfig) {
   return ids;
 }
 
-function validateConfigShape(config: CalendarWizardConfig) {
+function validateConfigShape(
+  config: CalendarWizardConfig,
+  options: { allowInstructionalSpecialDayWithoutScheduleOverride?: boolean } = {}
+) {
   const fieldErrors: Record<string, string> = {};
 
   if (!config?.schoolYear) {
@@ -210,7 +513,11 @@ function validateConfigShape(config: CalendarWizardConfig) {
     if (!specialDay.label?.trim()) {
       fieldErrors[`specialDays.${index}.label`] = "Add a display label.";
     }
-    if ((specialDay.isInstructional ?? true) && !specialDay.scheduleId) {
+    if (
+      (specialDay.isInstructional ?? true) &&
+      !specialDay.scheduleId &&
+      !options.allowInstructionalSpecialDayWithoutScheduleOverride
+    ) {
       fieldErrors[`specialDays.${index}.scheduleId`] =
         "Choose the schedule used on this special day.";
     }
@@ -235,13 +542,252 @@ function validateConfigShape(config: CalendarWizardConfig) {
 function revalidateCalendarConsumers(school: string) {
   revalidatePath(`/${school}/admin`);
   revalidatePath(`/${school}/admin/calendar`);
+  revalidatePath(`/${school}/admin/schedules`);
   revalidatePath(`/${school}/app`);
   revalidatePath(`/${school}/app/schedule`);
+  revalidatePath(`/${school}/app/bell`);
   revalidatePath(`/${school}/schedule`);
   revalidatePath(`/${school}/kiosk`);
   revalidatePath("/[school]/admin", "layout");
   revalidatePath("/[school]/app", "layout");
   revalidatePath("/[school]/kiosk", "page");
+}
+
+export async function createAiCalendarFromDraftAction(
+  school: string,
+  input: CreateAiCalendarFromDraftActionInput = {}
+): Promise<GenerateCalendarActionResult> {
+  try {
+    const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    const { data: draftRow, error: draftError } = await adminUser.supabase
+      .from("calendar_wizard_drafts")
+      .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
+      .eq("school_id", schoolData.id)
+      .eq("draft_type", CALENDAR_WIZARD_DRAFT_TYPE)
+      .maybeSingle();
+
+    if (draftError) {
+      console.error("AI calendar load draft error:", JSON.stringify(draftError, null, 2));
+      return {
+        status: "server_error",
+        message: "Sundial could not load the saved calendar draft.",
+      };
+    }
+
+    const draft = draftRow ? safeDraftRecord(draftRow) : null;
+    if (!draft) {
+      return {
+        status: "draft_conflict",
+        message: "The saved AI calendar draft could not be found. Reload the wizard and try again.",
+      };
+    }
+
+    if (input.expectedDraftUpdatedAt && draft.updated_at !== input.expectedDraftUpdatedAt) {
+      return {
+        status: "draft_conflict",
+        message:
+          "This calendar draft changed while you were reviewing it. Reload the latest draft before creating the calendar.",
+      };
+    }
+
+    const aiImport = draft.wizard_data.draft.aiImport;
+    const importResult = aiImport?.result;
+    if (!importResult) {
+      return validationError(
+        "This draft does not include an AI calendar import. Continue manually or upload the PDF again."
+      );
+    }
+
+    const aiWarningClassification = classifyCalendarWarnings(
+      importResult.warnings,
+      aiImport.warningResolutions || []
+    );
+    logCalendarWarningClassification("ai_import", aiWarningClassification);
+
+    if (aiWarningClassification.blockingWarnings.length > 0) {
+      return validationError(
+        "Fix these calendar issues before creating the calendar:",
+        warningIssueList(aiWarningClassification.blockingWarnings)
+      );
+    }
+
+    const { data: existingSchedules, error: scheduleError } = await adminUser.supabase
+      .from("schedules")
+      .select("id, schedule_name, active, setup_status")
+      .eq("school_id", schoolData.id)
+      .returns<ExistingScheduleRow[]>();
+
+    if (scheduleError) {
+      console.error("AI calendar schedules lookup error:", JSON.stringify(scheduleError, null, 2));
+      return {
+        status: "server_error",
+        message: "Sundial could not verify schedules for this school.",
+      };
+    }
+
+    const plan = planAiSchedulePersistence({
+      importResult,
+      resolutions: aiImport.resolutions || [],
+      existingSchedules: (existingSchedules || []).map(
+        (schedule): ExistingScheduleForAiPersistence => ({
+          id: schedule.id,
+          name: schedule.schedule_name,
+          active: schedule.active,
+          setupStatus: schedule.setup_status,
+        })
+      ),
+    });
+
+    if (plan.conflict) {
+      return {
+        status: "schedule_conflict",
+        message: plan.conflict,
+      };
+    }
+
+    const config = buildAiCalendarConfig(importResult, plan.tempToScheduleId);
+    const shapeError = validateConfigShape(config, {
+      allowInstructionalSpecialDayWithoutScheduleOverride: true,
+    });
+    if (shapeError) return shapeError;
+
+    const remainingTempIds = collectUnmappedTemporaryScheduleIds(config);
+    if (remainingTempIds.length > 0) {
+      return validationError(
+        "Some detected schedules could not be created or matched.",
+        { schedules: "Detected schedules need review." }
+      );
+    }
+
+    const generated = generateSchoolYearCalendar(config);
+
+    if (generated.summary.unassignedInstructionalDayCount > 0) {
+      return validationError(
+        "Some instructional days are missing a schedule.",
+        { calendar: "Every instructional day needs a schedule assignment." }
+      );
+    }
+
+    if (generated.summary.instructionalDayCount === 0) {
+      return validationError(
+        "No instructional days were generated from this import.",
+        { calendar: "Review the school-year dates and operating weekdays." }
+      );
+    }
+
+    const generatedWarningClassification = classifyCalendarWarnings(generated.warnings);
+    logCalendarWarningClassification("generated_calendar", generatedWarningClassification);
+
+    if (generatedWarningClassification.blockingWarnings.length > 0) {
+      return validationError(
+        "Fix these calendar issues before creating the calendar:",
+        warningIssueList(generatedWarningClassification.blockingWarnings)
+      );
+    }
+
+    const rows = mapGeneratedCalendarDaysToRows(generated.days, schoolData.id);
+    const labelTooLong = rows.find((row) => (row.label?.length || 0) > 1000);
+    if (labelTooLong) {
+      return validationError(
+        "One of the calendar labels is too long. Shorten labels before creating the calendar.",
+        { label: `The label on ${labelTooLong.date} is too long.` }
+      );
+    }
+
+    const { data: rpcData, error: rpcError } = await adminUser.supabase.rpc(
+      "create_ai_calendar_from_draft",
+      {
+        p_school_id: schoolData.id,
+        p_draft_id: draft.id,
+        p_expected_draft_updated_at: draft.updated_at,
+        p_start_date: config.schoolYear.startDate,
+        p_end_date: config.schoolYear.endDate,
+        p_replace_existing: Boolean(input.replaceExisting),
+        p_schedules: plan.schedulesToCreate.map((schedule) => ({
+          id: schedule.id,
+          temp_id: schedule.tempId,
+          schedule_name: schedule.scheduleName,
+          schedule_type: schedule.scheduleType,
+          setup_status: schedule.setupStatus,
+        })),
+        p_calendar_days: rows.map((row) => ({
+          date: row.date,
+          schedule_id: row.schedule_id,
+          base_schedule_id: row.base_schedule_id,
+          label: row.label,
+          is_school_day: row.is_school_day,
+        })),
+      }
+    );
+
+    if (rpcError) {
+      console.error("AI calendar RPC error:", JSON.stringify(rpcError, null, 2));
+      return {
+        status: "server_error",
+        message: "Sundial could not create the imported calendar. No changes were saved.",
+      };
+    }
+
+    const rpcResult = rpcData as AiCalendarRpcResult | null;
+    if (!rpcResult) {
+      return {
+        status: "server_error",
+        message: "Sundial could not create the imported calendar. No changes were saved.",
+      };
+    }
+
+    if (rpcResult.status === "replacement_required") {
+      return {
+        status: "replacement_required",
+        existingCount: rpcResult.existingCount || 0,
+        firstExistingDate: rpcResult.firstExistingDate || null,
+        lastExistingDate: rpcResult.lastExistingDate || null,
+        summary: generated.summary,
+      };
+    }
+
+    if (rpcResult.status !== "success") {
+      return {
+        status: rpcResult.status,
+        message:
+          rpcResult.message ||
+          "Sundial could not create the imported calendar. Review the import and try again.",
+      } as GenerateCalendarActionResult;
+    }
+
+    revalidateCalendarConsumers(school);
+
+    return {
+      status: "success",
+      summary: {
+        schoolYearLabel: config.schoolYear.name || "School Year",
+        startDate: config.schoolYear.startDate,
+        endDate: config.schoolYear.endDate,
+        insertedRowCount: rpcResult.insertedRowCount || rows.length,
+        instructionalDayCount: generated.summary.instructionalDayCount,
+        noSchoolWeekdayCount: generated.summary.noSchoolWeekdayCount,
+        specialInstructionalDayCount: generated.summary.specialInstructionalDayCount,
+        warningCount: generated.summary.warningCount,
+        warnings: generated.warnings,
+        schedulesCreated: plan.schedulesToCreate.map((schedule) => ({
+          id: schedule.id,
+          name: schedule.scheduleName,
+        })),
+        matchedScheduleCount: plan.matchedScheduleIds.length,
+        schedulesNeedingTimes: plan.schedulesNeedingTimes,
+        warningsRemaining:
+          aiWarningClassification.unresolvedReviewWarnings.length +
+          generatedWarningClassification.reviewWarnings.length,
+      },
+    };
+  } catch (error) {
+    if (isNextControlFlowError(error)) throw error;
+    console.error("AI calendar creation unexpected error:", error);
+    return {
+      status: "server_error",
+      message: "Sundial could not create the imported calendar. No changes were saved.",
+    };
+  }
 }
 
 export async function generateCalendarAction(

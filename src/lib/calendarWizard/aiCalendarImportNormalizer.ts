@@ -124,7 +124,11 @@ function dedupeByKey<T>(items: T[], key: (item: T) => string, warnings: AiImport
   return next;
 }
 
-function dateRangeKey(item: { startDate: string; endDate?: string; label: string }) {
+function normalizeRangeEnd(startDate: string, endDate: string | null | undefined) {
+  return endDate || startDate;
+}
+
+function dateRangeKey(item: { startDate: string; endDate: string; label: string }) {
   return `${item.startDate}|${item.endDate || ""}|${item.label.toLowerCase()}`;
 }
 
@@ -235,7 +239,7 @@ export function normalizeAiCalendarExtraction(
     raw.noSchoolRanges.map((range, index) => ({
       id: trimRequired(range.id, makeId("ai-no-school", range.label, index)),
       startDate: range.startDate,
-      endDate: range.endDate || undefined,
+      endDate: normalizeRangeEnd(range.startDate, range.endDate),
       label: trimRequired(range.label, "No School"),
       type: trimOptional(range.type) || undefined,
       confidence: range.confidence,
@@ -249,7 +253,7 @@ export function normalizeAiCalendarExtraction(
     raw.specialSchoolDays.map((day, index) => ({
       id: trimRequired(day.id, makeId("ai-special", day.label, index)),
       startDate: day.startDate,
-      endDate: day.endDate || undefined,
+      endDate: normalizeRangeEnd(day.startDate, day.endDate),
       label: trimRequired(day.label, "Special Day"),
       type: trimOptional(day.type) || undefined,
       scheduleTempId: trimOptional(day.scheduleTempId) || undefined,

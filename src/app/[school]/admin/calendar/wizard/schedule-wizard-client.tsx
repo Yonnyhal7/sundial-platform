@@ -2,22 +2,43 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  getAiImportLongRunningMessage,
+  getAiImportProgressAfterRetry,
+  getAiImportProgressAfterSuccess,
+  getAiImportStageForProgress,
+  getEstimatedAiImportProgress,
+} from "@/lib/calendarWizard/aiImportProgress";
 import {
   clearAiImportMetadata,
   convertAiImportToWizardDraft,
+  getAiImportReadinessSummary,
+  getDetectedScheduleUsageCounts,
   unresolvedRequiredSchedulesBlockFinalReadiness,
 } from "@/lib/calendarWizard/aiImportConversion";
+import {
+  chooseCalendarWizardDraftSource,
+  serializeCalendarWizardDraft,
+  type CalendarWizardDraftRecord,
+  type CalendarWizardStoredData,
+} from "@/lib/calendarWizard/draftPersistence";
+import {
+  classifyCalendarWarnings,
+  getAiCreateCalendarReadiness,
+} from "@/lib/calendarWizard/aiQuickSetupPersistence";
 import {
   confidenceLabel,
   type AnalyzeCalendarPdfResult,
   type AiCalendarImportResult,
   type AiImportDraftMetadata,
   type AiImportReviewState,
+  type AiImportWarningResolution,
   type DetectedScheduleResolution,
 } from "@/lib/calendarWizard/aiImportTypes";
 import {
   matchDetectedSchedules,
+  normalizeScheduleNameForMatching,
 } from "@/lib/calendarWizard/aiScheduleMatching";
 import {
   compareDateStrings,
@@ -39,8 +60,12 @@ import type {
 } from "@/lib/calendarWizard/types";
 import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
 import {
+  createAiCalendarFromDraftAction,
   generateCalendarAction,
+  deleteCalendarWizardDraft,
+  saveCalendarWizardDraft,
   type CalendarCompletionSummary,
+  type CalendarWizardDraftActionResult,
   type GenerateCalendarActionResult,
 } from "./actions";
 
@@ -49,6 +74,7 @@ export type WizardScheduleSummary = {
   name: string;
   type: string | null;
   active: boolean;
+  setupStatus: "ready" | "needs_times";
   periodCount: number;
   firstStartTime: string | null;
   lastEndTime: string | null;
@@ -91,9 +117,13 @@ type WizardDraft = {
   sameScheduleId: string;
   repeatingScheduleIds: string[];
   weekdaySchedules: Partial<Record<Weekday, string>>;
-  noSchoolRanges: Array<NoSchoolRange & { type: NoSchoolType }>;
+  noSchoolRanges: Array<Omit<NoSchoolRange, "endDate" | "type"> & {
+    endDate: string;
+    type: NoSchoolType;
+  }>;
   specialDays: Array<
-    SpecialSchoolDay & {
+    Omit<SpecialSchoolDay, "endDate"> & {
+      endDate: string;
       type: SpecialDayType;
       isInstructional: boolean;
       rotationBehavior: RotationBehavior;
@@ -105,6 +135,11 @@ type WizardDraft = {
 };
 
 type StepErrors = Record<string, string>;
+type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict";
+type LocalStoredDraft = {
+  data: CalendarWizardStoredData;
+  updatedAt: string;
+};
 
 const WIZARD_STEPS: Array<{ id: WizardStep; label: string }> = [
   { id: "school-year", label: "School Year" },
@@ -200,6 +235,76 @@ function formatDateRange(startDate: string, endDate?: string) {
   return `${formatDateForDisplay(startDate)} - ${formatDateForDisplay(endDate)}`;
 }
 
+function normalizeDraftRangeEnd<T extends { startDate: string; endDate?: string | null }>(
+  range: T
+) {
+  return {
+    ...range,
+    endDate: range.endDate || range.startDate,
+  };
+}
+
+function detectedScheduleStatusLabel(resolution: DetectedScheduleResolution) {
+  if (resolution.status === "matched_automatically" || resolution.status === "matched_by_admin") {
+    return "Matched existing schedule";
+  }
+  if (resolution.status === "ignored") return "Ignored by admin";
+  return "New schedule · Bell times needed";
+}
+
+function reviewedScheduleName(resolution: DetectedScheduleResolution) {
+  return (resolution.reviewedName || resolution.detectedName || "").trim();
+}
+
+function getScheduleNameValidation(
+  resolution: DetectedScheduleResolution,
+  resolutions: DetectedScheduleResolution[],
+  schedules: WizardScheduleSummary[]
+) {
+  const name = reviewedScheduleName(resolution);
+  if (!name) return { error: "Enter a schedule name.", warning: "" };
+  if (name.length > 80) return { error: "Use 80 characters or fewer.", warning: "" };
+
+  const normalized = normalizeScheduleNameForMatching(name);
+  const duplicateInImport = resolutions.some(
+    (other) =>
+      other.tempId !== resolution.tempId &&
+      normalizeScheduleNameForMatching(reviewedScheduleName(other)) === normalized
+  );
+  if (duplicateInImport) {
+    return {
+      error: "This name duplicates another detected schedule. Rename one before continuing.",
+      warning: "",
+    };
+  }
+
+  const duplicateExisting = schedules.some(
+    (schedule) =>
+      schedule.id !== resolution.matchedExistingScheduleId &&
+      normalizeScheduleNameForMatching(schedule.name) === normalized
+  );
+
+  return {
+    error: "",
+    warning: duplicateExisting
+      ? "A school schedule already has a similar name. Match it above or rename this schedule."
+      : "",
+  };
+}
+
+function createDefaultWarningResolutions(
+  warnings: AiCalendarImportResult["warnings"]
+): AiImportWarningResolution[] {
+  return warnings.map((warning) => ({
+    code: warning.code,
+    status: "unreviewed",
+  }));
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function formatTime(time: string | null) {
   if (!time) return null;
   return new Date(`2000-01-01T${time}`).toLocaleTimeString("en-US", {
@@ -262,6 +367,54 @@ function isMeaningfulDraft(draft: WizardDraft) {
   );
 }
 
+function buildStoredDraft(draft: WizardDraft, currentStep: WizardStep): CalendarWizardStoredData {
+  return {
+    version: 1,
+    currentStep,
+    draft,
+    savedAt: new Date().toISOString(),
+  };
+}
+
+function parseLocalStoredDraft(value: string | null): LocalStoredDraft | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    const wrapper =
+      parsed &&
+      typeof parsed === "object" &&
+      "data" in parsed &&
+      "updatedAt" in parsed
+        ? (parsed as { data: unknown; updatedAt?: unknown })
+        : { data: parsed, updatedAt: null };
+    const serialized = serializeCalendarWizardDraft(wrapper.data);
+    if (!serialized) return null;
+    return {
+      data: serialized.data,
+      updatedAt:
+        typeof wrapper.updatedAt === "string"
+          ? wrapper.updatedAt
+          : serialized.data.savedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalStoredDraft(
+  storageKey: string,
+  data: CalendarWizardStoredData,
+  updatedAt: string
+) {
+  window.sessionStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      data,
+      updatedAt,
+    } satisfies LocalStoredDraft)
+  );
+}
+
 function hasMeaningfulManualProgress(draft: WizardDraft) {
   return Boolean(
     draft.schoolYear.label ||
@@ -296,8 +449,12 @@ function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[
           WIZARD_STEPS.some((wizardStep) => wizardStep.id === step)
         )
       : [],
-    noSchoolRanges: Array.isArray(record.noSchoolRanges) ? record.noSchoolRanges : [],
-    specialDays: Array.isArray(record.specialDays) ? record.specialDays : [],
+    noSchoolRanges: Array.isArray(record.noSchoolRanges)
+      ? record.noSchoolRanges.map(normalizeDraftRangeEnd)
+      : [],
+    specialDays: Array.isArray(record.specialDays)
+      ? record.specialDays.map(normalizeDraftRangeEnd)
+      : [],
     informationalDates: Array.isArray(record.informationalDates)
       ? record.informationalDates
       : [],
@@ -311,7 +468,18 @@ function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[
               typeof record.aiImport.fileName === "string"
                 ? record.aiImport.fileName
                 : undefined,
-            result: record.aiImport.result,
+            result:
+              record.aiImport.result && typeof record.aiImport.result === "object"
+                ? {
+                    ...record.aiImport.result,
+                    noSchoolRanges: Array.isArray(record.aiImport.result.noSchoolRanges)
+                      ? record.aiImport.result.noSchoolRanges.map(normalizeDraftRangeEnd)
+                      : [],
+                    specialDays: Array.isArray(record.aiImport.result.specialDays)
+                      ? record.aiImport.result.specialDays.map(normalizeDraftRangeEnd)
+                      : [],
+                  }
+                : record.aiImport.result,
             resolutions: Array.isArray(record.aiImport.resolutions)
               ? record.aiImport.resolutions
               : [],
@@ -332,6 +500,9 @@ function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[
               : [],
             warnings: Array.isArray(record.aiImport.warnings)
               ? record.aiImport.warnings
+              : [],
+            warningResolutions: Array.isArray(record.aiImport.warningResolutions)
+              ? record.aiImport.warningResolutions
               : [],
           }
         : null,
@@ -432,7 +603,7 @@ function validateStep(step: WizardStep, draft: WizardDraft, schedules: WizardSch
   if (step === "normal-schedule") {
     if (draft.aiImport?.unresolvedRequiredScheduleIds?.length) {
       errors.schedules =
-        "Match or create the detected schedules before generating your calendar.";
+        "Add bell times for the detected schedules before generating your calendar.";
     }
     if (schedules.length === 0) {
       errors.schedules = "Create at least one active schedule before continuing.";
@@ -541,7 +712,7 @@ function validateStep(step: WizardStep, draft: WizardDraft, schedules: WizardSch
   if (step === "review") {
     if (draft.aiImport?.unresolvedRequiredScheduleIds?.length) {
       errors.review =
-        "Resolve detected schedules from the AI import before reviewing the calendar.";
+        "Add bell times for detected schedules from the AI import before reviewing the calendar.";
       return errors;
     }
 
@@ -600,6 +771,13 @@ function ScheduleSelector({
 
 function ScheduleSummaryText({ schedule }: { schedule?: WizardScheduleSummary }) {
   if (!schedule) return null;
+  if (schedule.setupStatus === "needs_times") {
+    return (
+      <span className="text-xs font-medium text-amber-700 dark:text-amber-200">
+        Bell times needed
+      </span>
+    );
+  }
   const first = formatTime(schedule.firstStartTime);
   const last = formatTime(schedule.lastEndTime);
   const periodLabel = `${schedule.periodCount} ${
@@ -664,6 +842,7 @@ export default function ScheduleWizardClient({
   adminBasePath,
   schedules,
   existingCalendarRange,
+  initialSavedDraft,
 }: {
   schoolId: string;
   schoolSlug: string;
@@ -671,29 +850,22 @@ export default function ScheduleWizardClient({
   adminBasePath: string;
   schedules: WizardScheduleSummary[];
   existingCalendarRange: ExistingCalendarRangeSummary;
+  initialSavedDraft: CalendarWizardDraftRecord | null;
 }) {
   const storageKey = `sundial:schedule-wizard:${schoolId}:${schoolSlug}`;
-  const [draft, setDraft] = useState<WizardDraft>(() => {
-    if (typeof window === "undefined") {
-      return createDefaultDraft(schedules);
-    }
-
-    try {
-      const stored = window.sessionStorage.getItem(storageKey);
-      const restored = stored
-        ? sanitizeRestoredDraft(JSON.parse(stored), schedules)
-        : null;
-      return restored || createDefaultDraft(schedules);
-    } catch {
-      window.sessionStorage.removeItem(storageKey);
-      return createDefaultDraft(schedules);
-    }
-  });
+  const [draft, setDraft] = useState<WizardDraft>(() => createDefaultDraft(schedules));
   const [currentStep, setCurrentStep] = useState<WizardStep>("school-year");
+  const [draftLoading, setDraftLoading] = useState(true);
   const [errors, setErrors] = useState<StepErrors>({});
   const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [showAiCreateModal, setShowAiCreateModal] = useState(false);
   const [saveResult, setSaveResult] = useState<GenerateCalendarActionResult | null>(null);
+  const [aiCreateResult, setAiCreateResult] = useState<GenerateCalendarActionResult | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [draftSaveStatus, setDraftSaveStatus] = useState<SaveStatus>("idle");
+  const [lastKnownUpdatedAt, setLastKnownUpdatedAt] = useState<string | null>(null);
+  const [lastSavedMessage, setLastSavedMessage] = useState("");
+  const autosaveTimerRef = useRef<number | null>(null);
   const [completionSummary, setCompletionSummary] =
     useState<CalendarCompletionSummary | null>(null);
 
@@ -707,10 +879,128 @@ export default function ScheduleWizardClient({
     () => (config ? generateSchoolYearCalendar(config) : null),
     [config]
   );
+  const isAiQuickReview = Boolean(
+    draft.aiImport?.state === "review" && draft.aiImport.result
+  );
+
+  async function saveCurrentDraft(
+    nextDraft = draft,
+    nextStep = currentStep,
+    options: { immediate?: boolean; redirectAfterSave?: string } = {}
+  ) {
+    if (!isMeaningfulDraft(nextDraft)) return null;
+
+    const storedData = buildStoredDraft(nextDraft, nextStep);
+    const localUpdatedAt = new Date().toISOString();
+    saveLocalStoredDraft(storageKey, storedData, localUpdatedAt);
+    setDraftSaveStatus("saving");
+
+    const result = await saveCalendarWizardDraft(schoolSlug, {
+      wizardData: storedData,
+      lastKnownUpdatedAt,
+    });
+
+    if (result.status === "success" && result.draft) {
+      setLastKnownUpdatedAt(result.draft.updated_at);
+      setDraftSaveStatus("saved");
+      setLastSavedMessage("Draft saved");
+      saveLocalStoredDraft(storageKey, result.draft.wizard_data, result.draft.updated_at);
+      if (options.redirectAfterSave) {
+        window.location.assign(options.redirectAfterSave);
+      }
+      return result;
+    }
+
+    if (result.status === "draft_conflict") {
+      setDraftSaveStatus("conflict");
+      setLastSavedMessage(result.message);
+      return result;
+    }
+
+    setDraftSaveStatus("error");
+    setLastSavedMessage(
+      result.status === "success" ? "Could not save draft" : result.message
+    );
+    return result;
+  }
 
   useEffect(() => {
-    window.sessionStorage.setItem(storageKey, JSON.stringify(draft));
-  }, [draft, storageKey]);
+    window.setTimeout(() => {
+      const localStored = parseLocalStoredDraft(window.sessionStorage.getItem(storageKey));
+      const source = chooseCalendarWizardDraftSource({
+        databaseUpdatedAt: initialSavedDraft?.updated_at,
+        sessionUpdatedAt: localStored?.updatedAt,
+      });
+      let restoredDraft: WizardDraft | null = null;
+      let restoredStep: WizardStep = "school-year";
+      let restoredUpdatedAt: string | null = null;
+      let shouldSaveLocalOverDatabase = false;
+
+      if (
+        source === "session" &&
+        localStored &&
+        (!initialSavedDraft ||
+          window.confirm(
+            "This browser has newer calendar setup progress than the saved database draft. Use the local progress instead?"
+          ))
+      ) {
+        const restored = sanitizeRestoredDraft(localStored.data.draft, schedules);
+        if (restored && isMeaningfulDraft(restored)) {
+          restoredDraft = restored;
+          restoredStep = localStored.data.currentStep;
+          restoredUpdatedAt = localStored.updatedAt;
+          shouldSaveLocalOverDatabase = Boolean(initialSavedDraft);
+        }
+      } else if (initialSavedDraft) {
+        restoredDraft =
+          sanitizeRestoredDraft(initialSavedDraft.wizard_data.draft, schedules) ||
+          createDefaultDraft(schedules);
+        restoredStep = initialSavedDraft.wizard_data.currentStep;
+        restoredUpdatedAt = initialSavedDraft.updated_at;
+      }
+
+      if (restoredDraft) {
+        setDraft(restoredDraft);
+        setCurrentStep(restoredStep);
+      }
+      setLastKnownUpdatedAt(source === "session" && !initialSavedDraft ? null : restoredUpdatedAt);
+      setDraftSaveStatus(restoredUpdatedAt ? "saved" : "idle");
+      setLastSavedMessage(restoredUpdatedAt ? "Draft saved" : "");
+      setDraftLoading(false);
+
+      if (shouldSaveLocalOverDatabase && restoredDraft) {
+        void saveCurrentDraft(restoredDraft, restoredStep, { immediate: true });
+      }
+    }, 0);
+    // Run once after hydration to resolve DB/session conflicts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (draftLoading) return undefined;
+
+    const storedData = buildStoredDraft(draft, currentStep);
+    const localUpdatedAt = new Date().toISOString();
+    saveLocalStoredDraft(storageKey, storedData, localUpdatedAt);
+
+    if (!isMeaningfulDraft(draft)) return;
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+    }
+
+    autosaveTimerRef.current = window.setTimeout(() => {
+      setDraftSaveStatus("saving");
+      void saveCurrentDraft(draft, currentStep);
+    }, 1000);
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+      }
+    };
+    // saveCurrentDraft intentionally participates through the current render closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep, draft, draftLoading, storageKey]);
 
   useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
@@ -723,6 +1013,15 @@ export default function ScheduleWizardClient({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [completionSummary, draft]);
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("startOver") === "1") {
+      window.history.replaceState(null, "", window.location.pathname);
+      void startOver();
+    }
+    // Run once to honor the Calendar page Start Over entry point.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function updateDraft(updater: (draft: WizardDraft) => WizardDraft) {
     setDraft((previousDraft) => updater(previousDraft));
   }
@@ -733,6 +1032,7 @@ export default function ScheduleWizardClient({
     if (targetIndex <= currentStepIndex || isCompleted) {
       setCurrentStep(step);
       setErrors({});
+      void saveCurrentDraft(draft, step, { immediate: true });
     }
   }
 
@@ -751,6 +1051,14 @@ export default function ScheduleWizardClient({
     if (nextStep) {
       setCurrentStep(nextStep);
       setErrors({});
+      void saveCurrentDraft(
+        {
+          ...draft,
+          completedSteps: Array.from(new Set([...draft.completedSteps, currentStep])),
+        },
+        nextStep,
+        { immediate: true }
+      );
     }
   }
 
@@ -759,10 +1067,11 @@ export default function ScheduleWizardClient({
     if (previousStep) {
       setCurrentStep(previousStep);
       setErrors({});
+      void saveCurrentDraft(draft, previousStep, { immediate: true });
     }
   }
 
-  function startOver() {
+  async function startOver() {
     if (
       isMeaningfulDraft(draft) &&
       !window.confirm("Clear this schedule wizard draft and start over?")
@@ -770,8 +1079,19 @@ export default function ScheduleWizardClient({
       return;
     }
 
+    setDraftSaveStatus("saving");
+    const result = await deleteCalendarWizardDraft(schoolSlug);
+    if (result.status !== "success") {
+      setDraftSaveStatus("error");
+      setLastSavedMessage(result.message);
+      return;
+    }
+
     const nextDraft = clearAiImportMetadata(createDefaultDraft(schedules));
     window.sessionStorage.removeItem(storageKey);
+    setLastKnownUpdatedAt(null);
+    setDraftSaveStatus("idle");
+    setLastSavedMessage("");
     setDraft(nextDraft);
     setCurrentStep("school-year");
     setErrors({});
@@ -796,6 +1116,7 @@ export default function ScheduleWizardClient({
 
       if (result.status === "success") {
         window.sessionStorage.removeItem(storageKey);
+        await deleteCalendarWizardDraft(schoolSlug);
         setCompletionSummary(result.summary);
         setShowGenerateModal(false);
         setSaveResult(null);
@@ -815,6 +1136,76 @@ export default function ScheduleWizardClient({
     }
   }
 
+  async function finishLater() {
+    const result = await saveCurrentDraft(draft, currentStep, { immediate: true });
+    if (result?.status === "success") {
+      window.alert("Your calendar setup has been saved. You can continue from any device.");
+      window.location.assign(`${adminBasePath}/calendar`);
+    }
+  }
+
+  async function openAiCreateModal() {
+    setAiCreateResult(null);
+    setShowAiCreateModal(true);
+  }
+
+  async function handleCreateAiCalendar(replaceExisting = false) {
+    if (isSaving) return;
+
+    setIsSaving(true);
+    setAiCreateResult(null);
+
+    try {
+      const saved = await saveCurrentDraft(draft, currentStep, { immediate: true });
+      if (saved?.status !== "success" || !saved.draft) {
+        const message =
+          saved && "message" in saved
+            ? saved.message
+            : "Sundial could not save the latest AI review before creating the calendar.";
+        setAiCreateResult({
+          status: saved?.status === "draft_conflict" ? "draft_conflict" : "server_error",
+          message,
+        });
+        return;
+      }
+
+      const result = await createAiCalendarFromDraftAction(schoolSlug, {
+        replaceExisting,
+        expectedDraftUpdatedAt: saved.draft.updated_at,
+      });
+
+      if (result.status === "success") {
+        window.sessionStorage.removeItem(storageKey);
+        setCompletionSummary(result.summary);
+        setShowAiCreateModal(false);
+        setAiCreateResult(null);
+        return;
+      }
+
+      setAiCreateResult(result);
+      setShowAiCreateModal(true);
+    } catch {
+      setAiCreateResult({
+        status: "server_error",
+        message: "Sundial could not create the imported calendar. No changes were saved.",
+      });
+      setShowAiCreateModal(true);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function saveAndOpenSchedule(tempId: string, detectedName: string) {
+    const returnTo = `${adminBasePath}/calendar/wizard`;
+    const href = `${adminBasePath}/schedules/new?name=${encodeURIComponent(
+      detectedName
+    )}&aiTempId=${encodeURIComponent(tempId)}&returnTo=${encodeURIComponent(returnTo)}`;
+    await saveCurrentDraft(draft, currentStep, {
+      immediate: true,
+      redirectAfterSave: href,
+    });
+  }
+
   if (completionSummary) {
     return (
       <CompletionScreen
@@ -822,6 +1213,42 @@ export default function ScheduleWizardClient({
         adminBasePath={adminBasePath}
         summary={completionSummary}
       />
+    );
+  }
+
+  if (draftLoading) {
+    return (
+      <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
+        <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8">
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                {schoolName} Admin
+              </p>
+              <h1 className="mt-1 text-3xl font-bold tracking-tight">
+                Schedule Wizard
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+                Build a school-year calendar from your normal schedule, closures,
+                and special school days.
+              </p>
+            </div>
+          </div>
+
+          <section
+            className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-3">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#D4A017] border-t-transparent motion-reduce:animate-none" />
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                Loading saved calendar setup...
+              </p>
+            </div>
+          </section>
+        </div>
+      </main>
     );
   }
 
@@ -861,11 +1288,13 @@ export default function ScheduleWizardClient({
           </div>
         )}
 
-        <WizardProgress
-          currentStep={currentStep}
-          completedSteps={draft.completedSteps}
-          onStepClick={goToStep}
-        />
+        {!isAiQuickReview && (
+          <WizardProgress
+            currentStep={currentStep}
+            completedSteps={draft.completedSteps}
+            onStepClick={goToStep}
+          />
+        )}
 
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424] lg:p-7">
           {draft.aiImport?.banner && (
@@ -877,16 +1306,32 @@ export default function ScheduleWizardClient({
             </div>
           )}
 
-          {currentStep === "school-year" && (
+          {isAiQuickReview ? (
+            <AiCalendarImportCard
+              schoolSlug={schoolSlug}
+              schedules={schedules}
+              draft={draft}
+              onAddTimesNow={saveAndOpenSchedule}
+              onImmediateSave={saveCurrentDraft}
+              onCreateCalendar={openAiCreateModal}
+              updateDraft={updateDraft}
+              setCurrentStep={setCurrentStep}
+            />
+          ) : currentStep === "school-year" && (
             <div className="space-y-7">
               <AiCalendarImportCard
                 schoolSlug={schoolSlug}
                 schedules={schedules}
                 draft={draft}
+                onAddTimesNow={saveAndOpenSchedule}
+                onImmediateSave={saveCurrentDraft}
+                onCreateCalendar={openAiCreateModal}
                 updateDraft={updateDraft}
                 setCurrentStep={setCurrentStep}
               />
-              <SchoolYearStep draft={draft} errors={errors} updateDraft={updateDraft} />
+              {!isAiQuickReview && (
+                <SchoolYearStep draft={draft} errors={errors} updateDraft={updateDraft} />
+              )}
             </div>
           )}
           {currentStep === "normal-schedule" && (
@@ -895,6 +1340,7 @@ export default function ScheduleWizardClient({
               schedules={schedules}
               scheduleMap={scheduleMap}
               adminBasePath={adminBasePath}
+              onAddTimesNow={saveAndOpenSchedule}
               errors={errors}
               updateDraft={updateDraft}
             />
@@ -921,6 +1367,7 @@ export default function ScheduleWizardClient({
             />
           )}
 
+          {!isAiQuickReview && (
           <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 dark:border-[#3a3a3a]">
             <button
               type="button"
@@ -933,8 +1380,26 @@ export default function ScheduleWizardClient({
 
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                Draft saved in this browser session
+                {draftSaveStatus === "saving"
+                  ? "Saving..."
+                  : draftSaveStatus === "saved"
+                    ? lastSavedMessage || "Draft saved"
+                    : draftSaveStatus === "conflict"
+                      ? "This draft was updated by another administrator."
+                      : draftSaveStatus === "error"
+                        ? lastSavedMessage || "Could not save draft"
+                        : "Draft will save automatically"}
               </p>
+              <button type="button" onClick={finishLater} className={secondaryButtonClass}>
+                Finish Later
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveCurrentDraft(draft, currentStep, { immediate: true })}
+                className={secondaryButtonClass}
+              >
+                Save Draft
+              </button>
               {currentStep !== "review" ? (
                 <button
                   type="button"
@@ -955,6 +1420,7 @@ export default function ScheduleWizardClient({
               )}
             </div>
           </div>
+          )}
         </section>
       </div>
 
@@ -968,6 +1434,23 @@ export default function ScheduleWizardClient({
           onClose={() => {
             if (!isSaving) {
               setShowGenerateModal(false);
+            }
+          }}
+        />
+      )}
+
+      {showAiCreateModal && draft.aiImport?.result && (
+        <AiCreateCalendarModal
+          importResult={draft.aiImport.result}
+          resolutions={draft.aiImport.resolutions}
+          warningResolutions={draft.aiImport.warningResolutions || []}
+          actionResult={aiCreateResult}
+          isSaving={isSaving}
+          onConfirm={() => void handleCreateAiCalendar(false)}
+          onReplace={() => void handleCreateAiCalendar(true)}
+          onClose={() => {
+            if (!isSaving) {
+              setShowAiCreateModal(false);
             }
           }}
         />
@@ -1051,12 +1534,18 @@ function AiCalendarImportCard({
   schoolSlug,
   schedules,
   draft,
+  onAddTimesNow,
+  onImmediateSave,
+  onCreateCalendar,
   updateDraft,
   setCurrentStep,
 }: {
   schoolSlug: string;
   schedules: WizardScheduleSummary[];
   draft: WizardDraft;
+  onAddTimesNow: (tempId: string, detectedName: string) => Promise<void>;
+  onImmediateSave: (draft: WizardDraft, step: WizardStep) => Promise<CalendarWizardDraftActionResult | null>;
+  onCreateCalendar: () => Promise<void>;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
   setCurrentStep: (step: WizardStep) => void;
 }) {
@@ -1067,13 +1556,39 @@ function AiCalendarImportCard({
   const [message, setMessage] = useState("");
   const [actionResult, setActionResult] =
     useState<AnalyzeCalendarPdfResult | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const isWorking = status === "uploading" || status === "analyzing";
   const importResult = draft.aiImport?.result;
   const resolutions = draft.aiImport?.resolutions || [];
+  const failureMessage =
+    actionResult?.status && actionResult.status !== "success"
+      ? actionResult.message
+      : status === "failed"
+        ? message
+        : "";
+
+  useEffect(() => {
+    if (!isWorking) return undefined;
+
+    const interval = window.setInterval(() => {
+      setElapsedSeconds((previousElapsed) => {
+        const nextElapsed = previousElapsed + 1;
+        setProgress((previousProgress) =>
+          getEstimatedAiImportProgress(nextElapsed, previousProgress)
+        );
+        return nextElapsed;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [isWorking]);
 
   function selectFile(file: File | null) {
     setActionResult(null);
     setMessage("");
+    setProgress(getAiImportProgressAfterRetry());
+    setElapsedSeconds(0);
 
     if (!file) {
       setSelectedFile(null);
@@ -1100,6 +1615,8 @@ function AiCalendarImportCard({
     setStatus("uploading");
     setMessage("Reading your calendar...");
     setActionResult(null);
+    setProgress(5);
+    setElapsedSeconds(0);
 
     const formData = new FormData();
     formData.append("calendarPdf", selectedFile);
@@ -1123,6 +1640,11 @@ function AiCalendarImportCard({
         return;
       }
 
+      setProgress(getAiImportProgressAfterSuccess());
+      setStatus("complete");
+      setMessage("Calendar draft ready");
+      await new Promise((resolve) => window.setTimeout(resolve, 400));
+
       const matchedResolutions = matchDetectedSchedules(
         result.importResult.detectedSchedules,
         schedules
@@ -1133,8 +1655,8 @@ function AiCalendarImportCard({
       setStatus("review");
       setMessage(
         nextState === "complete_with_warnings"
-          ? "Analysis completed with warnings. Review before applying."
-          : "Analysis complete. Review before applying."
+          ? "Analysis completed with warnings. Review before creating your calendar."
+          : "Analysis complete. Review before creating your calendar."
       );
       updateDraft((previousDraft) => ({
         ...previousDraft,
@@ -1144,6 +1666,7 @@ function AiCalendarImportCard({
           result: result.importResult,
           resolutions: matchedResolutions,
           warnings: result.importResult.warnings,
+          warningResolutions: createDefaultWarningResolutions(result.importResult.warnings),
         },
       }));
     } catch {
@@ -1165,8 +1688,9 @@ function AiCalendarImportCard({
           ? {
               ...resolution,
               matchedExistingScheduleId: existingScheduleId || null,
-              status: existingScheduleId ? "matched_by_admin" : "unresolved",
+              status: existingScheduleId ? "matched_by_admin" : "needs_times",
               needsSetup: !existingScheduleId,
+              setupChoice: existingScheduleId ? "add_later" : resolution.setupChoice || "add_later",
             }
           : resolution
       ) satisfies DetectedScheduleResolution[];
@@ -1202,6 +1726,87 @@ function AiCalendarImportCard({
     setStatus("applied");
     setMessage("AI import added. Review the highlighted items before generating your calendar.");
     setCurrentStep(conversion.earliestStep);
+    void onImmediateSave(conversion.draft, conversion.earliestStep);
+  }
+
+  function continueManually() {
+    updateDraft((previousDraft) => ({
+      ...previousDraft,
+      aiImport: previousDraft.aiImport
+        ? { ...previousDraft.aiImport, state: "idle", banner: undefined }
+        : null,
+    }));
+  }
+
+  function updateReviewedName(tempId: string, reviewedName: string) {
+    updateDraft((previousDraft) => {
+      if (!previousDraft.aiImport?.result) return previousDraft;
+      return {
+        ...previousDraft,
+        aiImport: {
+          ...previousDraft.aiImport,
+          state: "review",
+          resolutions: previousDraft.aiImport.resolutions.map((resolution) =>
+            resolution.tempId === tempId ? { ...resolution, reviewedName } : resolution
+          ),
+        },
+      };
+    });
+  }
+
+  function updateSetupChoice(
+    tempId: string,
+    setupChoice: NonNullable<DetectedScheduleResolution["setupChoice"]>
+  ) {
+    updateDraft((previousDraft) => {
+      if (!previousDraft.aiImport?.result) return previousDraft;
+      return {
+        ...previousDraft,
+        aiImport: {
+          ...previousDraft.aiImport,
+          state: "review",
+          resolutions: previousDraft.aiImport.resolutions.map((resolution) =>
+            resolution.tempId === tempId ? { ...resolution, setupChoice } : resolution
+          ),
+        },
+      };
+    });
+  }
+
+  function updateWarningResolution(
+    code: string,
+    status: AiImportWarningResolution["status"]
+  ) {
+    updateDraft((previousDraft) => {
+      if (!previousDraft.aiImport?.result) return previousDraft;
+      const existing =
+        previousDraft.aiImport.warningResolutions ||
+        createDefaultWarningResolutions(previousDraft.aiImport.result.warnings);
+      const nextResolutions = existing.some((resolution) => resolution.code === code)
+        ? existing.map((resolution) =>
+            resolution.code === code ? { ...resolution, status } : resolution
+          )
+        : [...existing, { code, status }];
+
+      return {
+        ...previousDraft,
+        aiImport: {
+          ...previousDraft.aiImport,
+          state: "review",
+          warningResolutions: nextResolutions,
+        },
+      };
+    });
+  }
+
+  function startAiReviewOver() {
+    setSelectedFile(null);
+    setStatus("idle");
+    setMessage("");
+    setActionResult(null);
+    setProgress(0);
+    setElapsedSeconds(0);
+    updateDraft((previousDraft) => clearAiImportMetadata(previousDraft));
   }
 
   return (
@@ -1222,17 +1827,10 @@ function AiCalendarImportCard({
         </div>
         <button
           type="button"
-          onClick={() =>
-            updateDraft((previousDraft) => ({
-              ...previousDraft,
-              aiImport: previousDraft.aiImport
-                ? { ...previousDraft.aiImport, state: "idle", banner: undefined }
-                : null,
-            }))
-          }
+          onClick={continueManually}
           className={secondaryButtonClass}
         >
-          Continue manually
+          Continue Manually
         </button>
       </div>
 
@@ -1265,26 +1863,31 @@ function AiCalendarImportCard({
       <p id="ai-import-status" aria-live="polite" className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
         {message || (selectedFile ? `${selectedFile.name} selected.` : "PDF only, up to 20 MB.")}
       </p>
-      {actionResult?.status && actionResult.status !== "success" && (
-        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-200">
-          <p>{actionResult.message}</p>
-          {actionResult.retryable && selectedFile && (
-            <button
-              type="button"
-              onClick={analyzeSelectedFile}
-              className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-red-800 shadow-sm transition hover:bg-red-100 dark:bg-black dark:text-red-200"
-            >
-              Retry
-            </button>
-          )}
-        </div>
+      {failureMessage && (
+        <AiCalendarImportProgress
+          state="failed"
+          filename={selectedFile?.name}
+          elapsedSeconds={elapsedSeconds}
+          progress={progress}
+          error={failureMessage}
+          retryable={Boolean(selectedFile)}
+          onRetry={analyzeSelectedFile}
+          onContinueManually={() => {
+            setStatus("idle");
+            setActionResult(null);
+            setProgress(getAiImportProgressAfterRetry());
+            setElapsedSeconds(0);
+          }}
+        />
       )}
 
-      {isWorking && (
-        <div className="mt-4 rounded-xl bg-white p-4 text-sm font-semibold text-slate-700 dark:bg-black dark:text-slate-200">
-          Reading your calendar... Finding school dates, reading the legend, and looking
-          for schedule patterns.
-        </div>
+      {(isWorking || status === "complete") && (
+        <AiCalendarImportProgress
+          state={status === "complete" ? "complete" : "working"}
+          filename={selectedFile?.name}
+          elapsedSeconds={elapsedSeconds}
+          progress={progress}
+        />
       )}
 
       {importResult && draft.aiImport?.state === "review" && (
@@ -1292,8 +1895,16 @@ function AiCalendarImportCard({
           importResult={importResult}
           resolutions={resolutions}
           schedules={schedules}
+          onAddTimesNow={onAddTimesNow}
           onResolutionChange={updateResolution}
-          onApply={applyImport}
+          warningResolutions={draft.aiImport?.warningResolutions || []}
+          onNameChange={updateReviewedName}
+          onSetupChoiceChange={updateSetupChoice}
+          onWarningResolutionChange={updateWarningResolution}
+          onCreateCalendar={onCreateCalendar}
+          onContinueManually={continueManually}
+          onAdvancedEdit={applyImport}
+          onStartOver={startAiReviewOver}
         />
       )}
     </div>
@@ -1304,30 +1915,125 @@ function AiImportReview({
   importResult,
   resolutions,
   schedules,
+  onAddTimesNow,
   onResolutionChange,
-  onApply,
+  warningResolutions,
+  onNameChange,
+  onSetupChoiceChange,
+  onWarningResolutionChange,
+  onCreateCalendar,
+  onContinueManually,
+  onAdvancedEdit,
+  onStartOver,
 }: {
   importResult: AiCalendarImportResult;
   resolutions: DetectedScheduleResolution[];
   schedules: WizardScheduleSummary[];
+  onAddTimesNow: (tempId: string, detectedName: string) => Promise<void>;
   onResolutionChange: (tempId: string, existingScheduleId: string) => void;
-  onApply: () => void;
+  warningResolutions: AiImportWarningResolution[];
+  onNameChange: (tempId: string, reviewedName: string) => void;
+  onSetupChoiceChange: (
+    tempId: string,
+    setupChoice: NonNullable<DetectedScheduleResolution["setupChoice"]>
+  ) => void;
+  onWarningResolutionChange: (
+    code: string,
+    status: AiImportWarningResolution["status"]
+  ) => void;
+  onCreateCalendar: () => Promise<void>;
+  onContinueManually: () => void;
+  onAdvancedEdit: () => void;
+  onStartOver: () => void;
 }) {
-  const unresolved = resolutions.filter((resolution) => resolution.status === "unresolved");
+  const schedulesNeedingTimes = resolutions.filter(
+    (resolution) =>
+      !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
+  );
+  const usageCounts = getDetectedScheduleUsageCounts(importResult);
+  const readiness = getAiImportReadinessSummary({
+    importResult,
+    resolutions,
+    warnings: importResult.warnings,
+  });
+  const warningResolutionMap = new Map(
+    warningResolutions.map((resolution) => [resolution.code, resolution])
+  );
+  const scheduleValidation = resolutions.map((resolution) => ({
+    tempId: resolution.tempId,
+    ...getScheduleNameValidation(resolution, resolutions, schedules),
+  }));
+  const scheduleNameErrors = scheduleValidation.filter((item) => item.error);
+  const warningReadiness = getAiCreateCalendarReadiness({
+    warnings: importResult.warnings,
+    warningResolutions,
+    scheduleNameErrorCount: scheduleNameErrors.length,
+  });
+  const canCreateCalendar = warningReadiness.canCreateCalendar;
+  const matchedCount = resolutions.filter((resolution) => resolution.matchedExistingScheduleId).length;
+  const newScheduleCount = schedulesNeedingTimes.length;
 
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-[#242424]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-lg font-bold">Review Import</h3>
+          <h3 className="text-2xl font-bold">Review Your Imported Calendar</h3>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            This will pre-fill the manual wizard. Nothing is published until you generate the final calendar.
+            Confirm the detected dates and schedules in one place. Bell times can be added now
+            or later.
           </p>
         </div>
-        <button type="button" onClick={onApply} className={sundialPrimaryButtonClass("px-5")}>
-          Use This Import
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={onContinueManually} className={secondaryButtonClass}>
+            Continue Manually
+          </button>
+          <button type="button" onClick={onStartOver} className={subtleButtonClass}>
+            Start Over
+          </button>
+          <button type="button" onClick={onCreateCalendar} disabled={!canCreateCalendar} className={sundialPrimaryButtonClass("px-5")}>
+            Create Calendar
+          </button>
+        </div>
       </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-6">
+        <MetricCard
+          label="School year"
+          value={`${formatDateForDisplay(importResult.schoolYear.startDate)} - ${formatDateForDisplay(importResult.schoolYear.endDate)}`}
+        />
+        <MetricCard
+          label="Instructional days detected"
+          value={String(importResult.expectedInstructionalDayCount || "Review")}
+        />
+        <MetricCard
+          label="No-school ranges"
+          value={String(importResult.noSchoolRanges.length)}
+        />
+        <MetricCard
+          label="Special school days"
+          value={String(importResult.specialDays.length)}
+        />
+        <MetricCard
+          label="Detected schedules"
+          value={`${matchedCount} matched / ${newScheduleCount} new`}
+        />
+        <MetricCard
+          label="Blocking issues"
+          value={String(warningReadiness.blockingWarnings.length)}
+        />
+        <MetricCard
+          label="Review items"
+          value={String(warningReadiness.reviewWarnings.length)}
+        />
+      </div>
+
+      {!canCreateCalendar && (
+        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+          {scheduleNameErrors.length > 0
+            ? "Resolve duplicate or invalid schedule names before creating the calendar."
+            : "Fix blocking calendar issues before creating the calendar."}
+        </p>
+      )}
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <ReviewPanel title="School Year">
@@ -1342,42 +2048,200 @@ function AiImportReview({
 
       <ReviewPanel title="Detected Schedules" className="mt-4">
         <div className="space-y-3">
-          {resolutions.map((resolution) => (
-            <div
-              key={resolution.tempId}
-              className="grid gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700 md:grid-cols-[1fr_1fr]"
-            >
-              <div>
-                <p className="font-bold">{resolution.detectedName}</p>
-                <p className="mt-1 text-xs font-semibold text-slate-500">
-                  {resolution.status.replaceAll("_", " ")}
-                </p>
+          {resolutions.map((resolution) => {
+            const matchedSchedule = schedules.find(
+              (schedule) => schedule.id === resolution.matchedExistingScheduleId
+            );
+            const validation = getScheduleNameValidation(resolution, resolutions, schedules);
+            const isNewSchedule = !resolution.matchedExistingScheduleId;
+            const name = reviewedScheduleName(resolution);
+
+            return (
+              <div
+                key={resolution.tempId}
+                className="grid gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700 xl:grid-cols-[minmax(0,1fr)_minmax(15rem,0.8fr)_auto]"
+              >
+                <div>
+                  <label className="block text-sm font-bold">
+                    Detected schedule name
+                    <input
+                      value={name}
+                      onChange={(event) => onNameChange(resolution.tempId, event.target.value)}
+                      className={`mt-2 ${inputClass}`}
+                    />
+                  </label>
+                  <p className="mt-2 text-xs font-semibold text-slate-500">
+                    {detectedScheduleStatusLabel(resolution)} · Used on{" "}
+                    {pluralize(usageCounts[resolution.tempId] || 0, "calendar day")}
+                  </p>
+                  {validation.error && (
+                    <p className="mt-2 text-xs font-bold text-red-600 dark:text-red-300">
+                      {validation.error}
+                    </p>
+                  )}
+                  {!validation.error && validation.warning && (
+                    <p className="mt-2 text-xs font-bold text-amber-700 dark:text-amber-200">
+                      {validation.warning}
+                    </p>
+                  )}
+                </div>
+                <label className="text-sm font-bold">
+                  Match Existing Schedule
+                  <select
+                    value={resolution.matchedExistingScheduleId || ""}
+                    onChange={(event) => onResolutionChange(resolution.tempId, event.target.value)}
+                    className={`mt-2 ${inputClass}`}
+                  >
+                    <option value="">New schedule · Bell times needed</option>
+                    {schedules.map((schedule) => (
+                      <option key={schedule.id} value={schedule.id}>
+                        {schedule.name} · {schedule.periodCount}{" "}
+                        {schedule.periodCount === 1 ? "period" : "periods"} ·{" "}
+                        {schedule.setupStatus === "ready" ? "Ready" : "Bell times needed"}
+                      </option>
+                    ))}
+                  </select>
+                  {matchedSchedule && (
+                    <span className="mt-2 block text-xs font-semibold text-slate-500">
+                      Matched existing schedule: {matchedSchedule.name} ·{" "}
+                      {matchedSchedule.periodCount}{" "}
+                      {matchedSchedule.periodCount === 1 ? "period" : "periods"} ·{" "}
+                      {matchedSchedule.setupStatus === "ready" ? "Ready" : "Bell times needed"}
+                    </span>
+                  )}
+                </label>
+                <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                  {isNewSchedule && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSetupChoiceChange(resolution.tempId, "add_now");
+                          void onAddTimesNow(resolution.tempId, name || resolution.detectedName);
+                        }}
+                        className={secondaryButtonClass}
+                      >
+                        Add Times Now
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSetupChoiceChange(resolution.tempId, "add_later")}
+                        className={[
+                          subtleButtonClass,
+                          resolution.setupChoice === "add_later"
+                            ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100"
+                            : "",
+                        ].join(" ")}
+                      >
+                        Add Times Later
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              <label className="text-sm font-bold">
-                Match to Sundial schedule
-                <select
-                  value={resolution.matchedExistingScheduleId || ""}
-                  onChange={(event) => onResolutionChange(resolution.tempId, event.target.value)}
-                  className={`mt-2 ${inputClass}`}
-                >
-                  <option value="">Unresolved</option>
-                  {schedules.map((schedule) => (
-                    <option key={schedule.id} value={schedule.id}>
-                      {schedule.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        {unresolved.length > 0 && (
-          <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-            {unresolved.length} detected schedule {unresolved.length === 1 ? "needs" : "need"} review.
-            Create missing schedules from the Normal Schedule step before generating.
-          </p>
-        )}
       </ReviewPanel>
+
+      <ReviewPanel title="Readiness Checklist" className="mt-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <ChecklistGroup
+            title="Calendar detected"
+            items={[
+              ["School year confirmed", Boolean(importResult.schoolYear.startDate && importResult.schoolYear.endDate)],
+              ["Instructional day count confirmed", Boolean(importResult.expectedInstructionalDayCount)],
+              ["Pattern detected", Boolean(importResult.pattern.scheduleTempIds.length)],
+              ["No-school days reviewed", true],
+              ["Special days reviewed", true],
+            ]}
+          />
+          <ChecklistGroup
+            title="Schedule setup"
+            items={[
+              ...resolutions.map((resolution) => [
+                `${reviewedScheduleName(resolution)} ${
+                  resolution.matchedExistingScheduleId
+                    ? "matched"
+                    : "will be created"
+                }`,
+                true,
+              ] as [string, boolean]),
+            ]}
+          />
+        </div>
+        <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Bell times are allowed to remain incomplete. Calendar setup is{" "}
+          {readiness.percentComplete}% ready for Phase C creation.
+        </p>
+      </ReviewPanel>
+
+      {importResult.warnings.length > 0 && (
+        <ReviewPanel title="Warnings" className="mt-4">
+          <ul className="space-y-3 text-sm font-medium text-slate-600 dark:text-slate-300">
+            {importResult.warnings.map((warning) => {
+              const resolution = warningResolutionMap.get(warning.code);
+              const classification = classifyCalendarWarnings(
+                [warning],
+                resolution ? [resolution] : []
+              );
+              const classifiedWarning =
+                classification.blockingWarnings[0] ||
+                classification.reviewWarnings[0] ||
+                classification.informationalWarnings[0];
+              const isBlocking = classifiedWarning?.classification === "blocking";
+              const severityLabel =
+                classifiedWarning?.classification === "informational"
+                  ? "informational"
+                  : classifiedWarning?.classification || warning.severity;
+              return (
+                <li key={warning.code} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                  <p>
+                    <span className="font-bold">{severityLabel}:</span> {warning.message}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onWarningResolutionChange(warning.code, "accepted_suggestion")}
+                      className={[
+                        subtleButtonClass,
+                        resolution?.status === "accepted_suggestion" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : "",
+                      ].join(" ")}
+                    >
+                      Use suggested correction
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onWarningResolutionChange(warning.code, "kept_original")}
+                      className={[
+                        subtleButtonClass,
+                        resolution?.status === "kept_original" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : "",
+                      ].join(" ")}
+                    >
+                      Keep original
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onWarningResolutionChange(warning.code, "edited_manually")}
+                      className={[
+                        subtleButtonClass,
+                        resolution?.status === "edited_manually" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : "",
+                      ].join(" ")}
+                    >
+                      Edit manually
+                    </button>
+                  </div>
+                  {isBlocking && (!resolution || resolution.status === "unreviewed") && (
+                    <p className="mt-2 text-xs font-bold text-red-600 dark:text-red-300">
+                      This blocking warning must be reviewed before calendar creation.
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </ReviewPanel>
+      )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <ReviewPanel title="No-School Days">
@@ -1422,17 +2286,22 @@ function AiImportReview({
         )}
       </ReviewPanel>
 
-      {importResult.warnings.length > 0 && (
-        <ReviewPanel title="Warnings" className="mt-4">
-          <ul className="space-y-2 text-sm font-medium text-slate-600 dark:text-slate-300">
-            {importResult.warnings.map((warning) => (
-              <li key={warning.code}>
-                <span className="font-bold">{warning.severity}:</span> {warning.message}
-              </li>
-            ))}
-          </ul>
-        </ReviewPanel>
-      )}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 dark:border-slate-700">
+        <button type="button" onClick={onAdvancedEdit} className={secondaryButtonClass}>
+          Advanced Edit
+        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={onContinueManually} className={secondaryButtonClass}>
+            Continue Manually
+          </button>
+          <button type="button" onClick={onStartOver} className={subtleButtonClass}>
+            Start Over
+          </button>
+          <button type="button" onClick={onCreateCalendar} disabled={!canCreateCalendar} className={sundialPrimaryButtonClass("px-5")}>
+            Create Calendar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1456,11 +2325,151 @@ function ReviewPanel({
   );
 }
 
+function ChecklistGroup({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<[string, boolean]>;
+}) {
+  return (
+    <div>
+      <h5 className="text-sm font-bold text-slate-900 dark:text-white">{title}</h5>
+      <ul className="mt-3 space-y-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+        {items.map(([label, complete]) => (
+          <li key={label} className="flex items-center gap-2">
+            <span
+              className={[
+                "grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs font-black",
+                complete
+                  ? "bg-emerald-500 text-white"
+                  : "bg-slate-200 text-slate-500 dark:bg-slate-800",
+              ].join(" ")}
+            >
+              {complete ? "✓" : "○"}
+            </span>
+            <span>{label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ReviewLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 text-sm">
       <span className="font-semibold text-slate-600 dark:text-slate-300">{label}</span>
       <span className="text-right font-bold">{value}</span>
+    </div>
+  );
+}
+
+function AiCalendarImportProgress({
+  state,
+  filename,
+  elapsedSeconds,
+  progress,
+  error,
+  retryable = false,
+  onRetry,
+  onContinueManually,
+}: {
+  state: "working" | "complete" | "failed";
+  filename?: string;
+  elapsedSeconds: number;
+  progress: number;
+  error?: string;
+  retryable?: boolean;
+  onRetry?: () => void;
+  onContinueManually?: () => void;
+}) {
+  const displayProgress = Math.max(0, Math.min(100, progress));
+  const stage = getAiImportStageForProgress(displayProgress);
+  const stageLabel = state === "complete" ? "Calendar draft ready" : stage.label;
+  const description =
+    state === "complete"
+      ? "Sundial found calendar details and is opening the review screen."
+      : stage.description;
+  const reassurance = getAiImportLongRunningMessage(elapsedSeconds);
+
+  return (
+    <div
+      className={[
+        "mt-4 rounded-2xl border p-4 text-sm shadow-sm",
+        state === "failed"
+          ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-100"
+          : "border-amber-200 bg-white text-slate-800 dark:border-amber-900/50 dark:bg-black dark:text-slate-100",
+      ].join(" ")}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-base font-bold">
+            {state === "failed" ? "Calendar analysis stopped" : "Reading your calendar"}
+          </p>
+          {filename && (
+            <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              {filename}
+            </p>
+          )}
+        </div>
+        <p className="text-sm font-bold text-[#9A7209] dark:text-[#F6C64A]">
+          {displayProgress}%
+        </p>
+      </div>
+
+      <div
+        className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-[#242424]"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={displayProgress}
+        aria-label="AI calendar import progress"
+      >
+        <div
+          className={[
+            "h-full rounded-full bg-[#D4A017]",
+            "transition-[width] duration-700 ease-out motion-reduce:transition-none",
+            state === "working" && displayProgress >= 92
+              ? "animate-pulse motion-reduce:animate-none"
+              : "",
+          ].join(" ")}
+          style={{ width: `${displayProgress}%` }}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        <p className="font-bold">{stageLabel}</p>
+        <p className="leading-6 text-slate-600 dark:text-slate-300">{description}</p>
+        <p className="font-semibold text-slate-500 dark:text-slate-400">
+          Elapsed time: {elapsedSeconds} {elapsedSeconds === 1 ? "second" : "seconds"}
+        </p>
+        {state === "working" && (
+          <p className="leading-6 text-slate-600 dark:text-slate-300">{reassurance}</p>
+        )}
+        {state === "failed" && error && (
+          <p className="font-semibold text-red-800 dark:text-red-200">{error}</p>
+        )}
+      </div>
+
+      {state === "failed" && (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {retryable && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded-lg bg-white px-3 py-1.5 text-sm font-bold text-red-800 shadow-sm transition hover:bg-red-100 dark:bg-black dark:text-red-200 dark:hover:bg-red-950/40"
+            >
+              Retry
+            </button>
+          )}
+          <button type="button" onClick={onContinueManually} className={secondaryButtonClass}>
+            Continue Manually
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1629,6 +2638,7 @@ function NormalScheduleStep({
   schedules,
   scheduleMap,
   adminBasePath,
+  onAddTimesNow,
   errors,
   updateDraft,
 }: {
@@ -1636,11 +2646,24 @@ function NormalScheduleStep({
   schedules: WizardScheduleSummary[];
   scheduleMap: Map<string, WizardScheduleSummary>;
   adminBasePath: string;
+  onAddTimesNow: (tempId: string, detectedName: string) => Promise<void>;
   errors: StepErrors;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
 }) {
   const preview = buildPreviewResult(draft);
   const previewDays = preview?.days.filter((calendarDay) => calendarDay.isSchoolDay).slice(0, 10) || [];
+  const aiReadiness =
+    draft.aiImport?.result
+      ? getAiImportReadinessSummary({
+          importResult: draft.aiImport.result,
+          resolutions: draft.aiImport.resolutions,
+          completedSteps: draft.completedSteps,
+          warnings: draft.aiImport.warnings || draft.aiImport.result.warnings,
+        })
+      : null;
+  const aiUsageCounts = draft.aiImport?.result
+    ? getDetectedScheduleUsageCounts(draft.aiImport.result)
+    : {};
 
   if (schedules.length === 0) {
     return (
@@ -1703,6 +2726,60 @@ function NormalScheduleStep({
         </fieldset>
 
         <div className="mt-6">
+          {draft.aiImport?.result && draft.aiImport.unresolvedRequiredScheduleIds?.length ? (
+            <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
+              <h3 className="text-base font-bold text-amber-950 dark:text-amber-100">
+                {draft.aiImport.unresolvedRequiredScheduleIds.length} detected{" "}
+                {draft.aiImport.unresolvedRequiredScheduleIds.length === 1
+                  ? "schedule needs"
+                  : "schedules need"}{" "}
+                bell times for the full manual generation path.
+              </h3>
+              {aiReadiness && (
+                <p className="mt-1 text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  Calendar setup is {aiReadiness.percentComplete}% complete.
+                </p>
+              )}
+              <div className="mt-3 grid gap-2">
+                {draft.aiImport.unresolvedRequiredScheduleIds.map((tempId) => {
+                  const resolution = draft.aiImport?.resolutions.find(
+                    (item) => item.tempId === tempId
+                  );
+                  return (
+                    <div
+                      key={tempId}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-sm dark:bg-black"
+                    >
+                      <div>
+                        <p className="font-bold">{resolution?.detectedName || tempId}</p>
+                        <p className="text-xs font-semibold text-slate-500">
+                          Used on {pluralize(aiUsageCounts[tempId] || 0, "calendar day")} ·
+                          Bell times needed
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void onAddTimesNow(resolution?.tempId || tempId, resolution?.detectedName || tempId)
+                        }
+                        className={secondaryButtonClass}
+                      >
+                        Add Times Now
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              {aiReadiness?.remainingTasks.length ? (
+                <ul className="mt-3 space-y-1 text-sm font-medium text-amber-900 dark:text-amber-100">
+                  {aiReadiness.remainingTasks.slice(0, 5).map((task) => (
+                    <li key={task}>Remaining: {task}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+
           {draft.patternMode === "same" && (
             <label className="block text-sm font-bold">
               Schedule used every day
@@ -1863,7 +2940,7 @@ function NoSchoolDaysStep({
         {
           id: createId("no-school"),
           startDate: "",
-          endDate: range ? "" : undefined,
+          endDate: "",
           label: "",
           type: range ? "School Break" : "Holiday",
         },
@@ -1871,7 +2948,7 @@ function NoSchoolDaysStep({
     }));
   }
 
-  function updateEntry(id: string, partial: Partial<NoSchoolRange & { type: NoSchoolType }>) {
+  function updateEntry(id: string, partial: Partial<WizardDraft["noSchoolRanges"][number]>) {
     updateDraft((previousDraft) => ({
       ...previousDraft,
       noSchoolRanges: previousDraft.noSchoolRanges.map((range) =>
@@ -1936,7 +3013,7 @@ function NoSchoolDaysStep({
                     type="date"
                     value={range.endDate || ""}
                     onChange={(event) =>
-                      updateEntry(range.id!, { endDate: event.target.value || undefined })
+                      updateEntry(range.id!, { endDate: event.target.value })
                     }
                     className={`mt-2 ${inputClass}`}
                   />
@@ -2019,7 +3096,7 @@ function SpecialSchoolDaysStep({
           id: createId("special"),
           type: "Rally",
           startDate: "",
-          endDate: undefined,
+          endDate: "",
           scheduleId: schedules[0]?.id || "",
           label: "",
           isInstructional: true,
@@ -2129,7 +3206,7 @@ function SpecialSchoolDaysStep({
                     type="date"
                     value={specialDay.endDate || ""}
                     onChange={(event) =>
-                      updateSpecialDay(specialDay.id!, { endDate: event.target.value || undefined })
+                      updateSpecialDay(specialDay.id!, { endDate: event.target.value })
                     }
                     className={`mt-2 ${inputClass}`}
                   />
@@ -2668,6 +3745,237 @@ function GenerateModal({
   );
 }
 
+function AiCreateCalendarModal({
+  importResult,
+  resolutions,
+  warningResolutions,
+  actionResult,
+  isSaving,
+  onConfirm,
+  onReplace,
+  onClose,
+}: {
+  importResult: AiCalendarImportResult;
+  resolutions: DetectedScheduleResolution[];
+  warningResolutions: AiImportWarningResolution[];
+  actionResult: GenerateCalendarActionResult | null;
+  isSaving: boolean;
+  onConfirm: () => void;
+  onReplace: () => void;
+  onClose: () => void;
+}) {
+  const replacementRequired =
+    actionResult?.status === "replacement_required" ? actionResult : null;
+  const errorResult =
+    actionResult &&
+    actionResult.status !== "replacement_required" &&
+    actionResult.status !== "success"
+      ? actionResult
+      : null;
+  const matchedCount = resolutions.filter(
+    (resolution) => resolution.matchedExistingScheduleId
+  ).length;
+  const schedulesToCreate = resolutions.filter(
+    (resolution) => !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
+  );
+  const warningClassification = classifyCalendarWarnings(
+    importResult.warnings,
+    warningResolutions
+  );
+  const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
+  const hasBlockingWarnings = warningClassification.blockingWarnings.length > 0;
+  const needsReviewAcknowledgment =
+    !hasBlockingWarnings && warningClassification.unresolvedReviewWarnings.length > 0;
+  const canConfirm =
+    !isSaving && !hasBlockingWarnings && (!needsReviewAcknowledgment || reviewAcknowledged);
+  const validationErrors =
+    errorResult?.status === "validation_error" && errorResult.fieldErrors
+      ? Object.values(errorResult.fieldErrors)
+      : [];
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !isSaving) onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isSaving, onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-4 py-8">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-create-calendar-title"
+        className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-[#242424]"
+      >
+        <h2 id="ai-create-calendar-title" className="text-2xl font-bold">
+          {replacementRequired
+            ? "Replace existing calendar?"
+            : "Create imported calendar?"}
+        </h2>
+
+        {replacementRequired ? (
+          <div className="mt-3 space-y-4">
+            <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">
+              This will replace {replacementRequired.existingCount} existing calendar
+              rows for{" "}
+              {replacementRequired.firstExistingDate && replacementRequired.lastExistingDate
+                ? `${formatDateForDisplay(
+                    replacementRequired.firstExistingDate
+                  )} through ${formatDateForDisplay(
+                    replacementRequired.lastExistingDate
+                  )}`
+                : "the selected school-year range"}
+              .
+            </p>
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
+              Rows outside this range will remain untouched. This operation creates
+              schedules and calendar rows together.
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Sundial will create missing schedules, assign them to imported dates,
+              and save the generated calendar for{" "}
+              {formatDateForDisplay(importResult.schoolYear.startDate)} through{" "}
+              {formatDateForDisplay(importResult.schoolYear.endDate)}.
+            </p>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <MetricCard
+                label="Instructional days"
+                value={String(importResult.expectedInstructionalDayCount || "Review")}
+              />
+              <MetricCard label="Schedules to create" value={String(schedulesToCreate.length)} />
+              <MetricCard label="Schedules matched" value={String(matchedCount)} />
+              <MetricCard label="Need bell times" value={String(schedulesToCreate.length)} />
+              <MetricCard
+                label="Blocking issues"
+                value={String(warningClassification.blockingWarnings.length)}
+              />
+              <MetricCard
+                label="Review items"
+                value={String(warningClassification.reviewWarnings.length)}
+              />
+              <MetricCard label="No-school ranges" value={String(importResult.noSchoolRanges.length)} />
+            </div>
+
+            {schedulesToCreate.length > 0 && (
+              <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+                <h3 className="text-sm font-bold text-amber-950 dark:text-amber-100">
+                  {schedulesToCreate.length}{" "}
+                  {schedulesToCreate.length === 1 ? "schedule" : "schedules"} will be created
+                  without bell times.
+                </h3>
+                <ul className="mt-2 space-y-1 text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  {schedulesToCreate.map((resolution) => (
+                    <li key={resolution.tempId}>
+                      {reviewedScheduleName(resolution)}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  {schedulesToCreate.map((resolution) => reviewedScheduleName(resolution)).join(", ")}{" "}
+                  can be completed later from the Schedules dashboard.
+                </p>
+              </div>
+            )}
+
+            {hasBlockingWarnings && (
+              <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
+                <p className="font-bold">
+                  Fix these calendar issues before creating the calendar:
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {warningClassification.blockingWarnings.map((warning) => (
+                    <li key={warning.code}>{warning.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {!hasBlockingWarnings && warningClassification.resolvedReviewWarnings.length > 0 && (
+              <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100">
+                {warningClassification.resolvedReviewWarnings.length}{" "}
+                {warningClassification.resolvedReviewWarnings.length === 1 ? "item was" : "items were"}{" "}
+                reviewed and will not prevent calendar creation.
+              </div>
+            )}
+
+            {needsReviewAcknowledgment && (
+              <label className="mt-5 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                <input
+                  type="checkbox"
+                  checked={reviewAcknowledged}
+                  onChange={(event) => setReviewAcknowledged(event.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-700 focus:ring-amber-500"
+                />
+                <span>
+                  I reviewed these warnings and want to continue.
+                </span>
+              </label>
+            )}
+          </>
+        )}
+
+        {isSaving && (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+            Creating schedules and calendar...
+          </div>
+        )}
+
+        {errorResult && (
+          <div
+            role="alert"
+            className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100"
+          >
+            <p>{errorResult.message}</p>
+            {validationErrors.length > 0 && (
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {validationErrors.map((message, index) => (
+                  <li key={`${message}-${index}`}>{message}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className={secondaryButtonClass}
+          >
+            Close
+          </button>
+          {replacementRequired ? (
+            <button
+              type="button"
+              onClick={onReplace}
+              disabled={isSaving}
+              className="inline-flex items-center justify-center rounded-lg border border-transparent bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSaving ? "Creating schedules and calendar..." : "Replace Existing Calendar"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={!canConfirm}
+              className={sundialPrimaryButtonClass()}
+            >
+              {isSaving ? "Creating schedules and calendar..." : "Create Calendar"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CompletionScreen({
   schoolName,
   adminBasePath,
@@ -2703,6 +4011,47 @@ function CompletionScreen({
             <MetricCard label="Warnings" value={String(summary.warningCount)} />
           </div>
 
+          {(summary.schedulesCreated?.length ||
+            summary.matchedScheduleCount !== undefined ||
+            summary.schedulesNeedingTimes?.length) && (
+            <div className="mt-4 grid gap-4 text-left sm:grid-cols-3">
+              <MetricCard
+                label="Schedules created"
+                value={String(summary.schedulesCreated?.length || 0)}
+              />
+              <MetricCard
+                label="Schedules matched"
+                value={String(summary.matchedScheduleCount || 0)}
+              />
+              <MetricCard
+                label="Need bell times"
+                value={String(summary.schedulesNeedingTimes?.length || 0)}
+              />
+            </div>
+          )}
+
+          {summary.schedulesNeedingTimes?.length ? (
+            <div className="mx-auto mt-8 max-w-3xl rounded-2xl border border-amber-200 bg-amber-50 p-5 text-left dark:border-amber-900/60 dark:bg-amber-950/20">
+              <h2 className="text-lg font-bold text-amber-950 dark:text-amber-100">
+                Add bell times when you are ready
+              </h2>
+              <p className="mt-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
+                You can add bell times later from Schedules.
+              </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {summary.schedulesNeedingTimes.map((schedule) => (
+                  <Link
+                    key={schedule.id}
+                    href={`${adminBasePath}/schedules/${schedule.id}/edit`}
+                    className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-100 dark:bg-black dark:text-amber-100 dark:hover:bg-amber-950/40"
+                  >
+                    {schedule.name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {summary.warnings.length > 0 && (
             <div className="mx-auto mt-8 max-w-3xl rounded-2xl border border-amber-200 bg-amber-50 p-5 text-left dark:border-amber-900/60 dark:bg-amber-950/20">
               <h2 className="text-lg font-bold text-amber-950 dark:text-amber-100">
@@ -2720,9 +4069,18 @@ function CompletionScreen({
             <Link href={`${adminBasePath}/calendar`} className={sundialPrimaryButtonClass()}>
               View Calendar
             </Link>
-            <Link href={`${adminBasePath}/calendar`} className={secondaryButtonClass}>
-              Edit a Day
-            </Link>
+            {summary.schedulesNeedingTimes?.length ? (
+              <Link
+                href={`${adminBasePath}/schedules/${summary.schedulesNeedingTimes[0].id}/edit`}
+                className={secondaryButtonClass}
+              >
+                Add Bell Times
+              </Link>
+            ) : (
+              <Link href={`${adminBasePath}/calendar`} className={secondaryButtonClass}>
+                Edit a Day
+              </Link>
+            )}
             <Link href={adminBasePath} className={secondaryButtonClass}>
               Return to Dashboard
             </Link>

@@ -59,6 +59,7 @@ export function createMockAiCalendarImportResult(): AiCalendarImportResult {
       {
         id: "ai-no-school-labor-day",
         startDate: "2026-09-07",
+        endDate: "2026-09-07",
         label: "Labor Day",
         type: "Holiday",
         confidence: "high",
@@ -92,6 +93,7 @@ export function createMockAiCalendarImportResult(): AiCalendarImportResult {
       {
         id: "ai-special-first-day",
         startDate: "2026-08-12",
+        endDate: "2026-08-12",
         label: "First Day of School",
         type: "First Day",
         isInstructional: true,
@@ -100,6 +102,7 @@ export function createMockAiCalendarImportResult(): AiCalendarImportResult {
       {
         id: "ai-special-rally",
         startDate: "2026-08-21",
+        endDate: "2026-08-21",
         label: "Rally Day",
         type: "Rally",
         scheduleTempId: "ai-schedule-rally",
@@ -124,6 +127,7 @@ export function createMockAiCalendarImportResult(): AiCalendarImportResult {
       {
         id: "ai-special-minimum",
         startDate: "2027-06-03",
+        endDate: "2027-06-03",
         label: "Last Day Minimum Day",
         type: "Minimum Day",
         scheduleTempId: "ai-schedule-minimum",

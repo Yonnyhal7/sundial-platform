@@ -48,7 +48,8 @@ export default async function SchoolSchedulePage({
       schedule:schedules (
         id,
         schedule_name,
-        schedule_type
+        schedule_type,
+        setup_status
       )
     `
     )
@@ -127,7 +128,11 @@ export default async function SchoolSchedulePage({
               )}
             </div>
 
-            {!periods || periods.length === 0 ? (
+            {schedule.setup_status === "needs_times" ? (
+              <div className="rounded-xl bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:bg-[#181818] dark:text-[#a3a3a3]">
+                Bell times have not been added yet.
+              </div>
+            ) : !periods || periods.length === 0 ? (
               <p className="text-sm text-slate-600 dark:text-[#a3a3a3]">
                 No periods have been added to this schedule yet.
               </p>

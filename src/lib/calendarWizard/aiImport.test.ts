@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   APIConnectionTimeoutError,
   AuthenticationError,
@@ -7,6 +7,7 @@ import {
 import {
   clearAiImportMetadata,
   convertAiImportToWizardDraft,
+  getAiImportReadinessSummary,
   unresolvedRequiredSchedulesBlockFinalReadiness,
   type AiWizardDraftShape,
 } from "./aiImportConversion";
@@ -28,13 +29,21 @@ import {
   type DetectedScheduleResolution,
 } from "./aiImportTypes";
 import {
+  DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS,
+  MAX_OPENAI_CALENDAR_TIMEOUT_MS,
+  MIN_OPENAI_CALENDAR_TIMEOUT_MS,
+  OpenAiCalendarApplicationTimeoutError,
   getCalendarImportMode,
+  buildOpenAiErrorDiagnostics,
+  createOpenAiCalendarTimeoutController,
   mapOpenAiError,
   openAiResponseHasRefusal,
   openAiResponseIncomplete,
+  parseOpenAiCalendarTimeoutMs,
   shouldRetryOpenAiError,
 } from "./openAiCalendarAnalyzerUtils";
 import { hasPdfSignature } from "./aiPdfValidation";
+import { buildCalendarImportResponsesRequest } from "./openAiCalendarRequest";
 
 function detected(tempId: string, name: string): AiDetectedSchedule {
   return {
@@ -127,6 +136,7 @@ describe("AI calendar import matching", () => {
     expect(resolution).toMatchObject({
       matchedExistingScheduleId: "schedule-brown",
       status: "matched_automatically",
+      reviewedName: "Brown Day",
     });
   });
 
@@ -139,7 +149,7 @@ describe("AI calendar import matching", () => {
     expect(resolution.matchedExistingScheduleId).toBe("schedule-brown");
   });
 
-  it("leaves ambiguous matches unresolved", () => {
+  it("marks ambiguous matches as detected schedules needing times", () => {
     const [resolution] = matchDetectedSchedules(
       [detected("brown", "Brown Day")],
       [
@@ -148,17 +158,19 @@ describe("AI calendar import matching", () => {
       ]
     );
 
-    expect(resolution.status).toBe("unresolved");
+    expect(resolution.status).toBe("needs_times");
   });
 
-  it("leaves missing matches unresolved", () => {
+  it("marks missing matches as detected schedules needing times", () => {
     const [resolution] = matchDetectedSchedules(
       [detected("rally", "Rally Schedule")],
       [{ id: "regular", name: "Regular Day" }]
     );
 
-    expect(resolution.status).toBe("unresolved");
+    expect(resolution.status).toBe("needs_times");
     expect(resolution.needsSetup).toBe(true);
+    expect(resolution.reviewedName).toBe("Rally Schedule");
+    expect(resolution.setupChoice).toBe("add_later");
   });
 
   it("preserves existing admin schedule resolutions", () => {
@@ -171,14 +183,16 @@ describe("AI calendar import matching", () => {
           detectedName: "Rally Schedule",
           normalizedName: "rally",
           matchedExistingScheduleId: "rally-manual",
-          status: "matched_by_admin",
-          needsSetup: false,
-        },
+            status: "matched_by_admin",
+            needsSetup: false,
+            reviewedName: "Rally Day",
+          },
       ]
     );
 
     expect(resolution.matchedExistingScheduleId).toBe("rally-manual");
     expect(resolution.status).toBe("matched_by_admin");
+    expect(resolution.reviewedName).toBe("Rally Day");
   });
 });
 
@@ -252,6 +266,7 @@ describe("AI calendar import normalization", () => {
       expect(normalized.importResult.warnings).toContainEqual(
         expect.objectContaining({ code: "unknown_special_day_schedule_reference" })
       );
+      expect(normalized.importResult.specialDays[0].endDate).toBe("2026-08-12");
     }
   });
 
@@ -273,6 +288,7 @@ describe("AI calendar import normalization", () => {
     expect(normalized.success).toBe(true);
     if (normalized.success) {
       expect(normalized.importResult.noSchoolRanges).toHaveLength(1);
+      expect(normalized.importResult.noSchoolRanges[0].endDate).toBe("2026-09-07");
       expect(normalized.importResult.warnings).toContainEqual(
         expect.objectContaining({ code: "duplicate_import_item_removed" })
       );
@@ -324,6 +340,27 @@ describe("AI calendar import normalization", () => {
 });
 
 describe("OpenAI calendar analyzer behavior", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("builds a gpt-5 Responses API request without temperature", () => {
+    const request = buildCalendarImportResponsesRequest("gpt-5", "file_123");
+
+    expect(request).toMatchObject({
+      model: "gpt-5",
+      store: false,
+      text: {
+        format: {
+          type: "json_schema",
+          strict: true,
+        },
+      },
+    });
+    expect(JSON.stringify(request)).toContain("file_123");
+    expect("temperature" in request).toBe(false);
+  });
+
   it("detects refusal responses", () => {
     expect(
       openAiResponseHasRefusal({
@@ -350,6 +387,30 @@ describe("OpenAI calendar analyzer behavior", () => {
     expect(result).toMatchObject({ status: "configuration_error" });
   });
 
+  it("builds sanitized OpenAI error diagnostics", () => {
+    const error = new AuthenticationError(401, {}, "bad key", new Headers());
+    const diagnostics = buildOpenAiErrorDiagnostics(error, {
+      model: "gpt-5",
+      stage: "creating_response",
+      fileUploadSucceeded: true,
+      responsesApiCallBegan: true,
+      durationMs: 1234,
+    });
+
+    expect(diagnostics).toMatchObject({
+      constructorName: "AuthenticationError",
+      status: 401,
+      model: "gpt-5",
+      stage: "creating_response",
+      fileUploadSucceeded: true,
+      responsesApiCallBegan: true,
+      durationMs: 1234,
+    });
+    expect(diagnostics.message).toBeTruthy();
+    expect(JSON.stringify(diagnostics)).not.toContain("OPENAI_API_KEY");
+    expect(JSON.stringify(diagnostics)).not.toContain("%PDF-");
+  });
+
   it("maps rate-limit errors safely", () => {
     const result = mapOpenAiError(new RateLimitError(429, {}, "rate limit", new Headers()));
     expect(result).toMatchObject({ status: "rate_limited", retryable: true });
@@ -358,6 +419,62 @@ describe("OpenAI calendar analyzer behavior", () => {
   it("maps timeout errors safely", () => {
     const result = mapOpenAiError(new APIConnectionTimeoutError({ message: "timeout" }));
     expect(result).toMatchObject({ status: "analysis_failed", retryable: true });
+  });
+
+  it("uses a 3-minute default application timeout", () => {
+    expect(parseOpenAiCalendarTimeoutMs(undefined)).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
+  });
+
+  it("accepts a valid application timeout override", () => {
+    expect(parseOpenAiCalendarTimeoutMs("120000")).toBe(120_000);
+  });
+
+  it("falls back for invalid application timeout overrides", () => {
+    expect(parseOpenAiCalendarTimeoutMs("not-a-number")).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
+    expect(parseOpenAiCalendarTimeoutMs("-1")).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
+    expect(parseOpenAiCalendarTimeoutMs("Infinity")).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
+  });
+
+  it("clamps application timeout overrides to the supported range", () => {
+    expect(parseOpenAiCalendarTimeoutMs("1000")).toBe(MIN_OPENAI_CALENDAR_TIMEOUT_MS);
+    expect(parseOpenAiCalendarTimeoutMs("999999")).toBe(MAX_OPENAI_CALENDAR_TIMEOUT_MS);
+  });
+
+  it("aborts at the configured application timeout", () => {
+    vi.useFakeTimers();
+    const timeout = createOpenAiCalendarTimeoutController(120_000);
+
+    expect(timeout.controller.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(119_999);
+    expect(timeout.controller.signal.aborted).toBe(false);
+    vi.advanceTimersByTime(1);
+
+    expect(timeout.controller.signal.aborted).toBe(true);
+    expect(timeout.timedOut).toBe(true);
+    expect(timeout.controller.signal.reason).toBeInstanceOf(OpenAiCalendarApplicationTimeoutError);
+    timeout.clear();
+  });
+
+  it("maps application timeout errors to the safe client message", () => {
+    const result = mapOpenAiError(new OpenAiCalendarApplicationTimeoutError(180_000));
+
+    expect(result).toMatchObject({
+      status: "analysis_failed",
+      message: "Calendar analysis took longer than expected. Please try again or continue manually.",
+    });
+    expect("retryable" in result).toBe(false);
+    expect(shouldRetryOpenAiError(new OpenAiCalendarApplicationTimeoutError(180_000), 0)).toBe(false);
+  });
+
+  it("cleans up application timeout timers", () => {
+    vi.useFakeTimers();
+    const timeout = createOpenAiCalendarTimeoutController(45_000);
+
+    timeout.clear();
+    vi.advanceTimersByTime(45_000);
+
+    expect(timeout.controller.signal.aborted).toBe(false);
+    expect(timeout.timedOut).toBe(false);
   });
 
   it("retries transient errors once", () => {
@@ -422,14 +539,29 @@ describe("AI import conversion", () => {
     expect(converted.draft.aiImport?.state).toBe("applied");
   });
 
-  it("unresolved required schedules block final readiness", () => {
+  it("keeps unresolved schedule IDs visible when converting into the advanced manual wizard", () => {
     const result = createMockAiCalendarImportResult();
     const resolutions = matchDetectedSchedules(result.detectedSchedules, []);
     const converted = convertAiImportToWizardDraft(baseDraft(), result, resolutions);
 
     expect(converted.unresolvedRequiredScheduleIds.length).toBeGreaterThan(0);
     expect(unresolvedRequiredSchedulesBlockFinalReadiness(converted.draft)).toBe(true);
-    expect(converted.earliestStep).toBe("normal-schedule");
+    expect(converted.earliestStep).toBe("school-year");
+  });
+
+  it("treats Add Times Later as quick-setup ready even when bell times are missing", () => {
+    const result = createMockAiCalendarImportResult();
+    const resolutions = matchDetectedSchedules(result.detectedSchedules, []);
+    const readiness = getAiImportReadinessSummary({
+      importResult: result,
+      resolutions: resolutions.map((resolution) => ({
+        ...resolution,
+        setupChoice: "add_later",
+      })),
+      completedSteps: ["school-year", "no-school", "special-days", "review"],
+    });
+
+    expect(readiness.remainingTasks).not.toContain("Add times");
   });
 
   it("converts imported no-school ranges correctly", () => {
