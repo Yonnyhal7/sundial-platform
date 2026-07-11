@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useState } from "react";
 import { ClockIcon } from "@/components/mobile-app/AppIcons";
 import { formatPeriodTime, type SchedulePeriod } from "@/lib/scheduleTime";
+import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 
 type BellSchedule = {
   id: string;
   name: string;
   type: string | null;
+  calendarColor: string | null;
   setupStatus: string | null;
   periods: SchedulePeriod[];
 };
@@ -65,9 +67,23 @@ export default function BellScheduleClient({
               <p className="text-xs font-black uppercase tracking-[0.24em] text-[var(--school-primary)]">
                 Bell Schedule
               </p>
-              <h2 className="mt-1 text-2xl font-black text-slate-950 dark:text-white">
-                {schedule.name}
-              </h2>
+              <div className="mt-1 flex items-center gap-3">
+                <span
+                  className="h-4 w-4 shrink-0 rounded-full border"
+                  style={getScheduleDotStyle(
+                    getScheduleCalendarColor({
+                      id: schedule.id,
+                      name: schedule.name,
+                      calendarColor: schedule.calendarColor,
+                    })
+                  )}
+                  aria-label={`${schedule.name} calendar color`}
+                  role="img"
+                />
+                <h2 className="text-2xl font-black text-slate-950 dark:text-white">
+                  {schedule.name}
+                </h2>
+              </div>
             </div>
 
             {schedule.setupStatus === "needs_times" ? (

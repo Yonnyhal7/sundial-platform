@@ -1,11 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 
 type Schedule = {
   id: string;
   schedule_name: string;
   schedule_type: string | null;
+  calendar_color: string | null;
   active: boolean;
 };
 
@@ -25,21 +27,6 @@ type Period = {
   end_time: string;
   sort_order: number;
 };
-
-function dotClassFor(value: string, fallback: "regular" | "note" = "note") {
-  const text = value.toLowerCase();
-
-  if (text.includes("brown")) return "bg-amber-500";
-  if (text.includes("gold")) return "bg-yellow-400";
-  if (text.includes("no school")) return "bg-rose-500";
-  if (text.includes("rally")) return "bg-violet-500";
-  if (text.includes("early out")) return "bg-sky-500";
-  if (text.includes("assembly") || text.includes("special")) {
-    return "bg-orange-500";
-  }
-
-  return fallback === "regular" ? "bg-emerald-500" : "bg-slate-400";
-}
 
 export default function CalendarClient({
   schedules,
@@ -173,17 +160,20 @@ export default function CalendarClient({
 
             const isSelected = selectedDate === dateString;
 
-            const indicatorValue =
-              calendarDay?.is_school_day === false
-                ? "no school"
-                : `${assignedSchedule?.schedule_name || ""} ${
-                    assignedSchedule?.schedule_type || ""
-                  } ${calendarDay?.label || ""}`;
-
             const hasIndicator =
               Boolean(assignedSchedule) ||
               Boolean(calendarDay?.label) ||
               calendarDay?.is_school_day === false;
+            const indicatorColor =
+              calendarDay?.is_school_day === false
+                ? "#E11D48"
+                : assignedSchedule
+                  ? getScheduleCalendarColor(assignedSchedule)
+                  : "#94A3B8";
+            const indicatorLabel =
+              calendarDay?.is_school_day === false
+                ? calendarDay.label || "No School"
+                : assignedSchedule?.schedule_name || calendarDay?.label || "Calendar note";
 
             return (
               <button
@@ -199,7 +189,7 @@ export default function CalendarClient({
                     ? "border-[var(--school-primary)] bg-[color-mix(in_srgb,var(--school-primary)_10%,white)] text-[var(--school-primary)] shadow-sm dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,transparent)] dark:text-white"
                     : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
                 }`}
-                aria-label={`${dateString}${hasIndicator ? `, ${indicatorValue.trim()}` : ""}`}
+                aria-label={`${dateString}${hasIndicator ? `, ${indicatorLabel}` : ""}`}
               >
                 <div className="text-[clamp(0.8rem,2.3vw,1.35rem)] font-semibold leading-none">
                   {day}
@@ -209,12 +199,11 @@ export default function CalendarClient({
                   <span
                     className="absolute bottom-2 left-1/2 flex max-w-[calc(100%-0.75rem)] -translate-x-1/2 items-center justify-center gap-1 sm:bottom-2.5 sm:gap-1.5"
                     aria-hidden="true"
+                    title={indicatorLabel}
                   >
                     <span
-                      className={`h-2.5 w-2.5 shrink-0 rounded-full sm:h-3 sm:w-3 ${dotClassFor(
-                        indicatorValue,
-                        "regular"
-                      )}`}
+                      className="h-2.5 w-2.5 shrink-0 rounded-full border sm:h-3 sm:w-3"
+                      style={getScheduleDotStyle(indicatorColor)}
                     />
                   </span>
                 )}
@@ -222,6 +211,28 @@ export default function CalendarClient({
             );
           })}
         </div>
+
+        {schedules.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-700">
+            {schedules.map((schedule) => {
+              const color = getScheduleCalendarColor(schedule);
+
+              return (
+                <span
+                  key={schedule.id}
+                  className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  <span
+                    className="h-3 w-3 rounded-full border"
+                    style={getScheduleDotStyle(color)}
+                    aria-hidden="true"
+                  />
+                  {schedule.schedule_name}
+                </span>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">

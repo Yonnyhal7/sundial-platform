@@ -12,6 +12,7 @@ import type {
   DetectedScheduleResolution,
 } from "./aiImportTypes";
 import { normalizeScheduleNameForMatching } from "./aiScheduleMatching";
+import { getAiScheduleDefaultColor, normalizeHexColor } from "@/lib/scheduleColors";
 import type { CalendarDayInsertRow } from "./persistence";
 import type {
   CalendarGenerationWarning,
@@ -25,6 +26,7 @@ export type ExistingScheduleForAiPersistence = {
   name: string;
   active: boolean | null;
   setupStatus?: string | null;
+  calendarColor?: string | null;
 };
 
 export type AiScheduleToCreate = {
@@ -32,6 +34,7 @@ export type AiScheduleToCreate = {
   id: string;
   scheduleName: string;
   scheduleType: string | null;
+  calendarColor: string | null;
   setupStatus: "needs_times";
 };
 
@@ -535,6 +538,9 @@ export function planAiSchedulePersistence({
   const tempToScheduleId: Record<string, string> = {};
   const schedulesToCreate: AiScheduleToCreate[] = [];
   const matchedScheduleIds: string[] = [];
+  const detectedOrder = new Map(
+    importResult.detectedSchedules.map((schedule, index) => [schedule.tempId, index])
+  );
 
   for (const tempId of requiredTempIds) {
     const resolution = resolutionsByTempId.get(tempId);
@@ -607,6 +613,9 @@ export function planAiSchedulePersistence({
       id,
       scheduleName: name,
       scheduleType: inferAiScheduleType(name),
+      calendarColor:
+        normalizeHexColor(resolution.calendarColor) ||
+        getAiScheduleDefaultColor(detectedOrder.get(tempId) || 0),
       setupStatus: "needs_times",
     });
   }

@@ -3,6 +3,7 @@ import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ScheduleForm from "@/components/admin/ScheduleForm";
 import { connectDetectedScheduleInDraft } from "../../calendar/wizard/actions";
+import { normalizeHexColor } from "@/lib/scheduleColors";
 
 export default async function NewSchedulePage({
   params,
@@ -44,6 +45,11 @@ export default async function NewSchedulePage({
 
     const scheduleName = String(formData.get("schedule_name") || "");
     const scheduleType = String(formData.get("schedule_type") || "");
+    const rawCalendarColor = String(formData.get("calendar_color") || "").trim();
+    const calendarColor = normalizeHexColor(rawCalendarColor);
+    if (rawCalendarColor && !calendarColor) {
+      redirect(`/${school}/admin/schedules/new?error=1`);
+    }
     const active = formData.get("active") === "on";
     const periodNames = formData.getAll("period_name").map(String);
     const startTimes = formData.getAll("start_time").map(String);
@@ -63,6 +69,7 @@ export default async function NewSchedulePage({
         school_id: schoolId,
         schedule_name: scheduleName,
         schedule_type: scheduleType || null,
+        calendar_color: calendarColor,
         active,
         setup_status: validPeriodInputs.length > 0 ? "ready" : "needs_times",
       })

@@ -68,6 +68,45 @@ describe("AI quick setup persistence planning", () => {
       setupStatus: "needs_times",
     });
     expect(plan.schedulesNeedingTimes.map((schedule) => schedule.name)).toContain("Gold Day");
+    expect(plan.schedulesToCreate[0].calendarColor).toBe("#92400E");
+    expect(plan.schedulesToCreate[1].calendarColor).toBe("#D4A017");
+  });
+
+  it("uses reviewed AI schedule colors for new schedules", () => {
+    const importResult = createMockAiCalendarImportResult();
+    const resolutions = matchDetectedSchedules(importResult.detectedSchedules, []).map(
+      (resolution) =>
+        resolution.tempId === "ai-schedule-brown"
+          ? { ...resolution, calendarColor: "#0d9488" }
+          : resolution
+    );
+
+    const plan = planAiSchedulePersistence({
+      importResult,
+      resolutions,
+      existingSchedules: [],
+      createId: () => "00000000-0000-4000-8000-000000000123",
+    });
+
+    expect(plan.schedulesToCreate.find((schedule) => schedule.tempId === "ai-schedule-brown")?.calendarColor).toBe(
+      "#0D9488"
+    );
+  });
+
+  it("does not create or overwrite colors for matched existing schedules", () => {
+    const importResult = createMockAiCalendarImportResult();
+    const resolutions = matchDetectedSchedules(importResult.detectedSchedules, [
+      { id: uuidOne, name: "Brown Day", calendarColor: "#123456" },
+    ]);
+
+    const plan = planAiSchedulePersistence({
+      importResult,
+      resolutions,
+      existingSchedules: [{ id: uuidOne, name: "Brown Day", active: true, calendarColor: "#123456" }],
+    });
+
+    expect(plan.tempToScheduleId["ai-schedule-brown"]).toBe(uuidOne);
+    expect(plan.schedulesToCreate.some((schedule) => schedule.tempId === "ai-schedule-brown")).toBe(false);
   });
 
   it("treats Add Times Later needs_times schedules as informational, not blocking", () => {

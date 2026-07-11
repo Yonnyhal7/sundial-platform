@@ -19,6 +19,7 @@ type SetupLayoutProps = {
   nextStep?: SetupStepSlug;
   continueLabel?: string;
   continueAction?: (formData: FormData) => void | Promise<void>;
+  showFooter?: boolean;
   children: ReactNode;
 };
 
@@ -29,6 +30,7 @@ export default async function SetupLayout({
   nextStep,
   continueLabel = "Continue",
   continueAction = continueSetupStepAction,
+  showFooter = true,
   children,
 }: SetupLayoutProps) {
   const resolvedNextStep = nextStep || getNextSetupStep(currentStep);
@@ -65,30 +67,32 @@ export default async function SetupLayout({
 
           {children}
 
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6 dark:border-slate-700">
-            <Link
-              href={backHref}
-              className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
-            >
-              Back
-            </Link>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="submit"
-                formAction={saveSetupProgressAction}
+          {showFooter && (
+            <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6 dark:border-slate-700">
+              <Link
+                href={backHref}
                 className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
               >
-                Save & Exit
-              </button>
-              <button
-                type="submit"
-                className={setupPrimaryButtonClass("px-5 py-2.5")}
-              >
-                {continueLabel}
-              </button>
+                Back
+              </Link>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="submit"
+                  formAction={saveSetupProgressAction}
+                  className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
+                >
+                  Save & Exit
+                </button>
+                <button
+                  type="submit"
+                  className={setupPrimaryButtonClass("px-5 py-2.5")}
+                >
+                  {continueLabel}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </form>
       </div>
     </main>

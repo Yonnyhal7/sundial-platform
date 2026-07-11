@@ -20,6 +20,10 @@ import {
   normalizeSetupStep,
   type SetupStepSlug,
 } from "@/lib/setupSteps";
+import {
+  completeSetupCalendarStep,
+  hasPersistedInstructionalCalendarDays,
+} from "@/lib/setupCalendarCompletion";
 import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
 
 type SetupInviteRole = "school_admin" | "editor";
@@ -254,10 +258,6 @@ async function saveStepData(
     }
   }
 
-  if (currentStep === "schedule") {
-    // TODO: Generate calendar_days across the school year from the schedule pattern.
-  }
-
   return { schoolData, serviceSupabase };
 }
 
@@ -393,7 +393,19 @@ export async function continueSetupStepAction(formData: FormData) {
     formData
   );
 
-  await updateSchoolSetupStep(serviceSupabase, schoolData.id, nextStep);
+  if (currentStep === "schedule" && nextStep === "complete") {
+    const result = await completeSetupCalendarStep({
+      supabase: serviceSupabase,
+      schoolId: schoolData.id,
+      school,
+    });
+
+    if (result.status !== "success") {
+      redirect(await getSchoolSetupStepPath(school, "schedule"));
+    }
+  } else {
+    await updateSchoolSetupStep(serviceSupabase, schoolData.id, nextStep);
+  }
   revalidateSetupProgressRoutes(school);
   if (currentStep === "appearance") {
     revalidateAppearanceRoutes(school);
@@ -409,6 +421,14 @@ export async function finishSchoolSetupAction(formData: FormData) {
     currentStep,
     formData
   );
+
+  const hasCalendar = await hasPersistedInstructionalCalendarDays(
+    serviceSupabase,
+    schoolData.id
+  );
+  if (!hasCalendar || normalizeSetupStep(schoolData.setup_step) !== "complete") {
+    redirect(await getSchoolSetupStepPath(school, "schedule"));
+  }
 
   await updateSchoolSetupStep(serviceSupabase, schoolData.id, "complete");
   await updateSchoolSetupComplete(serviceSupabase, schoolData.id, true);

@@ -2,11 +2,13 @@ import type {
   AiDetectedSchedule,
   DetectedScheduleResolution,
 } from "./aiImportTypes";
+import { getAiScheduleDefaultColor, normalizeHexColor } from "@/lib/scheduleColors";
 
 export type ExistingScheduleForMatching = {
   id: string;
   name: string;
   type?: string | null;
+  calendarColor?: string | null;
 };
 
 const scheduleSuffixPattern = /\b(schedule|day)\b/g;
@@ -61,6 +63,7 @@ export function matchDetectedSchedules(
         detectedName: detectedSchedule.detectedName,
         reviewedName: detectedSchedule.detectedName,
         normalizedName: normalized,
+        calendarColor: normalizeHexColor(candidates[0].calendarColor),
         matchedExistingScheduleId: candidates[0].id,
         status: "matched_automatically",
         needsSetup: false,
@@ -73,6 +76,11 @@ export function matchDetectedSchedules(
       detectedName: detectedSchedule.detectedName,
       reviewedName: detectedSchedule.detectedName,
       normalizedName: normalized,
+      calendarColor:
+        normalizeHexColor(previous?.calendarColor) ||
+        getAiScheduleDefaultColor(
+          detectedSchedules.findIndex((schedule) => schedule.tempId === detectedSchedule.tempId)
+        ),
       matchedExistingScheduleId: null,
       status: "needs_times",
       needsSetup: true,

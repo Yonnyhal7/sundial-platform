@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
+import { normalizeHexColor } from "@/lib/scheduleColors";
 
 export async function updateScheduleAction(
   school: string,
@@ -18,6 +19,11 @@ export async function updateScheduleAction(
 
   const scheduleName = String(formData.get("schedule_name") || "");
   const scheduleType = String(formData.get("schedule_type") || "");
+  const rawCalendarColor = String(formData.get("calendar_color") || "").trim();
+  const calendarColor = normalizeHexColor(rawCalendarColor);
+  if (rawCalendarColor && !calendarColor) {
+    redirect(`/${school}/admin/schedules/${scheduleId}/edit?error=1`);
+  }
   const active = formData.get("active") === "on";
   const periodIds = formData.getAll("period_id").map(String);
   const periodNames = formData.getAll("period_name").map(String);
@@ -32,6 +38,7 @@ export async function updateScheduleAction(
     .update({
       schedule_name: scheduleName,
       schedule_type: scheduleType || null,
+      calendar_color: calendarColor,
       active,
       setup_status: hasValidPeriods ? "ready" : "needs_times",
       updated_at: new Date().toISOString(),

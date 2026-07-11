@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeScheduleSetupStatus } from "@/lib/scheduleStatus";
+import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 
 export default async function AdminSchedulesPage({
   params,
@@ -53,7 +54,7 @@ export default async function AdminSchedulesPage({
   const { data: schedules, error } = await supabase
     .from("schedules")
     .select(
-      "id, school_id, schedule_name, schedule_type, active, setup_status, created_at, updated_at"
+      "id, school_id, schedule_name, schedule_type, calendar_color, active, setup_status, created_at, updated_at"
     )
     .eq("school_id", schoolId)
     .order("created_at", { ascending: false });
@@ -102,6 +103,7 @@ export default async function AdminSchedulesPage({
           ) : (
             schedules.map((schedule) => {
               const setupStatus = normalizeScheduleSetupStatus(schedule.setup_status);
+              const scheduleColor = getScheduleCalendarColor(schedule);
               return (
               <article
                 key={schedule.id}
@@ -110,6 +112,12 @@ export default async function AdminSchedulesPage({
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-3">
+                      <span
+                        className="h-4 w-4 shrink-0 rounded-full border"
+                        style={getScheduleDotStyle(scheduleColor)}
+                        aria-label={`${schedule.schedule_name} calendar color`}
+                        role="img"
+                      />
                       <h3 className="text-xl font-semibold">
                         {schedule.schedule_name}
                       </h3>

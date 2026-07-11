@@ -8,6 +8,7 @@ import {
   getTodayScheduleState,
   type SchedulePeriod,
 } from "@/lib/scheduleTime";
+import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 
 export type CalendarScheduleDay = {
   date: string;
@@ -19,6 +20,7 @@ export type CalendarScheduleDay = {
   isSchoolDay: boolean | null;
   scheduleName: string | null;
   scheduleType: string | null;
+  scheduleColor: string | null;
   scheduleSetupStatus: string | null;
   label: string | null;
   periods: SchedulePeriod[];
@@ -148,7 +150,10 @@ export default function CalendarScheduleClient({
 
                 {indicator && (
                   <span
-                    className={`absolute bottom-1.5 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full ${indicator}`}
+                    className="absolute bottom-1.5 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full border"
+                    style={getScheduleDotStyle(indicator.color)}
+                    title={indicator.label}
+                    aria-hidden="true"
                   />
                 )}
               </button>
@@ -283,28 +288,20 @@ function getSelectedDaySummary(day: CalendarScheduleDay) {
 
 function getScheduleIndicator(day: CalendarScheduleDay) {
   if (day.isSchoolDay === false) {
-    return "bg-rose-500";
+    return { color: "#E11D48", label: day.label || "No School" };
   }
 
   if (!day.scheduleName) {
     return null;
   }
 
-  const value = `${day.scheduleName} ${day.scheduleType || ""} ${day.label || ""}`.toLowerCase();
-
-  if (value.includes("brown")) {
-    return "bg-amber-600";
-  }
-
-  if (value.includes("gold")) {
-    return "bg-yellow-400";
-  }
-
-  if (value.includes("rally")) {
-    return "bg-violet-500";
-  }
-
-  return "bg-emerald-500";
+  return {
+    color: getScheduleCalendarColor({
+      name: day.scheduleName,
+      calendar_color: day.scheduleColor,
+    }),
+    label: getSelectedDaySummary(day),
+  };
 }
 
 function getPeriodIndicator(name: string) {

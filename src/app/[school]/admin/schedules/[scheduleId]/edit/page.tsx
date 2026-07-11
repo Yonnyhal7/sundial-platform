@@ -30,7 +30,7 @@ export default async function EditSchedulePage({
 
   const { data: schedule } = await supabase
     .from("schedules")
-    .select("id, school_id, schedule_name, schedule_type, active")
+    .select("id, school_id, schedule_name, schedule_type, calendar_color, active")
     .eq("id", scheduleId)
     .eq("school_id", schoolId)
     .single();
@@ -78,6 +78,7 @@ const updateSchedule = updateScheduleAction.bind(
           submitLabel="Save Changes"
           initialScheduleName={schedule.schedule_name}
           initialScheduleType={schedule.schedule_type || ""}
+          initialCalendarColor={schedule.calendar_color || ""}
           initialActive={schedule.active}
           initialPeriods={periods || []}
         />

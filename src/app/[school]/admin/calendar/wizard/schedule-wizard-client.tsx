@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ScheduleColorField } from "@/components/admin/ScheduleColorField";
 import {
   getAiImportLongRunningMessage,
   getAiImportProgressAfterRetry,
@@ -26,6 +27,10 @@ import {
   type CalendarWizardDraftRecord,
   type CalendarWizardStoredData,
 } from "@/lib/calendarWizard/draftPersistence";
+import {
+  appendCalendarWizardLaunchContext,
+  type CalendarWizardLaunchContext,
+} from "@/lib/calendarWizard/launchContext";
 import {
   classifyCalendarWarnings,
   getAiScheduleUsageDetails,
@@ -67,6 +72,7 @@ import type {
   Weekday,
 } from "@/lib/calendarWizard/types";
 import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
+import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 import {
   createAiCalendarFromDraftAction,
   generateCalendarAction,
@@ -81,6 +87,7 @@ export type WizardScheduleSummary = {
   id: string;
   name: string;
   type: string | null;
+  calendarColor: string | null;
   active: boolean;
   setupStatus: "ready" | "needs_times";
   periodCount: number;
@@ -779,9 +786,22 @@ function ScheduleSelector({
 
 function ScheduleSummaryText({ schedule }: { schedule?: WizardScheduleSummary }) {
   if (!schedule) return null;
+  const color = getScheduleCalendarColor({
+    id: schedule.id,
+    name: schedule.name,
+    calendarColor: schedule.calendarColor,
+  });
+  const swatch = (
+    <span
+      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full border"
+      style={getScheduleDotStyle(color)}
+      aria-hidden="true"
+    />
+  );
   if (schedule.setupStatus === "needs_times") {
     return (
-      <span className="text-xs font-medium text-amber-700 dark:text-amber-200">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-200">
+        {swatch}
         Bell times needed
       </span>
     );
@@ -792,7 +812,8 @@ function ScheduleSummaryText({ schedule }: { schedule?: WizardScheduleSummary })
     schedule.periodCount === 1 ? "period" : "periods"
   }`;
   return (
-    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+      {swatch}
       {periodLabel}
       {first && last ? `, ${first}-${last}` : ""}
     </span>
@@ -852,6 +873,8 @@ export default function ScheduleWizardClient({
   existingCalendarRange,
   initialSavedDraft,
   flowMode = "guided",
+  launchContext = null,
+  setupChooserHref,
 }: {
   schoolId: string;
   schoolSlug: string;
@@ -861,6 +884,8 @@ export default function ScheduleWizardClient({
   existingCalendarRange: ExistingCalendarRangeSummary;
   initialSavedDraft: CalendarWizardDraftRecord | null;
   flowMode?: CalendarWizardFlowType;
+  launchContext?: CalendarWizardLaunchContext | null;
+  setupChooserHref: string;
 }) {
   const draftType = getDraftTypeForCalendarWizardFlow(flowMode);
   const isAiMode = flowMode === "ai";
@@ -871,9 +896,16 @@ export default function ScheduleWizardClient({
   const pageDescription = isAiMode
     ? "Upload your school calendar PDF, review Sundial's draft, and create the calendar."
     : "Build a school-year calendar from your normal schedule, closures, and special school days.";
-  const alternateFlowHref = isAiMode
-    ? `${adminBasePath}/calendar/wizard/guided`
-    : `${adminBasePath}/calendar/wizard/ai`;
+  const setupContextActive = launchContext === "setup";
+  const calendarDashboardHref = `${adminBasePath}/calendar`;
+  const backHref = setupContextActive ? setupChooserHref : calendarDashboardHref;
+  const finishLaterHref = setupContextActive ? `${setupChooserHref}?saved=1` : calendarDashboardHref;
+  const alternateFlowHref = appendCalendarWizardLaunchContext(
+    isAiMode
+      ? `${adminBasePath}/calendar/wizard/guided`
+      : `${adminBasePath}/calendar/wizard/ai`,
+    launchContext
+  );
   const alternateFlowLabel = isAiMode
     ? "Use Guided Setup instead"
     : "Use AI Calendar Import instead";
@@ -1129,6 +1161,10 @@ export default function ScheduleWizardClient({
     setDraft(nextDraft);
     setCurrentStep("school-year");
     setErrors({});
+
+    if (setupContextActive) {
+      window.location.assign(setupChooserHref);
+    }
   }
 
   function openGenerateModal() {
@@ -1146,11 +1182,16 @@ export default function ScheduleWizardClient({
       const result = await generateCalendarAction(schoolSlug, {
         config,
         replaceExisting,
+        launchContext,
       });
 
       if (result.status === "success") {
         window.sessionStorage.removeItem(storageKey);
         await deleteCalendarWizardDraft(schoolSlug, draftType);
+        if (result.redirectTo) {
+          window.location.assign(result.redirectTo);
+          return;
+        }
         setCompletionSummary(result.summary);
         setShowGenerateModal(false);
         setSaveResult(null);
@@ -1172,9 +1213,24 @@ export default function ScheduleWizardClient({
 
   async function finishLater() {
     const result = await saveCurrentDraft(draft, currentStep, { immediate: true });
-    if (result?.status === "success") {
-      window.alert("Your calendar setup has been saved. You can continue from any device.");
-      window.location.assign(`${adminBasePath}/calendar`);
+    if (!result || result.status === "success") {
+      window.alert(
+        setupContextActive
+          ? "Your calendar setup has been saved. Finish it before launching the school."
+          : "Your calendar setup has been saved. You can continue from any device."
+      );
+      window.location.assign(finishLaterHref);
+    }
+  }
+
+  async function saveAndReturnToSetup() {
+    const result = await saveCurrentDraft(draft, currentStep, {
+      immediate: true,
+      redirectAfterSave: setupChooserHref,
+    });
+
+    if (!result) {
+      window.location.assign(setupChooserHref);
     }
   }
 
@@ -1206,10 +1262,15 @@ export default function ScheduleWizardClient({
       const result = await createAiCalendarFromDraftAction(schoolSlug, {
         replaceExisting,
         expectedDraftUpdatedAt: saved.draft.updated_at,
+        launchContext,
       });
 
       if (result.status === "success") {
         window.sessionStorage.removeItem(storageKey);
+        if (result.redirectTo) {
+          window.location.assign(result.redirectTo);
+          return;
+        }
         setCompletionSummary(result.summary);
         setShowAiCreateModal(false);
         setAiCreateResult(null);
@@ -1230,7 +1291,10 @@ export default function ScheduleWizardClient({
   }
 
   async function saveAndOpenSchedule(tempId: string, detectedName: string) {
-    const returnTo = `${adminBasePath}/calendar/wizard/ai`;
+    const returnTo = appendCalendarWizardLaunchContext(
+      `${adminBasePath}/calendar/wizard/ai`,
+      launchContext
+    );
     const href = `${adminBasePath}/schedules/new?name=${encodeURIComponent(
       detectedName
     )}&aiTempId=${encodeURIComponent(tempId)}&returnTo=${encodeURIComponent(returnTo)}`;
@@ -1308,9 +1372,24 @@ export default function ScheduleWizardClient({
             <Link href={alternateFlowHref} className={secondaryButtonClass}>
               {alternateFlowLabel}
             </Link>
-            <Link href={`${adminBasePath}/calendar`} className={secondaryButtonClass}>
-              Back to Calendar
-            </Link>
+            {isAiMode && (
+              <button type="button" onClick={finishLater} className={secondaryButtonClass}>
+                Finish Later
+              </button>
+            )}
+            {setupContextActive ? (
+              <button
+                type="button"
+                onClick={() => void saveAndReturnToSetup()}
+                className={secondaryButtonClass}
+              >
+                Back to Setup
+              </button>
+            ) : (
+              <Link href={backHref} className={secondaryButtonClass}>
+                Back to Calendar
+              </Link>
+            )}
           </div>
         </div>
 
@@ -1705,6 +1784,7 @@ function AiCalendarImportCard({
         (schedule) => schedule.tempId === tempId
       );
       if (!detected) return previousDraft;
+      const matchedSchedule = schedules.find((schedule) => schedule.id === existingScheduleId);
 
       const nextResolutions = previousDraft.aiImport.resolutions.map((resolution) =>
         resolution.tempId === tempId
@@ -1713,6 +1793,9 @@ function AiCalendarImportCard({
               matchedExistingScheduleId: existingScheduleId || null,
               status: existingScheduleId ? "matched_by_admin" : "needs_times",
               needsSetup: !existingScheduleId,
+              calendarColor: existingScheduleId
+                ? matchedSchedule?.calendarColor || null
+                : resolution.calendarColor,
               setupChoice: existingScheduleId ? "add_later" : resolution.setupChoice || "add_later",
             }
           : resolution
@@ -1771,6 +1854,22 @@ function AiCalendarImportCard({
           state: "review",
           resolutions: previousDraft.aiImport.resolutions.map((resolution) =>
             resolution.tempId === tempId ? { ...resolution, reviewedName } : resolution
+          ),
+        },
+      };
+    });
+  }
+
+  function updateScheduleColor(tempId: string, calendarColor: string | null) {
+    updateDraft((previousDraft) => {
+      if (!previousDraft.aiImport?.result) return previousDraft;
+      return {
+        ...previousDraft,
+        aiImport: {
+          ...previousDraft.aiImport,
+          state: "review",
+          resolutions: previousDraft.aiImport.resolutions.map((resolution) =>
+            resolution.tempId === tempId ? { ...resolution, calendarColor } : resolution
           ),
         },
       };
@@ -1980,6 +2079,7 @@ function AiCalendarImportCard({
           onResolutionChange={updateResolution}
           warningResolutions={draft.aiImport?.warningResolutions || []}
           onNameChange={updateReviewedName}
+          onColorChange={updateScheduleColor}
           onSetupChoiceChange={updateSetupChoice}
           onWarningResolutionChange={updateWarningResolution}
           onRemoveSchedule={removeDetectedSchedule}
@@ -2001,6 +2101,7 @@ function AiImportReview({
   onResolutionChange,
   warningResolutions,
   onNameChange,
+  onColorChange,
   onSetupChoiceChange,
   onWarningResolutionChange,
   onRemoveSchedule,
@@ -2016,6 +2117,7 @@ function AiImportReview({
   onResolutionChange: (tempId: string, existingScheduleId: string) => void;
   warningResolutions: AiImportWarningResolution[];
   onNameChange: (tempId: string, reviewedName: string) => void;
+  onColorChange: (tempId: string, calendarColor: string | null) => void;
   onSetupChoiceChange: (
     tempId: string,
     setupChoice: NonNullable<DetectedScheduleResolution["setupChoice"]>
@@ -2203,6 +2305,18 @@ function AiImportReview({
                     <p className="mt-2 text-xs font-bold text-amber-700 dark:text-amber-200">
                       {validation.warning}
                     </p>
+                  )}
+                  {isNewSchedule && (
+                    <div className="mt-3">
+                      <ScheduleColorField
+                        name={`calendar_color_${resolution.tempId}`}
+                        value={resolution.calendarColor}
+                        onChange={(color) => onColorChange(resolution.tempId, color)}
+                        label="Calendar dot color"
+                        description="Optional. This color will be used for this new schedule."
+                        compact
+                      />
+                    </div>
                   )}
                 </div>
                 <label className="text-sm font-bold">
@@ -3116,7 +3230,16 @@ function NormalScheduleStep({
             previewDays.map((calendarDay) => (
               <div key={calendarDay.date} className="flex items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-sm dark:bg-[#242424]">
                 <span className="font-semibold">{formatDateForDisplay(calendarDay.date)}</span>
-                <span className="font-bold text-[#9A7209] dark:text-[#F6C64A]">
+                <span className="inline-flex items-center gap-2 font-bold text-[#9A7209] dark:text-[#F6C64A]">
+                  {scheduleMap.get(calendarDay.scheduleId || "") && (
+                    <span
+                      className="h-3 w-3 rounded-full border"
+                      style={getScheduleDotStyle(
+                        getScheduleCalendarColor(scheduleMap.get(calendarDay.scheduleId || ""))
+                      )}
+                      aria-hidden="true"
+                    />
+                  )}
                   {getScheduleName(scheduleMap, calendarDay.scheduleId)}
                 </span>
               </div>

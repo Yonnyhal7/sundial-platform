@@ -114,7 +114,7 @@ begin
       schedule_name,
       regexp_replace(lower(trim(schedule_name)), '[^a-z0-9]+', ' ', 'g') as normalized_name
     from jsonb_to_recordset(coalesce(p_schedules, '[]'::jsonb))
-      as x(id uuid, temp_id text, schedule_name text, schedule_type text, setup_status text)
+      as x(id uuid, temp_id text, schedule_name text, schedule_type text, calendar_color text, setup_status text)
   ),
   duplicate_incoming as (
     select normalized_name
@@ -148,6 +148,7 @@ begin
     school_id,
     schedule_name,
     schedule_type,
+    calendar_color,
     active,
     setup_status,
     created_at,
@@ -158,12 +159,13 @@ begin
     p_school_id,
     nullif(trim(x.schedule_name), ''),
     nullif(trim(coalesce(x.schedule_type, '')), ''),
+    nullif(trim(coalesce(x.calendar_color, '')), ''),
     true,
     'needs_times',
     now(),
     now()
   from jsonb_to_recordset(coalesce(p_schedules, '[]'::jsonb))
-    as x(id uuid, temp_id text, schedule_name text, schedule_type text, setup_status text);
+    as x(id uuid, temp_id text, schedule_name text, schedule_type text, calendar_color text, setup_status text);
 
   get diagnostics v_created_schedule_count = row_count;
 

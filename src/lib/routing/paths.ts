@@ -7,6 +7,30 @@ export function isLocalhost(hostname: string) {
   );
 }
 
+function logDevelopmentRouteGeneration({
+  helper,
+  school,
+  hostname,
+  pathname,
+  generatedPath,
+}: {
+  helper: string;
+  school: string;
+  hostname: string;
+  pathname: string;
+  generatedPath: string;
+}) {
+  if (process.env.NODE_ENV !== "development") return;
+
+  console.info("[Sundial routing]", {
+    helper,
+    school,
+    host: hostname || "(client)",
+    forwardedPathname: pathname,
+    generatedPath,
+  });
+}
+
 export function getSchoolSiteBasePath(
   school: string,
   pathname: string,
@@ -42,8 +66,20 @@ export function getSchoolAdminBasePath(
     return `/${school}/dashboard`;
   }
 
+  if (isLocalhost(hostname)) {
+    return `/${school}/admin`;
+  }
+
   if (pathname === `/admin/${school}` || pathname.startsWith(`/admin/${school}/`)) {
-    return `/admin/${school}`;
+    const generatedPath = `/${school}/admin`;
+    logDevelopmentRouteGeneration({
+      helper: "getSchoolAdminBasePath",
+      school,
+      hostname,
+      pathname,
+      generatedPath,
+    });
+    return generatedPath;
   }
 
   return `/${school}/admin`;
@@ -57,6 +93,23 @@ export function getSchoolAdminPath(
 ) {
   const base = getSchoolAdminBasePath(school, pathname, hostname);
   return section ? `${base}/${section}` : base;
+}
+
+export function getSchoolSetupPath(
+  school: string,
+  pathname: string,
+  hostname: string
+) {
+  return `${getSchoolAdminPath(school, pathname, hostname)}/setup`;
+}
+
+export function getSchoolSetupStepPath(
+  school: string,
+  pathname: string,
+  hostname: string,
+  step: string
+) {
+  return `${getSchoolSetupPath(school, pathname, hostname)}/${step}`;
 }
 
 export function getAdminUtilityPath(pathname: string, hostname: string, path: string) {

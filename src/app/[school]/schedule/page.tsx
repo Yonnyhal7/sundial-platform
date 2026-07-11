@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 
 function getTodayLocalDate() {
   const today = new Date();
@@ -49,6 +50,7 @@ export default async function SchoolSchedulePage({
         id,
         schedule_name,
         schedule_type,
+        calendar_color,
         setup_status
       )
     `
@@ -64,6 +66,7 @@ export default async function SchoolSchedulePage({
   const schedule = Array.isArray(calendarDay?.schedule)
     ? calendarDay?.schedule[0]
     : calendarDay?.schedule;
+  const scheduleColor = schedule ? getScheduleCalendarColor(schedule) : null;
 
   const { data: periods, error: periodsError } =
     schedule?.id
@@ -113,7 +116,17 @@ export default async function SchoolSchedulePage({
         ) : (
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
             <div className="mb-6 border-b border-slate-200 pb-5 dark:border-[#3a3a3a]">
-              <h2 className="text-2xl font-bold">{schedule.schedule_name}</h2>
+              <div className="flex items-center gap-3">
+                {scheduleColor && (
+                  <span
+                    className="h-4 w-4 shrink-0 rounded-full border"
+                    style={getScheduleDotStyle(scheduleColor)}
+                    aria-label={`${schedule.schedule_name} calendar color`}
+                    role="img"
+                  />
+                )}
+                <h2 className="text-2xl font-bold">{schedule.schedule_name}</h2>
+              </div>
 
               {schedule.schedule_type && (
                 <p className="mt-1 text-sm text-slate-600 dark:text-[#a3a3a3]">

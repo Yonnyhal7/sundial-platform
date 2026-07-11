@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { notFound } from "next/navigation";
-import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
+import {
+  getSchoolSetupStepPath,
+  requireAdminSectionAccess,
+} from "@/lib/auth/adminPermissions";
 import { compareDateStrings, isDateString } from "@/lib/calendarWizard/dateUtils";
 import {
   AI_CALENDAR_WIZARD_DRAFT_TYPE,
@@ -32,11 +35,15 @@ import type {
   CalendarWizardConfig,
   Weekday,
 } from "@/lib/calendarWizard/types";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { CalendarWizardLaunchContext } from "@/lib/calendarWizard/launchContext";
+import { completeSetupCalendarStep } from "@/lib/setupCalendarCompletion";
+import { getSchoolForSetup } from "@/lib/schools";
+import type { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type GenerateCalendarActionInput = {
   config: CalendarWizardConfig;
   replaceExisting?: boolean;
+  launchContext?: CalendarWizardLaunchContext | null;
 };
 
 export type CalendarCompletionSummary = {
@@ -59,6 +66,7 @@ export type GenerateCalendarActionResult =
   | {
       status: "success";
       summary: CalendarCompletionSummary;
+      redirectTo?: string;
     }
   | {
       status: "replacement_required";
@@ -89,6 +97,7 @@ export type GenerateCalendarActionResult =
 export type CreateAiCalendarFromDraftActionInput = {
   replaceExisting?: boolean;
   expectedDraftUpdatedAt?: string | null;
+  launchContext?: CalendarWizardLaunchContext | null;
 };
 
 export type CalendarWizardDraftActionResult =
@@ -107,12 +116,7 @@ export type CalendarWizardDraftActionResult =
     };
 
 async function getCalendarDraftSchoolContext(school: string) {
-  const supabase = await createSupabaseServerClient();
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
-      subdomain_input: school,
-    })
-    .single<{ id: string; name: string }>();
+  const schoolData = await getSchoolForSetup(school);
 
   if (!schoolData) {
     notFound();
@@ -429,6 +433,7 @@ type ScheduleRow = {
 type ExistingScheduleRow = {
   id: string;
   schedule_name: string;
+  calendar_color: string | null;
   active: boolean | null;
   setup_status: string | null;
 };
@@ -637,6 +642,28 @@ function revalidateCalendarConsumers(school: string) {
   revalidatePath("/[school]/kiosk", "page");
 }
 
+async function getSetupCalendarCompletionRedirect({
+  supabase,
+  schoolId,
+  school,
+}: {
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+  schoolId: string;
+  school: string;
+}) {
+  const result = await completeSetupCalendarStep({ supabase, schoolId, school });
+  if (result.status !== "success") {
+    return validationError(result.message, {
+      calendar: result.message,
+    });
+  }
+
+  return {
+    status: "success" as const,
+    redirectTo: await getSchoolSetupStepPath(school, "complete"),
+  };
+}
+
 export async function createAiCalendarFromDraftAction(
   school: string,
   input: CreateAiCalendarFromDraftActionInput = {}
@@ -711,7 +738,7 @@ export async function createAiCalendarFromDraftAction(
 
     const { data: existingSchedules, error: scheduleError } = await adminUser.supabase
       .from("schedules")
-      .select("id, schedule_name, active, setup_status")
+      .select("id, schedule_name, calendar_color, active, setup_status")
       .eq("school_id", schoolData.id)
       .returns<ExistingScheduleRow[]>();
 
@@ -732,6 +759,7 @@ export async function createAiCalendarFromDraftAction(
           name: schedule.schedule_name,
           active: schedule.active,
           setupStatus: schedule.setup_status,
+          calendarColor: schedule.calendar_color,
         })
       ),
     });
@@ -817,6 +845,7 @@ export async function createAiCalendarFromDraftAction(
           temp_id: schedule.tempId,
           schedule_name: schedule.scheduleName,
           schedule_type: schedule.scheduleType,
+          calendar_color: schedule.calendarColor,
           setup_status: schedule.setupStatus,
         })),
         p_calendar_days: rows.map((row) => ({
@@ -866,8 +895,21 @@ export async function createAiCalendarFromDraftAction(
 
     revalidateCalendarConsumers(school);
 
+    const setupCompletion =
+      input.launchContext === "setup"
+        ? await getSetupCalendarCompletionRedirect({
+            supabase: adminUser.supabase,
+            schoolId: schoolData.id,
+            school,
+          })
+        : null;
+    if (setupCompletion && setupCompletion.status !== "success") {
+      return setupCompletion;
+    }
+
     return {
       status: "success",
+      redirectTo: setupCompletion?.redirectTo,
       summary: {
         schoolYearLabel: config.schoolYear.name || "School Year",
         startDate: config.schoolYear.startDate,
@@ -904,12 +946,7 @@ export async function generateCalendarAction(
   input: GenerateCalendarActionInput
 ): Promise<GenerateCalendarActionResult> {
   try {
-    const supabase = await createSupabaseServerClient();
-    const { data: schoolData } = await supabase
-      .rpc("get_school_by_subdomain", {
-        subdomain_input: school,
-      })
-      .single<{ id: string; name: string }>();
+    const schoolData = await getSchoolForSetup(school);
 
     if (!schoolData) {
       notFound();
@@ -1034,8 +1071,29 @@ export async function generateCalendarAction(
 
     revalidateCalendarConsumers(school);
 
+    const setupCompletion =
+      input.launchContext === "setup"
+        ? await (async () => {
+            await authedSupabase
+              .from("calendar_wizard_drafts")
+              .delete()
+              .eq("school_id", schoolData.id)
+              .eq("draft_type", GUIDED_CALENDAR_WIZARD_DRAFT_TYPE);
+
+            return getSetupCalendarCompletionRedirect({
+              supabase: authedSupabase,
+              schoolId: schoolData.id,
+              school,
+            });
+          })()
+        : null;
+    if (setupCompletion && setupCompletion.status !== "success") {
+      return setupCompletion;
+    }
+
     return {
       status: "success",
+      redirectTo: setupCompletion?.redirectTo,
       summary: {
         schoolYearLabel: config.schoolYear.name || "School Year",
         startDate: config.schoolYear.startDate,

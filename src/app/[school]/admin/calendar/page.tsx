@@ -78,7 +78,7 @@ export default async function AdminCalendarPage({
 
   const { data: schedules, error: schedulesError } = await supabase
     .from("schedules")
-    .select("id, schedule_name, schedule_type, active")
+    .select("id, schedule_name, schedule_type, calendar_color, active")
     .eq("school_id", schoolId)
     .eq("active", true)
     .order("schedule_name", { ascending: true });

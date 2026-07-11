@@ -125,6 +125,7 @@ export type DetectedScheduleResolution = {
   detectedName: string;
   reviewedName?: string;
   normalizedName: string;
+  calendarColor?: string | null;
   matchedExistingScheduleId: string | null;
   status: DetectedScheduleResolutionStatus;
   needsSetup: boolean;

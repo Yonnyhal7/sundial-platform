@@ -7,6 +7,11 @@ import {
   normalizeAdminRole,
 } from "@/lib/userAccess";
 import { getForwardedHost, parseSundialHost } from "@/lib/routing/hosts";
+import {
+  getAdminUtilityPath as getVisibleAdminUtilityPath,
+  getSchoolAdminPath as getVisibleSchoolAdminPath,
+  getSchoolSetupStepPath as getVisibleSchoolSetupStepPath,
+} from "@/lib/routing/paths";
 import type { SetupStepSlug } from "@/lib/setupSteps";
 
 export const ADMIN_PERMISSION_KEYS = [
@@ -49,6 +54,11 @@ async function getRequestHost() {
   return getForwardedHost(headerStore);
 }
 
+async function getRequestPathname() {
+  const headerStore = await headers();
+  return headerStore.get("x-sundial-pathname") || "/";
+}
+
 async function getAdminLoginPath(school: string) {
   const parsedHost = parseSundialHost(await getRequestHost());
 
@@ -60,17 +70,19 @@ async function getAdminLoginPath(school: string) {
 }
 
 export async function getSchoolAdminPath(school: string) {
-  const parsedHost = parseSundialHost(await getRequestHost());
+  const host = await getRequestHost();
+  const pathname = await getRequestPathname();
+  const parsedHost = parseSundialHost(host);
 
   if (parsedHost.kind === "admin") {
-    return `/${school}/dashboard`;
+    return getVisibleSchoolAdminPath(school, pathname, parsedHost.hostname);
   }
 
   if (parsedHost.kind === "dev" && !parsedHost.school) {
-    return `/admin/${school}`;
+    return getVisibleSchoolAdminPath(school, pathname, parsedHost.hostname);
   }
 
-  return `/${school}/admin`;
+  return getVisibleSchoolAdminPath(school, pathname, parsedHost.hostname);
 }
 
 export async function getSchoolSetupPath(school: string) {
@@ -78,7 +90,11 @@ export async function getSchoolSetupPath(school: string) {
 }
 
 export async function getSchoolSetupStepPath(school: string, step: SetupStepSlug) {
-  return `${await getSchoolSetupPath(school)}/${step}`;
+  const host = await getRequestHost();
+  const pathname = await getRequestPathname();
+  const parsedHost = parseSundialHost(host);
+
+  return getVisibleSchoolSetupStepPath(school, pathname, parsedHost.hostname, step);
 }
 
 async function getSchoolSitePath(school: string) {
@@ -92,10 +108,11 @@ async function getSchoolSitePath(school: string) {
 }
 
 async function getAdminUtilityPath(path: string) {
-  const parsedHost = parseSundialHost(await getRequestHost());
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const host = await getRequestHost();
+  const pathname = await getRequestPathname();
+  const parsedHost = parseSundialHost(host);
 
-  return parsedHost.kind === "dev" ? `/admin${normalizedPath}` : normalizedPath;
+  return getVisibleAdminUtilityPath(pathname, parsedHost.hostname, path);
 }
 
 function isEditorRole(role: string | null | undefined) {

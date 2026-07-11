@@ -17,6 +17,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { ScheduleColorField } from "@/components/admin/ScheduleColorField";
 
 type Period = {
   id: string;
@@ -119,6 +120,7 @@ export default function ScheduleForm({
   submitLabel,
   initialScheduleName = "",
   initialScheduleType = "",
+  initialCalendarColor = "",
   initialActive = true,
   initialPeriods = [],
   hiddenFields = {},
@@ -128,6 +130,7 @@ export default function ScheduleForm({
   submitLabel: string;
   initialScheduleName?: string;
   initialScheduleType?: string;
+  initialCalendarColor?: string | null;
   initialActive?: boolean;
   initialPeriods?: Period[];
   hiddenFields?: Record<string, string>;
@@ -199,6 +202,8 @@ export default function ScheduleForm({
           placeholder="Schedule Type, example: Rally, Regular, Early Out"
           className={`w-full ${inputClass}`}
         />
+
+        <ScheduleColorField value={initialCalendarColor} />
 
         <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#3a3a3a] dark:bg-black/30">
           <input

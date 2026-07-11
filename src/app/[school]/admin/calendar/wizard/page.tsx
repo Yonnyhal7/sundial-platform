@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSchoolAdminPath, requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
+import { getSchoolForSetup } from "@/lib/schools";
 import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function CalendarWizardChoicePage({
   params,
@@ -10,12 +10,7 @@ export default async function CalendarWizardChoicePage({
   params: Promise<{ school: string }>;
 }) {
   const { school } = await params;
-  const supabase = await createSupabaseServerClient();
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
-      subdomain_input: school,
-    })
-    .single<{ id: string; name: string }>();
+  const schoolData = await getSchoolForSetup(school);
 
   if (!schoolData) {
     notFound();

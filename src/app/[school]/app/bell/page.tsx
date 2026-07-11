@@ -10,6 +10,7 @@ type Schedule = {
   id: string;
   schedule_name: string;
   schedule_type: string | null;
+  calendar_color: string | null;
   setup_status: string | null;
 };
 
@@ -40,7 +41,7 @@ export default async function BellSchedulePage({
 
   const { data: schedules } = await supabase
     .from("schedules")
-    .select("id, schedule_name, schedule_type, setup_status")
+    .select("id, schedule_name, schedule_type, calendar_color, setup_status")
     .eq("school_id", schoolData.id)
     .eq("active", true)
     .order("schedule_name", { ascending: true })
@@ -77,6 +78,7 @@ export default async function BellSchedulePage({
     id: schedule.id,
     name: schedule.schedule_name,
     type: schedule.schedule_type,
+    calendarColor: schedule.calendar_color,
     setupStatus: schedule.setup_status,
     periods: sortPeriodsByScheduleOrder(periodsByScheduleId[schedule.id] || []),
   }));

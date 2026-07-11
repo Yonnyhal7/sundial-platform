@@ -6,6 +6,7 @@ import {
   type CalendarWizardDraftType,
 } from "@/lib/calendarWizard/draftPersistence";
 import { normalizeScheduleSetupStatus } from "@/lib/scheduleStatus";
+import { getSchoolForSetup } from "@/lib/schools";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { loadCalendarWizardDraft } from "./actions";
 import type {
@@ -17,6 +18,7 @@ type ScheduleRow = {
   id: string;
   schedule_name: string;
   schedule_type: string | null;
+  calendar_color: string | null;
   active: boolean;
   setup_status: string | null;
 };
@@ -33,12 +35,7 @@ export async function loadCalendarWizardPageData(
   draftType: CalendarWizardDraftType
 ) {
   const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
-      subdomain_input: school,
-    })
-    .single<{ id: string; name: string }>();
+  const schoolData = await getSchoolForSetup(school);
 
   if (!schoolData) {
     notFound();
@@ -48,7 +45,7 @@ export async function loadCalendarWizardPageData(
 
   const { data: schedules, error: schedulesError } = await supabase
     .from("schedules")
-    .select("id, schedule_name, schedule_type, active, setup_status")
+    .select("id, schedule_name, schedule_type, calendar_color, active, setup_status")
     .eq("school_id", schoolData.id)
     .eq("active", true)
     .order("schedule_name", { ascending: true })
@@ -100,6 +97,7 @@ export async function loadCalendarWizardPageData(
       id: schedule.id,
       name: schedule.schedule_name,
       type: schedule.schedule_type,
+      calendarColor: schedule.calendar_color,
       active: schedule.active,
       setupStatus: normalizeScheduleSetupStatus(schedule.setup_status, schedulePeriods),
       periodCount: schedulePeriods.length,

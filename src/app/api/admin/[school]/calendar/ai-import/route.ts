@@ -3,7 +3,7 @@ import { canAccessAdminSection } from "@/lib/auth/adminPermissions";
 import type { AnalyzeCalendarPdfResult } from "@/lib/calendarWizard/aiImportTypes";
 import { validateCalendarPdfFile } from "@/lib/calendarWizard/aiPdfValidation";
 import { analyzeCalendarPdf } from "@/lib/calendarWizard/openAiCalendarAnalyzer.server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getSchoolForSetup } from "@/lib/schools";
 
 export const runtime = "nodejs";
 export const maxDuration = 90;
@@ -20,12 +20,7 @@ export async function POST(request: Request, context: RouteContext) {
   const { school } = await context.params;
 
   try {
-    const supabase = await createSupabaseServerClient();
-    const { data: schoolData } = await supabase
-      .rpc("get_school_by_subdomain", {
-        subdomain_input: school,
-      })
-      .single<{ id: string; name: string }>();
+    const schoolData = await getSchoolForSetup(school);
 
     if (!schoolData) {
       return json(

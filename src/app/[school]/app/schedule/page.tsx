@@ -20,12 +20,14 @@ type CalendarDay = {
         id: string;
         schedule_name: string;
         schedule_type: string | null;
+        calendar_color: string | null;
         setup_status: string | null;
       }
     | {
         id: string;
         schedule_name: string;
         schedule_type: string | null;
+        calendar_color: string | null;
         setup_status: string | null;
       }[]
     | null;
@@ -118,6 +120,7 @@ export default async function MobileSchedulePage({
         id,
         schedule_name,
         schedule_type,
+        calendar_color,
         setup_status
       )
     `
@@ -189,6 +192,7 @@ export default async function MobileSchedulePage({
       isSchoolDay: calendarDay?.is_school_day ?? null,
       scheduleName: assignedSchedule?.schedule_name || null,
       scheduleType: assignedSchedule?.schedule_type || null,
+      scheduleColor: assignedSchedule?.calendar_color || null,
       scheduleSetupStatus: assignedSchedule?.setup_status || null,
       label: calendarDay?.label || null,
       periods: sortPeriodsByScheduleOrder(periods),

@@ -32,6 +32,7 @@ export function proxy(req: NextRequest) {
     const requestHeaders = new Headers(req.headers);
 
     requestHeaders.set("x-sundial-forwarded-host", host);
+    requestHeaders.set("x-sundial-pathname", pathname);
     requestHeaders.set("x-forwarded-host", host);
 
     return NextResponse.rewrite(destination, {
@@ -41,9 +42,23 @@ export function proxy(req: NextRequest) {
     });
   }
 
+  function nextPreservingPath() {
+    const requestHeaders = new Headers(req.headers);
+
+    requestHeaders.set("x-sundial-forwarded-host", host);
+    requestHeaders.set("x-sundial-pathname", pathname);
+    requestHeaders.set("x-forwarded-host", host);
+
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
+  }
+
   // sundialk12.com -> marketing/public product site.
   if (parsedHost.kind === "marketing") {
-    return NextResponse.next();
+    return nextPreservingPath();
   }
 
   // admin.sundialk12.com is reserved and must never be treated as a school
@@ -131,11 +146,11 @@ export function proxy(req: NextRequest) {
     const [, , school, ...rest] = pathname.split("/");
 
     if (!school) {
-      return NextResponse.next();
+      return nextPreservingPath();
     }
 
     if (school === "dashboard" || school === "select-school") {
-      return NextResponse.next();
+      return nextPreservingPath();
     }
 
     url.pathname = `/${school}/admin${rest.length ? `/${rest.join("/")}` : ""}`;
@@ -149,7 +164,7 @@ export function proxy(req: NextRequest) {
     const schoolPath = `/${school}`;
 
     if (pathname === schoolPath || pathname.startsWith(`${schoolPath}/`)) {
-      return NextResponse.next();
+      return nextPreservingPath();
     }
 
     url.pathname = `${schoolPath}${pathname === "/" ? "" : pathname}`;
@@ -158,7 +173,7 @@ export function proxy(req: NextRequest) {
 
   // Plain localhost keeps the existing path-based development routes:
   // /deloro, /deloro/app, /deloro/kiosk, /deloro/admin, and /admin/deloro.
-  return NextResponse.next();
+  return nextPreservingPath();
 }
 
 export const config = {
