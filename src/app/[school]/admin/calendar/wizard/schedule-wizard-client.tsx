@@ -922,6 +922,9 @@ export default function ScheduleWizardClient({
   const [lastKnownUpdatedAt, setLastKnownUpdatedAt] = useState<string | null>(null);
   const [lastSavedMessage, setLastSavedMessage] = useState("");
   const autosaveTimerRef = useRef<number | null>(null);
+  const intentionalNavigationRef = useRef(false);
+  const hasUnsavedChangesRef = useRef(false);
+  const lastSavedDraftSnapshotRef = useRef<string | null>(null);
   const [completionSummary, setCompletionSummary] =
     useState<CalendarCompletionSummary | null>(null);
 
@@ -947,6 +950,7 @@ export default function ScheduleWizardClient({
     if (!isMeaningfulDraft(nextDraft)) return null;
 
     const storedData = buildStoredDraft(nextDraft, nextStep);
+    const storedSnapshot = JSON.stringify(storedData);
     const localUpdatedAt = new Date().toISOString();
     saveLocalStoredDraft(storageKey, storedData, localUpdatedAt);
     setDraftSaveStatus("saving");
@@ -961,8 +965,11 @@ export default function ScheduleWizardClient({
       setLastKnownUpdatedAt(result.draft.updated_at);
       setDraftSaveStatus("saved");
       setLastSavedMessage("Draft saved");
+      hasUnsavedChangesRef.current = false;
+      lastSavedDraftSnapshotRef.current = storedSnapshot;
       saveLocalStoredDraft(storageKey, result.draft.wizard_data, result.draft.updated_at);
       if (options.redirectAfterSave) {
+        allowIntentionalNavigation();
         window.location.assign(options.redirectAfterSave);
       }
       return result;
@@ -1029,6 +1036,18 @@ export default function ScheduleWizardClient({
         setDraft(restoredDraft);
         setCurrentStep(restoredStep);
       }
+      lastSavedDraftSnapshotRef.current =
+        restoredDraft &&
+        restoredUpdatedAt &&
+        !shouldSaveLocalOverDatabase &&
+        !(source === "session" && !initialSavedDraft)
+          ? JSON.stringify(buildStoredDraft(restoredDraft, restoredStep))
+          : null;
+      hasUnsavedChangesRef.current = Boolean(
+        restoredDraft &&
+          isMeaningfulDraft(restoredDraft) &&
+          !lastSavedDraftSnapshotRef.current
+      );
       setLastKnownUpdatedAt(source === "session" && !initialSavedDraft ? null : restoredUpdatedAt);
       setDraftSaveStatus(restoredUpdatedAt ? "saved" : "idle");
       setLastSavedMessage(restoredUpdatedAt ? "Draft saved" : "");
@@ -1046,10 +1065,18 @@ export default function ScheduleWizardClient({
     if (draftLoading) return undefined;
 
     const storedData = buildStoredDraft(draft, currentStep);
+    const storedSnapshot = JSON.stringify(storedData);
     const localUpdatedAt = new Date().toISOString();
     saveLocalStoredDraft(storageKey, storedData, localUpdatedAt);
 
-    if (!isMeaningfulDraft(draft)) return;
+    if (!isMeaningfulDraft(draft)) {
+      hasUnsavedChangesRef.current = false;
+      return;
+    }
+
+    hasUnsavedChangesRef.current = storedSnapshot !== lastSavedDraftSnapshotRef.current;
+    if (!hasUnsavedChangesRef.current) return;
+
     if (autosaveTimerRef.current) {
       window.clearTimeout(autosaveTimerRef.current);
     }
@@ -1070,14 +1097,17 @@ export default function ScheduleWizardClient({
 
   useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (intentionalNavigationRef.current) return;
+      if (isSaving) return;
       if (completionSummary) return;
       if (!isMeaningfulDraft(draft)) return;
+      if (!hasUnsavedChangesRef.current) return;
       event.preventDefault();
     }
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [completionSummary, draft]);
+  }, [completionSummary, draft, isSaving]);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("startOver") === "1") {
@@ -1089,7 +1119,20 @@ export default function ScheduleWizardClient({
   }, []);
 
   function updateDraft(updater: (draft: WizardDraft) => WizardDraft) {
+    hasUnsavedChangesRef.current = true;
     setDraft((previousDraft) => updater(previousDraft));
+  }
+
+  function allowIntentionalNavigation() {
+    intentionalNavigationRef.current = true;
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+  }
+
+  function restoreAccidentalNavigationGuard() {
+    intentionalNavigationRef.current = false;
   }
 
   function goToStep(step: WizardStep) {
@@ -1155,6 +1198,8 @@ export default function ScheduleWizardClient({
 
     const nextDraft = clearAiImportMetadata(createDefaultDraft(schedules));
     window.sessionStorage.removeItem(storageKey);
+    hasUnsavedChangesRef.current = false;
+    lastSavedDraftSnapshotRef.current = null;
     setLastKnownUpdatedAt(null);
     setDraftSaveStatus("idle");
     setLastSavedMessage("");
@@ -1163,6 +1208,7 @@ export default function ScheduleWizardClient({
     setErrors({});
 
     if (setupContextActive) {
+      allowIntentionalNavigation();
       window.location.assign(setupChooserHref);
     }
   }
@@ -1175,6 +1221,7 @@ export default function ScheduleWizardClient({
   async function handleGenerateCalendar(replaceExisting = false) {
     if (!config || isSaving) return;
 
+    allowIntentionalNavigation();
     setIsSaving(true);
     setSaveResult(null);
 
@@ -1200,12 +1247,14 @@ export default function ScheduleWizardClient({
 
       setSaveResult(result);
       setShowGenerateModal(true);
+      restoreAccidentalNavigationGuard();
     } catch {
       setSaveResult({
         status: "server_error",
         message: "Sundial could not generate the calendar. Please try again.",
       });
       setShowGenerateModal(true);
+      restoreAccidentalNavigationGuard();
     } finally {
       setIsSaving(false);
     }
@@ -1219,6 +1268,7 @@ export default function ScheduleWizardClient({
           ? "Your calendar setup has been saved. Finish it before launching the school."
           : "Your calendar setup has been saved. You can continue from any device."
       );
+      allowIntentionalNavigation();
       window.location.assign(finishLaterHref);
     }
   }
@@ -1230,6 +1280,7 @@ export default function ScheduleWizardClient({
     });
 
     if (!result) {
+      allowIntentionalNavigation();
       window.location.assign(setupChooserHref);
     }
   }
@@ -1242,6 +1293,7 @@ export default function ScheduleWizardClient({
   async function handleCreateAiCalendar(replaceExisting = false) {
     if (isSaving) return;
 
+    allowIntentionalNavigation();
     setIsSaving(true);
     setAiCreateResult(null);
 
@@ -1256,6 +1308,7 @@ export default function ScheduleWizardClient({
           status: saved?.status === "draft_conflict" ? "draft_conflict" : "server_error",
           message,
         });
+        restoreAccidentalNavigationGuard();
         return;
       }
 
@@ -1279,12 +1332,14 @@ export default function ScheduleWizardClient({
 
       setAiCreateResult(result);
       setShowAiCreateModal(true);
+      restoreAccidentalNavigationGuard();
     } catch {
       setAiCreateResult({
         status: "server_error",
         message: "Sundial could not create the imported calendar. No changes were saved.",
       });
       setShowAiCreateModal(true);
+      restoreAccidentalNavigationGuard();
     } finally {
       setIsSaving(false);
     }
@@ -2281,9 +2336,9 @@ function AiImportReview({
             return (
               <div
                 key={resolution.tempId}
-                className="grid gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700 xl:grid-cols-[minmax(0,1fr)_minmax(15rem,0.8fr)_auto]"
+                className="rounded-2xl border border-slate-200 p-3 dark:border-slate-700 lg:p-4"
               >
-                <div>
+                <div className="grid items-end gap-3 xl:grid-cols-[minmax(220px,1fr)_minmax(260px,0.8fr)_auto]">
                   <label className="block text-sm font-bold">
                     Detected schedule name
                     <input
@@ -2292,92 +2347,94 @@ function AiImportReview({
                       className={`mt-2 ${inputClass}`}
                     />
                   </label>
-                  <p className="mt-2 text-xs font-semibold text-slate-500">
+
+                  <label className="text-sm font-bold">
+                    Match Existing Schedule
+                    <select
+                      value={resolution.matchedExistingScheduleId || ""}
+                      onChange={(event) => onResolutionChange(resolution.tempId, event.target.value)}
+                      className={`mt-2 ${inputClass}`}
+                    >
+                      <option value="">New schedule · Bell times needed</option>
+                      {schedules.map((schedule) => (
+                        <option key={schedule.id} value={schedule.id}>
+                          {schedule.name} · {schedule.periodCount}{" "}
+                          {schedule.periodCount === 1 ? "period" : "periods"} ·{" "}
+                          {schedule.setupStatus === "ready" ? "Ready" : "Bell times needed"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                    {isNewSchedule && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onSetupChoiceChange(resolution.tempId, "add_now");
+                            void onAddTimesNow(resolution.tempId, name || resolution.detectedName);
+                          }}
+                          className={secondaryButtonClass}
+                        >
+                          Add Times Now
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onSetupChoiceChange(resolution.tempId, "add_later")}
+                          className={[
+                            subtleButtonClass,
+                            resolution.setupChoice === "add_later"
+                              ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100"
+                              : "",
+                          ].join(" ")}
+                        >
+                          Add Times Later
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => requestRemoveSchedule(resolution)}
+                      className="inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50 dark:border-red-900/60 dark:text-red-200 dark:hover:bg-red-950/30"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <p className="text-xs font-semibold text-slate-500">
                     {detectedScheduleStatusLabel(resolution)} · Used on{" "}
                     {pluralize(usageCounts[resolution.tempId] || 0, "calendar day")}
                   </p>
-                  {validation.error && (
-                    <p className="mt-2 text-xs font-bold text-red-600 dark:text-red-300">
-                      {validation.error}
-                    </p>
-                  )}
-                  {!validation.error && validation.warning && (
-                    <p className="mt-2 text-xs font-bold text-amber-700 dark:text-amber-200">
-                      {validation.warning}
-                    </p>
-                  )}
-                  {isNewSchedule && (
-                    <div className="mt-3">
-                      <ScheduleColorField
-                        name={`calendar_color_${resolution.tempId}`}
-                        value={resolution.calendarColor}
-                        onChange={(color) => onColorChange(resolution.tempId, color)}
-                        label="Calendar dot color"
-                        description="Optional. This color will be used for this new schedule."
-                        compact
-                      />
-                    </div>
-                  )}
-                </div>
-                <label className="text-sm font-bold">
-                  Match Existing Schedule
-                  <select
-                    value={resolution.matchedExistingScheduleId || ""}
-                    onChange={(event) => onResolutionChange(resolution.tempId, event.target.value)}
-                    className={`mt-2 ${inputClass}`}
-                  >
-                    <option value="">New schedule · Bell times needed</option>
-                    {schedules.map((schedule) => (
-                      <option key={schedule.id} value={schedule.id}>
-                        {schedule.name} · {schedule.periodCount}{" "}
-                        {schedule.periodCount === 1 ? "period" : "periods"} ·{" "}
-                        {schedule.setupStatus === "ready" ? "Ready" : "Bell times needed"}
-                      </option>
-                    ))}
-                  </select>
                   {matchedSchedule && (
-                    <span className="mt-2 block text-xs font-semibold text-slate-500">
-                      Matched existing schedule: {matchedSchedule.name} ·{" "}
-                      {matchedSchedule.periodCount}{" "}
+                    <span className="text-xs font-semibold text-slate-500">
+                      Matched: {matchedSchedule.name} · {matchedSchedule.periodCount}{" "}
                       {matchedSchedule.periodCount === 1 ? "period" : "periods"} ·{" "}
                       {matchedSchedule.setupStatus === "ready" ? "Ready" : "Bell times needed"}
                     </span>
                   )}
-                </label>
-                <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                   {isNewSchedule && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onSetupChoiceChange(resolution.tempId, "add_now");
-                          void onAddTimesNow(resolution.tempId, name || resolution.detectedName);
-                        }}
-                        className={secondaryButtonClass}
-                      >
-                        Add Times Now
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onSetupChoiceChange(resolution.tempId, "add_later")}
-                        className={[
-                          subtleButtonClass,
-                          resolution.setupChoice === "add_later"
-                            ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100"
-                            : "",
-                        ].join(" ")}
-                      >
-                        Add Times Later
-                      </button>
-                    </>
+                    <ScheduleColorField
+                      name={`calendar_color_${resolution.tempId}`}
+                      value={resolution.calendarColor}
+                      onChange={(color) => onColorChange(resolution.tempId, color)}
+                      label="Calendar color"
+                      description="Optional. This color will be used for this new schedule."
+                      compact
+                    />
                   )}
-                  <button
-                    type="button"
-                    onClick={() => requestRemoveSchedule(resolution)}
-                    className="inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50 dark:border-red-900/60 dark:text-red-200 dark:hover:bg-red-950/30"
-                  >
-                    Remove
-                  </button>
+                  {validation.error && (
+                    <p className="basis-full text-xs font-bold text-red-600 dark:text-red-300">
+                      {validation.error}
+                    </p>
+                  )}
+                  {!validation.error && validation.warning && (
+                    <p className="basis-full text-xs font-bold text-amber-700 dark:text-amber-200">
+                      {validation.warning}
+                    </p>
+                  )}
                 </div>
               </div>
             );
