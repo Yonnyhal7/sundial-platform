@@ -1,6 +1,9 @@
 import KioskDisplay from "./KioskDisplay";
+import OfflineKioskRuntime from "@/components/offline/OfflineKioskRuntime";
+import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { formatGameTime } from "@/lib/athletics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { normalizeAppearancePreference } from "@/lib/themeScope";
 
 export const dynamic = "force-dynamic";
 
@@ -115,6 +118,7 @@ export default async function KioskPage({
       logo_url: string | null;
       primary_color: string | null;
       secondary_color: string | null;
+      default_appearance: "light" | "dark" | "system" | null;
     }>();
 
   if (!schoolData) return null;
@@ -222,58 +226,68 @@ export default async function KioskPage({
   const isNoSchool = calendarDay?.is_school_day === false;
 
   return (
-    <KioskDisplay
-      schoolName={schoolData.name}
-      schoolPrimaryColor={schoolData.primary_color || "#2563eb"}
-      schoolSecondaryColor={schoolData.secondary_color || schoolData.primary_color || "#2563eb"}
-      schoolMascot={schoolData.mascot}
-      schoolLogoUrl={schoolData.logo_url || null}
-      dayType={dayType}
-      scheduleNeedsTimes={scheduleNeedsTimes}
-      periods={periods.map((period) => ({
-        id: period.id,
-        name: period.name,
-        startTime: formatTime(period.start_time),
-        endTime: formatTime(period.end_time),
-        rawStartTime: period.start_time,
-        rawEndTime: period.end_time,
-        sortOrder: period.sort_order,
-      }))}
-      events={
-        upcomingEvents?.map((event) => ({
-          id: `${event.title}-${event.event_date}`,
-          title: event.title,
-          date: formatEventDate(event.event_date),
-        })) || []
-      }
-      games={
-        todayGames?.map((game) => {
-          const team = teamById.get(game.team_id || "");
-          const sport = sportById.get(team?.sport_id || "");
+    <>
+      <ThemeRouteSync
+        schoolDefaultAppearance={normalizeAppearancePreference(
+          schoolData.default_appearance
+        )}
+        schoolSlug={school}
+      />
+      <OfflineKioskRuntime schoolId={schoolData.id} school={school}>
+        <KioskDisplay
+          schoolName={schoolData.name}
+          schoolPrimaryColor={schoolData.primary_color || "#2563eb"}
+          schoolSecondaryColor={schoolData.secondary_color || schoolData.primary_color || "#2563eb"}
+          schoolMascot={schoolData.mascot}
+          schoolLogoUrl={schoolData.logo_url || null}
+          dayType={dayType}
+          scheduleNeedsTimes={scheduleNeedsTimes}
+          periods={periods.map((period) => ({
+            id: period.id,
+            name: period.name,
+            startTime: formatTime(period.start_time),
+            endTime: formatTime(period.end_time),
+            rawStartTime: period.start_time,
+            rawEndTime: period.end_time,
+            sortOrder: period.sort_order,
+          }))}
+          events={
+            upcomingEvents?.map((event) => ({
+              id: `${event.title}-${event.event_date}`,
+              title: event.title,
+              date: formatEventDate(event.event_date),
+            })) || []
+          }
+          games={
+            todayGames?.map((game) => {
+              const team = teamById.get(game.team_id || "");
+              const sport = sportById.get(team?.sport_id || "");
 
-          return {
-            id: game.id,
-            title: `${team?.name || "Team"} vs ${game.opponent}`,
-            teamName: team?.name || "Team",
-            opponent: game.opponent,
-            time: formatGameTime(game.game_date),
-            location: game.location || (game.is_home ? "Home" : "Away"),
-            sportIcon: sport?.icon || "generic",
-            sportIconColor: sport?.icon_color || null,
-          };
-        }) || []
-      }
-      athleticsHref={`/${school}/app/athletics`}
-      announcement={
-        priorityAnnouncement
-          ? {
-              title: priorityAnnouncement.title,
-              body: priorityAnnouncement.body || "",
-            }
-          : null
-      }
-      isNoSchool={isNoSchool}
-      noSchoolLabel={calendarDay?.label || "Enjoy your day"}
-    />
+              return {
+                id: game.id,
+                title: `${team?.name || "Team"} vs ${game.opponent}`,
+                teamName: team?.name || "Team",
+                opponent: game.opponent,
+                time: formatGameTime(game.game_date),
+                location: game.location || (game.is_home ? "Home" : "Away"),
+                sportIcon: sport?.icon || "generic",
+                sportIconColor: sport?.icon_color || null,
+              };
+            }) || []
+          }
+          athleticsHref={`/${school}/app/athletics`}
+          announcement={
+            priorityAnnouncement
+              ? {
+                  title: priorityAnnouncement.title,
+                  body: priorityAnnouncement.body || "",
+                }
+              : null
+          }
+          isNoSchool={isNoSchool}
+          noSchoolLabel={calendarDay?.label || "Enjoy your day"}
+        />
+      </OfflineKioskRuntime>
+    </>
   );
 }

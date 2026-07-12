@@ -7,7 +7,13 @@ import {
   MenuIcon,
 } from "@/components/mobile-app/AppIcons";
 import SchoolLogo from "@/components/SchoolLogo";
-import { getThemeStorageKey, type Theme } from "@/lib/themeScope";
+import {
+  applyTheme,
+  getPreferredAppearance,
+  resolveAppearanceTheme,
+  setStoredAppearancePreference,
+  type AppearancePreference,
+} from "@/lib/themeScope";
 
 type QuickLink = {
   title: string;
@@ -19,31 +25,8 @@ type AppHeaderProps = {
   schoolName: string;
   logoUrl: string | null;
   quickLinks: QuickLink[];
+  schoolDefaultAppearance: AppearancePreference;
 };
-
-type AppAppearance = Theme | "system";
-
-function getStoredAppearance(storageKey: string): AppAppearance {
-  if (typeof window === "undefined") {
-    return "system";
-  }
-
-  const savedTheme = window.localStorage.getItem(storageKey);
-
-  return savedTheme === "light" || savedTheme === "dark" ? savedTheme : "system";
-}
-
-function applyAppearance(appearance: AppAppearance) {
-  const resolved =
-    appearance === "system"
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-      : appearance;
-
-  document.documentElement.classList.toggle("dark", resolved === "dark");
-  document.documentElement.dataset.themeScope = "app";
-}
 
 function BackArrowIcon() {
   return (
@@ -125,14 +108,14 @@ export default function AppHeader({
   schoolName,
   logoUrl,
   quickLinks,
+  schoolDefaultAppearance,
 }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuMounted, setMenuMounted] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationsMounted, setNotificationsMounted] = useState(false);
-  const storageKey = getThemeStorageKey("app");
-  const [appearance, setAppearance] = useState<AppAppearance>(() =>
-    getStoredAppearance(storageKey)
+  const [appearance, setAppearance] = useState<AppearancePreference>(
+    schoolDefaultAppearance
   );
   const homeHref = `/${school}/app`;
   const todayNotifications = [
@@ -179,18 +162,37 @@ export default function AppHeader({
   ).length;
 
   useEffect(() => {
-    applyAppearance(appearance);
+    const preferredAppearance = getPreferredAppearance(
+      "app",
+      schoolDefaultAppearance,
+      school
+    );
+    const preferredTheme = resolveAppearanceTheme(preferredAppearance);
 
+    applyTheme(preferredTheme, "app", preferredAppearance);
+
+    const timeout = window.setTimeout(() => {
+      setAppearance(preferredAppearance);
+    }, 0);
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const syncSystem = () => {
-      if (appearance === "system") {
-        applyAppearance("system");
+      const currentAppearance = getPreferredAppearance(
+        "app",
+        schoolDefaultAppearance,
+        school
+      );
+
+      if (currentAppearance === "system") {
+        applyTheme(resolveAppearanceTheme(currentAppearance), "app", currentAppearance);
       }
     };
 
     media.addEventListener("change", syncSystem);
-    return () => media.removeEventListener("change", syncSystem);
-  }, [appearance]);
+    return () => {
+      window.clearTimeout(timeout);
+      media.removeEventListener("change", syncSystem);
+    };
+  }, [school, schoolDefaultAppearance]);
 
   useEffect(() => {
     if (!menuMounted && !notificationsMounted) return;
@@ -226,16 +228,12 @@ export default function AppHeader({
     window.setTimeout(() => setNotificationsMounted(false), 260);
   }
 
-  function setUserAppearance(nextAppearance: AppAppearance) {
+  function setUserAppearance(nextAppearance: AppearancePreference) {
+    const nextTheme = resolveAppearanceTheme(nextAppearance);
+
     setAppearance(nextAppearance);
-
-    if (nextAppearance === "system") {
-      window.localStorage.removeItem(storageKey);
-    } else {
-      window.localStorage.setItem(storageKey, nextAppearance);
-    }
-
-    applyAppearance(nextAppearance);
+    setStoredAppearancePreference("app", nextAppearance, school);
+    applyTheme(nextTheme, "app", nextAppearance);
   }
 
   return (

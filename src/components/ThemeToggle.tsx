@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import {
   applyTheme,
   getPreferredTheme,
+  getPreferredAppearance,
   getThemeStorageKey,
+  isDeviceAppearanceScope,
+  resolveAppearanceTheme,
+  setStoredAppearancePreference,
+  type AppearancePreference,
   type Theme,
   type ThemeScope,
 } from "@/lib/themeScope";
@@ -50,14 +55,62 @@ function SunIcon() {
 export default function ThemeToggle({
   scope,
   className = "",
+  schoolDefaultAppearance,
+  schoolSlug,
 }: {
   scope: ThemeScope;
   className?: string;
+  schoolDefaultAppearance?: AppearancePreference;
+  schoolSlug?: string;
 }) {
   const [theme, setTheme] = useState<Theme | null>(null);
+  const [appearance, setAppearance] = useState<AppearancePreference>("system");
   const storageKey = getThemeStorageKey(scope);
+  const isDeviceAppearance = isDeviceAppearanceScope(scope);
 
   useEffect(() => {
+    if (isDeviceAppearance) {
+      const preferredAppearance = getPreferredAppearance(
+        scope,
+        schoolDefaultAppearance,
+        schoolSlug
+      );
+      const preferredTheme = resolveAppearanceTheme(preferredAppearance);
+
+      applyTheme(preferredTheme, scope, preferredAppearance);
+
+      const timeout = window.setTimeout(() => {
+        setAppearance(preferredAppearance);
+        setTheme(preferredTheme);
+      }, 0);
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+      function handleSystemThemeChange(event: MediaQueryListEvent) {
+        const currentAppearance = getPreferredAppearance(
+          scope,
+          schoolDefaultAppearance,
+          schoolSlug
+        );
+
+        if (currentAppearance !== "system") {
+          return;
+        }
+
+        const nextTheme = event.matches ? "dark" : "light";
+
+        setAppearance(currentAppearance);
+        setTheme(nextTheme);
+        applyTheme(nextTheme, scope, currentAppearance);
+      }
+
+      mediaQuery.addEventListener("change", handleSystemThemeChange);
+
+      return () => {
+        window.clearTimeout(timeout);
+        mediaQuery.removeEventListener("change", handleSystemThemeChange);
+      };
+    }
+
     const preferredTheme = getPreferredTheme(storageKey);
 
     applyTheme(preferredTheme, scope);
@@ -85,15 +138,65 @@ export default function ThemeToggle({
       window.clearTimeout(timeout);
       mediaQuery.removeEventListener("change", handleSystemThemeChange);
     };
-  }, [scope, storageKey]);
+  }, [isDeviceAppearance, schoolDefaultAppearance, schoolSlug, scope, storageKey]);
 
   const isDark = theme === "dark";
   const nextTheme = isDark ? "light" : "dark";
+
+  function chooseAppearance(nextAppearance: AppearancePreference) {
+    const nextResolvedTheme = resolveAppearanceTheme(nextAppearance);
+
+    setAppearance(nextAppearance);
+    setTheme(nextResolvedTheme);
+    setStoredAppearancePreference(scope, nextAppearance, schoolSlug);
+    applyTheme(nextResolvedTheme, scope, nextAppearance);
+  }
 
   function toggleTheme() {
     setTheme(nextTheme);
     window.localStorage.setItem(storageKey, nextTheme);
     applyTheme(nextTheme, scope);
+  }
+
+  if (isDeviceAppearance) {
+    const options: { value: AppearancePreference; label: string }[] = [
+      { value: "light", label: "Light" },
+      { value: "dark", label: "Dark" },
+      { value: "system", label: "System" },
+    ];
+
+    return (
+      <div
+        className={[
+          "inline-flex rounded-full border border-slate-300 bg-white p-1 text-xs font-black shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]",
+          className,
+        ].join(" ")}
+        role="radiogroup"
+        aria-label="Appearance"
+      >
+        {options.map((option) => {
+          const selected = appearance === option.value;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => chooseAppearance(option.value)}
+              className={[
+                "rounded-full px-3 py-2 transition focus:outline-none focus:ring-2 focus:ring-[var(--school-primary,#d4a017)] focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-black",
+                selected
+                  ? "bg-[var(--school-primary,#d4a017)] text-[var(--school-primary-text,#ffffff)] shadow-sm"
+                  : "text-slate-600 hover:bg-slate-100 dark:text-neutral-200 dark:hover:bg-[#2f2f2f]",
+              ].join(" ")}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    );
   }
 
   return (

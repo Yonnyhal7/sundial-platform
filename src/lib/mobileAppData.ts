@@ -11,6 +11,7 @@ export type MobileAppSchool = {
   primary_color: string | null;
   secondary_color: string | null;
   logo_url: string | null;
+  default_appearance: "light" | "dark" | "system" | null;
 };
 
 export type MobileAppQuickLink = {

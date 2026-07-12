@@ -4,28 +4,46 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import {
   applyTheme,
-  getPreferredTheme,
+  getPreferredAppearance,
+  getSchoolSlugFromThemePath,
   getThemeScopeFromPath,
-  getThemeStorageKey,
+  resolveAppearanceTheme,
+  type AppearancePreference,
 } from "@/lib/themeScope";
 
-export default function ThemeRouteSync() {
+export default function ThemeRouteSync({
+  schoolDefaultAppearance,
+  schoolSlug,
+}: {
+  schoolDefaultAppearance?: AppearancePreference;
+  schoolSlug?: string;
+}) {
   const pathname = usePathname();
 
   useEffect(() => {
     const scope = getThemeScopeFromPath(pathname, window.location.hostname.toLowerCase());
-    const storageKey = getThemeStorageKey(scope);
-    const theme = getPreferredTheme(storageKey);
+    const resolvedSchoolSlug = schoolSlug || getSchoolSlugFromThemePath(pathname);
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const preference = getPreferredAppearance(
+      scope,
+      schoolDefaultAppearance,
+      resolvedSchoolSlug
+    );
 
-    applyTheme(theme, scope);
+    applyTheme(resolveAppearanceTheme(preference), scope, preference);
 
     function handleSystemThemeChange(event: MediaQueryListEvent) {
-      if (window.localStorage.getItem(storageKey)) {
+      const currentPreference = getPreferredAppearance(
+        scope,
+        schoolDefaultAppearance,
+        resolvedSchoolSlug
+      );
+
+      if (currentPreference !== "system") {
         return;
       }
 
-      applyTheme(event.matches ? "dark" : "light", scope);
+      applyTheme(event.matches ? "dark" : "light", scope, currentPreference);
     }
 
     mediaQuery.addEventListener("change", handleSystemThemeChange);
@@ -33,7 +51,7 @@ export default function ThemeRouteSync() {
     return () => {
       mediaQuery.removeEventListener("change", handleSystemThemeChange);
     };
-  }, [pathname]);
+  }, [pathname, schoolDefaultAppearance, schoolSlug]);
 
   return null;
 }

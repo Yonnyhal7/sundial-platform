@@ -3,8 +3,15 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import ThemeToggle from "@/components/ThemeToggle";
+import type { AppearancePreference } from "@/lib/themeScope";
 
-export default function KioskMenuControls() {
+export default function KioskMenuControls({
+  school,
+  schoolDefaultAppearance,
+}: {
+  school: string;
+  schoolDefaultAppearance?: AppearancePreference;
+}) {
   const pathname = usePathname();
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -46,7 +53,13 @@ export default function KioskMenuControls() {
           Full Screen
         </button>
       )}
-      <ThemeToggle scope={themeScope} />
+      <ThemeToggle
+        scope={themeScope}
+        schoolDefaultAppearance={
+          themeScope === "kiosk" ? schoolDefaultAppearance : undefined
+        }
+        schoolSlug={themeScope === "kiosk" ? school : undefined}
+      />
     </div>
   );
 }

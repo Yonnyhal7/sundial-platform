@@ -4,8 +4,11 @@ import AppBottomNav from "@/components/mobile-app/AppBottomNav";
 import AppHeader from "@/components/mobile-app/AppHeader";
 import AppRoutePrefetch from "@/components/mobile-app/AppRoutePrefetch";
 import AppSwipeNavigation from "@/components/mobile-app/AppSwipeNavigation";
+import OfflineStudentAppRuntime from "@/components/offline/OfflineStudentAppRuntime";
+import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { getMobileAppQuickLinks, requireMobileAppSchool } from "@/lib/mobileAppData";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
+import { normalizeAppearancePreference } from "@/lib/themeScope";
 
 type AppLayoutProps = {
   children: ReactNode;
@@ -70,6 +73,9 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
   const schoolData = await requireMobileAppSchool(school);
   const quickLinks = await getMobileAppQuickLinks(school, schoolData.id);
   const schoolTheme = getSchoolThemeModes(schoolData);
+  const schoolDefaultAppearance = normalizeAppearancePreference(
+    schoolData.default_appearance
+  );
 
   return (
     <div
@@ -89,19 +95,26 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
         } as AppStyle
       }
     >
+      <ThemeRouteSync
+        schoolDefaultAppearance={schoolDefaultAppearance}
+        schoolSlug={school}
+      />
       <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] md:max-w-2xl md:px-6">
         <AppHeader
           school={school}
           schoolName={schoolData.name}
           logoUrl={schoolData.logo_url || null}
           quickLinks={quickLinks}
+          schoolDefaultAppearance={schoolDefaultAppearance}
         />
         <div className="mt-[clamp(1.25rem,3.2vw,1.75rem)] flex min-h-0 flex-1 flex-col">
           <AppSwipeNavigation
             school={school}
             className="flex min-h-0 flex-1 flex-col"
           >
-            {children}
+            <OfflineStudentAppRuntime schoolId={schoolData.id} school={school}>
+              {children}
+            </OfflineStudentAppRuntime>
           </AppSwipeNavigation>
         </div>
       </div>

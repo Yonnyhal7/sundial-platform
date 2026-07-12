@@ -4,12 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import KioskMenuControls from "@/components/KioskMenuControls";
 import { getSchoolSiteBasePath } from "@/lib/routing/paths";
+import type { AppearancePreference } from "@/lib/themeScope";
 
 type SchoolPublicNavProps = {
   school: string;
+  schoolDefaultAppearance?: AppearancePreference;
 };
 
-export default function SchoolPublicNav({ school }: SchoolPublicNavProps) {
+export default function SchoolPublicNav({
+  school,
+  schoolDefaultAppearance,
+}: SchoolPublicNavProps) {
   const pathname = usePathname();
   const hostname =
     typeof window === "undefined" ? "" : window.location.hostname.toLowerCase();
@@ -29,7 +34,10 @@ export default function SchoolPublicNav({ school }: SchoolPublicNavProps) {
     return (
       <nav className="school-menu-bar border-b border-slate-200 bg-white px-6 py-3 dark:border-neutral-800 dark:bg-black">
         <div className="flex items-center justify-end">
-          <KioskMenuControls />
+          <KioskMenuControls
+            school={school}
+            schoolDefaultAppearance={schoolDefaultAppearance}
+          />
         </div>
       </nav>
     );
@@ -59,7 +67,10 @@ export default function SchoolPublicNav({ school }: SchoolPublicNavProps) {
           ))}
         </div>
 
-        <KioskMenuControls />
+        <KioskMenuControls
+          school={school}
+          schoolDefaultAppearance={schoolDefaultAppearance}
+        />
       </div>
     </nav>
   );
