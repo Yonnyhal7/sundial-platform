@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import KioskDisplay from "@/app/[school]/kiosk/KioskDisplay";
 import OfflineStatusIndicator from "@/components/offline/OfflineStatusIndicator";
 import { formatGameTime } from "@/lib/athletics";
+import { addDaysToLocalDateString } from "@/lib/localDate";
 import {
   getPeriodsByScheduleId,
   getScheduleById,
@@ -37,6 +38,10 @@ function formatEventDate(value: string | null) {
   return `${month}-${day}-${year}`;
 }
 
+function getStoredCalendarDatePrefix(value: string | null) {
+  return value?.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || null;
+}
+
 function OfflineKioskDisplay({ snapshot }: { snapshot: SchoolOfflineSnapshot }) {
   const today = getTodayDateKey();
   const calendarDay = snapshot.data.calendarDays.find((day) => day.date === today);
@@ -53,9 +58,7 @@ function OfflineKioskDisplay({ snapshot }: { snapshot: SchoolOfflineSnapshot }) 
     calendarDay?.schedule_id && calendarDay.is_school_day !== false
       ? periodsByScheduleId[calendarDay.schedule_id] || []
       : [];
-  const tomorrow = new Date(`${today}T00:00:00`);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowKey = tomorrow.toISOString().slice(0, 10);
+  const tomorrowKey = addDaysToLocalDateString(today, 1);
   const sportById = new Map(snapshot.data.sports.map((sport) => [sport.id, sport]));
   const teamById = new Map(snapshot.data.teams.map((team) => [team.id, team]));
   const priorityAnnouncement = snapshot.data.announcements.find(
@@ -91,7 +94,7 @@ function OfflineKioskDisplay({ snapshot }: { snapshot: SchoolOfflineSnapshot }) 
       }))}
       games={snapshot.data.games
         .filter((game) => {
-          const date = game.game_date?.slice(0, 10);
+          const date = getStoredCalendarDatePrefix(game.game_date);
           return date && date >= today && date < tomorrowKey;
         })
         .slice(0, 4)

@@ -3,6 +3,11 @@ import {
   sortPeriodsByScheduleOrder,
   type SchedulePeriod,
 } from "@/lib/scheduleTime";
+import {
+  formatLocalDate,
+  getLocalTodayISO,
+  getMonthKey,
+} from "@/lib/localDate";
 import type {
   OfflineCalendarDay,
   OfflineSchedule,
@@ -10,11 +15,7 @@ import type {
 } from "@/lib/offline/types";
 
 export function formatDateKey(date: Date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
+  return formatLocalDate(date);
 }
 
 export function addDays(date: Date, days: number) {
@@ -25,7 +26,7 @@ export function addDays(date: Date, days: number) {
 }
 
 export function getTodayDateKey() {
-  return formatDateKey(new Date());
+  return getLocalTodayISO();
 }
 
 export function getScheduleById(snapshot: SchoolOfflineSnapshot) {
@@ -91,10 +92,7 @@ export function getMonthGridDates(baseDate: Date) {
 }
 
 export function getMonthQuery(date: Date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-
-  return `${yyyy}-${mm}`;
+  return getMonthKey(date);
 }
 
 export function getBaseMonth(month?: string | null) {

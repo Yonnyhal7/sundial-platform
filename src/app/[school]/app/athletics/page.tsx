@@ -4,6 +4,7 @@ import { formatGameDateTime } from "@/lib/athletics";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { formatDateInTimeZone } from "@/lib/localDate";
 
 type Sport = {
   id: string;
@@ -28,15 +29,6 @@ type Game = {
   location: string | null;
   is_home: boolean | null;
 };
-
-function getTodayDateString() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-}
 
 export default async function MobileAthleticsPage({
   params,
@@ -80,7 +72,7 @@ export default async function MobileAthleticsPage({
         .from("games")
         .select("id, team_id, opponent, game_date, location, is_home")
         .eq("school_id", schoolData.id)
-        .gte("game_date", getTodayDateString())
+        .gte("game_date", formatDateInTimeZone(new Date(), schoolData.timezone))
         .order("game_date", { ascending: true })
         .limit(30)
         .returns<Game[]>()

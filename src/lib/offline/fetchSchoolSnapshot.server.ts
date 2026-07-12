@@ -11,33 +11,18 @@ import {
   type SchoolOfflineSnapshot,
 } from "@/lib/offline/types";
 import { assertValidSchoolOfflineSnapshot } from "@/lib/offline/schoolSnapshot";
+import { addDaysToLocalDateString, formatDateInTimeZone } from "@/lib/localDate";
 import type { SchedulePeriod } from "@/lib/scheduleTime";
 
 type PeriodWithSchedule = SchedulePeriod & {
   schedule_id: string;
 };
 
-function formatDate(date: Date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-
-  return next;
-}
-
-function getSnapshotDateRange() {
-  const today = new Date();
-
+function getSnapshotDateRange(timeZone?: string | null) {
+  const today = formatDateInTimeZone(new Date(), timeZone);
   return {
-    startDate: formatDate(addDays(today, -45)),
-    endDate: formatDate(addDays(today, 420)),
+    startDate: addDaysToLocalDateString(today, -45),
+    endDate: addDaysToLocalDateString(today, 420),
   };
 }
 
@@ -46,8 +31,6 @@ export async function fetchSchoolOfflineSnapshot(
 ): Promise<SchoolOfflineSnapshot> {
   const supabase = await createSupabaseServerClient();
   const normalizedSchoolSlug = schoolSlug.trim().toLowerCase();
-  const { startDate, endDate } = getSnapshotDateRange();
-
   const { data: school, error: schoolError } = await supabase
     .rpc("get_school_by_subdomain", {
       subdomain_input: normalizedSchoolSlug,
@@ -57,6 +40,8 @@ export async function fetchSchoolOfflineSnapshot(
   if (schoolError || !school) {
     throw new Error(schoolError?.message || "School not found");
   }
+
+  const { startDate, endDate } = getSnapshotDateRange(school.timezone);
 
   const [
     schedulesResult,

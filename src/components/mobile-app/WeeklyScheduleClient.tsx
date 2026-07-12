@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getLocalTodayISO } from "@/lib/localDate";
 import { formatPeriodTime, type SchedulePeriod } from "@/lib/scheduleTime";
 
 type WeekDay = {
@@ -18,7 +19,7 @@ type WeeklyScheduleClientProps = {
 };
 
 export default function WeeklyScheduleClient({ days }: WeeklyScheduleClientProps) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalTodayISO();
   const defaultDate = days.find((day) => day.date >= today)?.date || days[0]?.date;
   const [selectedWeek, setSelectedWeek] = useState<"A" | "B">("A");
   const [selectedDate, setSelectedDate] = useState(defaultDate);

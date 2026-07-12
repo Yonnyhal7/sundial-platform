@@ -11,6 +11,7 @@ export type OfflineSchoolProfile = {
   primary_color: string | null;
   secondary_color: string | null;
   default_appearance: "light" | "dark" | "system" | null;
+  timezone: string | null;
 };
 
 export type OfflineSchedule = {

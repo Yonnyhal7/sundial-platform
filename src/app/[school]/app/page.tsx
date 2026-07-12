@@ -2,6 +2,7 @@ import AppScheduleDashboard from "@/components/mobile-app/AppScheduleDashboard";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { formatDateInTimeZone } from "@/lib/localDate";
 import type { SchedulePeriod } from "@/lib/scheduleTime";
 
 type CalendarDay = {
@@ -26,15 +27,6 @@ type CalendarDay = {
     | null;
 };
 
-function getTodayDateString() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-}
-
 function getGreeting() {
   const hour = new Date().getHours();
 
@@ -54,7 +46,7 @@ export default async function MobileAppHome({
     createSupabaseServerClient(),
     navTiming.query("school", () => requireMobileAppSchool(school)),
   ]);
-  const today = getTodayDateString();
+  const today = formatDateInTimeZone(new Date(), schoolData.timezone);
 
   const { data: calendarDay } = await navTiming.query("calendar", () =>
     supabase

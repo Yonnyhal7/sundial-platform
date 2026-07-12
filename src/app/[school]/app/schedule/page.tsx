@@ -2,6 +2,7 @@ import CalendarScheduleClient, {
   type CalendarScheduleDay,
 } from "@/components/mobile-app/CalendarScheduleClient";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
+import { formatLocalDate, getMonthKey } from "@/lib/localDate";
 import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -37,14 +38,6 @@ type PeriodWithSchedule = SchedulePeriod & {
   schedule_id: string;
 };
 
-function formatDate(date: Date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-}
-
 function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -67,10 +60,7 @@ function getMonthGridDates(baseDate: Date) {
 }
 
 function getMonthQuery(date: Date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-
-  return `${yyyy}-${mm}`;
+  return getMonthKey(date);
 }
 
 function getBaseMonth(month?: string) {
@@ -103,8 +93,8 @@ export default async function MobileSchedulePage({
   const todayDate = new Date();
   const baseMonth = getBaseMonth(month);
   const monthDates = getMonthGridDates(baseMonth);
-  const startDate = formatDate(monthDates[0]);
-  const endDate = formatDate(monthDates[monthDates.length - 1]);
+  const startDate = formatLocalDate(monthDates[0]);
+  const endDate = formatLocalDate(monthDates[monthDates.length - 1]);
 
   const { data: calendarDays } = await navTiming.query("calendar", () =>
     supabase
@@ -166,10 +156,10 @@ export default async function MobileSchedulePage({
   const calendarDayByDate = new Map(
     (calendarDays || []).map((calendarDay) => [calendarDay.date, calendarDay])
   );
-  const today = formatDate(todayDate);
+  const today = formatLocalDate(todayDate);
   const currentMonth = baseMonth.getMonth();
   const days: CalendarScheduleDay[] = monthDates.map((date) => {
-    const dateKey = formatDate(date);
+    const dateKey = formatLocalDate(date);
     const calendarDay = calendarDayByDate.get(dateKey);
     const assignedSchedule = Array.isArray(calendarDay?.schedule)
       ? calendarDay?.schedule[0]

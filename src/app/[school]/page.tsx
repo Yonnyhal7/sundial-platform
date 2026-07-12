@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import SchoolLogo from "@/components/SchoolLogo";
+import { formatDateInTimeZone } from "@/lib/localDate";
 
 type School = {
   id: string;
@@ -12,15 +13,6 @@ type School = {
   secondary_color: string;
   timezone: string;
 };
-
-function getTodayDateString() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-}
 
 export default async function SchoolPage({
   params,
@@ -54,7 +46,7 @@ export default async function SchoolPage({
     .select("id, title, event_date, start_time, location")
     .eq("school_id", schoolData.id)
     .eq("is_active", true)
-    .gte("event_date", getTodayDateString())
+    .gte("event_date", formatDateInTimeZone(new Date(), schoolData.timezone))
     .order("event_date", { ascending: true })
     .limit(3);
 

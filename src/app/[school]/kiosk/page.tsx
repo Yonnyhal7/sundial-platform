@@ -2,6 +2,7 @@ import KioskDisplay from "./KioskDisplay";
 import OfflineKioskRuntime from "@/components/offline/OfflineKioskRuntime";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { formatGameTime } from "@/lib/athletics";
+import { addDaysToLocalDateString, formatDateInTimeZone } from "@/lib/localDate";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeAppearancePreference } from "@/lib/themeScope";
 
@@ -60,21 +61,6 @@ type Game = {
   is_home: boolean | null;
 };
 
-function getTodayDateString() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function getTomorrowDateString(today: string) {
-  const date = new Date(`${today}T00:00:00`);
-  date.setDate(date.getDate() + 1);
-  return date.toISOString().slice(0, 10);
-}
-
 function formatTime(time: string) {
   const [hours, minutes] = time.split(":");
   const date = new Date();
@@ -105,8 +91,6 @@ export default async function KioskPage({
   const { school } = await params;
   const supabase = await createSupabaseServerClient();
 
-  const today = getTodayDateString();
-
   const { data: schoolData } = await supabase
     .rpc("get_school_by_subdomain", {
       subdomain_input: school,
@@ -119,9 +103,12 @@ export default async function KioskPage({
       primary_color: string | null;
       secondary_color: string | null;
       default_appearance: "light" | "dark" | "system" | null;
+      timezone: string | null;
     }>();
 
   if (!schoolData) return null;
+
+  const today = formatDateInTimeZone(new Date(), schoolData.timezone);
 
   const { data: calendarDay } = await supabase
     .from("calendar_days")
@@ -182,7 +169,7 @@ export default async function KioskPage({
     .order("event_date")
     .limit(3);
 
-  const tomorrow = getTomorrowDateString(today);
+  const tomorrow = addDaysToLocalDateString(today, 1);
   const sportsResultWithColor = await supabase
     .from("sports")
     .select("id, name, icon, icon_color")

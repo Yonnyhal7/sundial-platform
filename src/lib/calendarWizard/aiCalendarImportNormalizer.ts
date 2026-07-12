@@ -13,6 +13,7 @@ import {
   type AiImportWarning,
 } from "./aiImportTypes";
 import type { CalendarWizardConfig, PatternType, Weekday } from "./types";
+import { getLocalTodayISO } from "@/lib/localDate";
 
 export type RawAiCalendarExtraction = {
   documentTitle: string | null;
@@ -293,7 +294,7 @@ export function normalizeAiCalendarExtraction(
   const importResult: AiCalendarImportResult = {
     schemaVersion: 1,
     source: options.source,
-    analyzedAt: options.analyzedAt || new Date().toISOString().slice(0, 10),
+    analyzedAt: options.analyzedAt || getLocalTodayISO(),
     documentTitle: trimOptional(raw.documentTitle),
     detectedSchoolName: trimOptional(raw.detectedSchoolName),
     expectedInstructionalDayCount: raw.expectedInstructionalDayCount,

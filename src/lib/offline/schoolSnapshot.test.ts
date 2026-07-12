@@ -12,6 +12,7 @@ import {
   SCHOOL_OFFLINE_SCHEMA_VERSION,
   type SchoolOfflineSnapshot,
 } from "@/lib/offline/types";
+import { getLocalTodayISO, getMonthKey } from "@/lib/localDate";
 
 function createSnapshot(overrides: Partial<SchoolOfflineSnapshot> = {}) {
   const snapshot: SchoolOfflineSnapshot = {
@@ -30,6 +31,7 @@ function createSnapshot(overrides: Partial<SchoolOfflineSnapshot> = {}) {
         primary_color: "#123456",
         secondary_color: "#abcdef",
         default_appearance: "system",
+        timezone: "America/Los_Angeles",
       },
       schedules: [
         {
@@ -54,7 +56,7 @@ function createSnapshot(overrides: Partial<SchoolOfflineSnapshot> = {}) {
       calendarDays: [
         {
           id: "day-1",
-          date: new Date().toISOString().slice(0, 10),
+          date: getLocalTodayISO(),
           label: null,
           is_school_day: true,
           schedule_id: "schedule-brown",
@@ -127,9 +129,9 @@ describe("offline school snapshots", () => {
 
   it("builds calendar days from cached snapshot data", () => {
     const snapshot = createSnapshot();
-    const month = new Date().toISOString().slice(0, 7);
+    const month = getMonthKey();
     const { days } = getCalendarScheduleDays(snapshot, month);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalTodayISO();
     const todayDay = days.find((day) => day.date === today);
 
     expect(todayDay?.scheduleName).toBe("Brown Day");

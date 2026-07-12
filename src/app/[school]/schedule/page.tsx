@@ -1,15 +1,7 @@
 import { notFound } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
-
-function getTodayLocalDate() {
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, "0");
-  const dd = String(today.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-}
+import { formatDateInTimeZone } from "@/lib/localDate";
 
 function formatTime(time: string) {
   return new Date(`2000-01-01T${time}`).toLocaleTimeString([], {
@@ -30,13 +22,13 @@ export default async function SchoolSchedulePage({
     .rpc("get_school_by_subdomain", {
       subdomain_input: school,
     })
-    .single<{ id: string; name: string }>();
+    .single<{ id: string; name: string; timezone: string | null }>();
 
   if (!schoolData) {
     notFound();
   }
 
-  const today = getTodayLocalDate();
+  const today = formatDateInTimeZone(new Date(), schoolData.timezone);
 
   const { data: calendarDay, error: calendarError } = await supabase
     .from("calendar_days")

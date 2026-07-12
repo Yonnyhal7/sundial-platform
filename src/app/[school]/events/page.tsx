@@ -1,13 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-function getTodayDateString() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-}
+import { formatDateInTimeZone } from "@/lib/localDate";
 
 type Event = {
   id: string;
@@ -30,7 +22,7 @@ export default async function EventsPage({
 
   const { data: schoolData } = await supabase
     .rpc("get_school_by_subdomain", { subdomain_input: school })
-    .single<{ id: string }>();
+    .single<{ id: string; timezone: string | null }>();
 
   if (!schoolData) return null;
 
@@ -39,7 +31,7 @@ export default async function EventsPage({
     .select("id, title, description, location, event_date, start_time, end_time, image_url")
     .eq("school_id", schoolData.id)
     .eq("is_active", true)
-    .gte("event_date", getTodayDateString())
+    .gte("event_date", formatDateInTimeZone(new Date(), schoolData.timezone))
     .order("event_date", { ascending: true });
 
   return (
@@ -55,7 +47,7 @@ export default async function EventsPage({
             <h2 className="text-2xl font-semibold">{event.title}</h2>
 
             <p className="mt-3 text-neutral-300">
-              {new Date(event.event_date).toLocaleDateString()}
+              {new Date(`${event.event_date}T00:00:00`).toLocaleDateString()}
               {event.start_time ? ` at ${event.start_time}` : ""}
               {event.end_time ? ` - ${event.end_time}` : ""}
             </p>

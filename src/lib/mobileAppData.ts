@@ -12,6 +12,7 @@ export type MobileAppSchool = {
   secondary_color: string | null;
   logo_url: string | null;
   default_appearance: "light" | "dark" | "system" | null;
+  timezone: string | null;
 };
 
 export type MobileAppQuickLink = {

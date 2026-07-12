@@ -189,6 +189,7 @@ export type SetupSchool = {
   logo_url?: string | null;
   primary_color: string | null;
   secondary_color: string | null;
+  timezone: string | null;
   district_id: string | null;
   is_active: boolean | null;
   setup_complete?: boolean | null;
@@ -200,7 +201,7 @@ export async function getSchoolForSetup(subdomain: string) {
   const normalizedSubdomain = subdomain.trim().toLowerCase();
 
   const setupSelect =
-    "id, name, subdomain, mascot, logo_url, primary_color, secondary_color, district_id, is_active, setup_complete, setup_step";
+    "id, name, subdomain, mascot, logo_url, primary_color, secondary_color, timezone, district_id, is_active, setup_complete, setup_step";
 
   const { data, error } = await serviceSupabase
     .from("schools")
@@ -225,7 +226,7 @@ export async function getSchoolForSetup(subdomain: string) {
   const { data: fallbackData } = await serviceSupabase
     .from("schools")
     .select(
-      "id, name, subdomain, mascot, logo_url, primary_color, secondary_color, district_id, is_active"
+      "id, name, subdomain, mascot, logo_url, primary_color, secondary_color, timezone, district_id, is_active"
     )
     .eq("subdomain", normalizedSubdomain)
     .maybeSingle<SetupSchool>();

@@ -3,6 +3,7 @@ import { CalendarIcon, MapPinIcon } from "@/components/mobile-app/AppIcons";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { formatDateInTimeZone } from "@/lib/localDate";
 import { formatPeriodTime } from "@/lib/scheduleTime";
 
 type Event = {
@@ -14,15 +15,6 @@ type Event = {
   end_time: string | null;
   image_url: string | null;
 };
-
-function getTodayDateString() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-
-  return `${yyyy}-${mm}-${dd}`;
-}
 
 function formatEventDate(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
@@ -58,7 +50,7 @@ export default async function MobileEventsPage({
       .select("id, title, location, event_date, start_time, end_time, image_url")
       .eq("school_id", schoolData.id)
       .eq("is_active", true)
-      .gte("event_date", getTodayDateString())
+      .gte("event_date", formatDateInTimeZone(new Date(), schoolData.timezone))
       .order("event_date", { ascending: true })
       .limit(12)
       .returns<Event[]>()

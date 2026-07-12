@@ -5,21 +5,7 @@ import { ADMIN_TAB_ICONS } from "@/components/admin/AdminNavIcons";
 import { notFound, redirect } from "next/navigation";
 import { getSchoolForSetup, isSchoolSetupComplete } from "@/lib/schools";
 import { normalizeSetupStep } from "@/lib/setupSteps";
-
-function getLocalDateString(date: Date) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-
-  const year = parts.find((part) => part.type === "year")?.value;
-  const month = parts.find((part) => part.type === "month")?.value;
-  const day = parts.find((part) => part.type === "day")?.value;
-
-  return `${year}-${month}-${day}`;
-}
+import { addDaysToLocalDateString, formatDateInTimeZone } from "@/lib/localDate";
 
 function QuickActionIcon({
   icon: Icon,
@@ -66,10 +52,8 @@ export default async function SchoolAdminPage({
   const schedulesHref = `${await getSchoolAdminPath(school)}/schedules`;
 
   const now = new Date();
-  const today = getLocalDateString(now);
-  const weekEnd = new Date(now);
-  weekEnd.setDate(now.getDate() + 6);
-  const weekEndString = getLocalDateString(weekEnd);
+  const today = formatDateInTimeZone(now, schoolData.timezone);
+  const weekEndString = addDaysToLocalDateString(today, 6);
 
   const { data: calendarDay } = await supabase
     .from("calendar_days")
