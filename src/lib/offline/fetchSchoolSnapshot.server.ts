@@ -16,6 +16,7 @@ import type { SchedulePeriod } from "@/lib/scheduleTime";
 
 type PeriodWithSchedule = SchedulePeriod & {
   schedule_id: string;
+  school_id: string;
 };
 
 function getSnapshotDateRange(timeZone?: string | null) {
@@ -32,7 +33,7 @@ export async function fetchSchoolOfflineSnapshot(
   const supabase = await createSupabaseServerClient();
   const normalizedSchoolSlug = schoolSlug.trim().toLowerCase();
   const { data: school, error: schoolError } = await supabase
-    .rpc("get_school_by_subdomain", {
+    .rpc("get_available_school_by_subdomain", {
       subdomain_input: normalizedSchoolSlug,
     })
     .single<OfflineSchoolProfile>();
@@ -55,13 +56,12 @@ export async function fetchSchoolOfflineSnapshot(
   ] = await Promise.all([
     supabase
       .from("schedules")
-      .select("id, schedule_name, schedule_type, calendar_color, setup_status, active")
+      .select("id, school_id, schedule_name, schedule_type, calendar_color, setup_status, active")
       .eq("school_id", school.id)
-      .eq("active", true)
       .returns<SchoolOfflineSnapshot["data"]["schedules"]>(),
     supabase
       .from("calendar_days")
-      .select("id, date, label, is_school_day, schedule_id")
+      .select("id, school_id, date, label, is_school_day, schedule_id")
       .eq("school_id", school.id)
       .gte("date", startDate)
       .lte("date", endDate)
@@ -69,7 +69,7 @@ export async function fetchSchoolOfflineSnapshot(
       .returns<OfflineCalendarDay[]>(),
     supabase
       .from("announcements")
-      .select("id, title, body, priority, publish_at")
+      .select("id, school_id, title, body, priority, publish_at")
       .eq("school_id", school.id)
       .eq("is_active", true)
       .order("priority", { ascending: false })
@@ -78,7 +78,7 @@ export async function fetchSchoolOfflineSnapshot(
       .returns<SchoolOfflineSnapshot["data"]["announcements"]>(),
     supabase
       .from("events")
-      .select("id, title, location, event_date, start_time, end_time, image_url")
+      .select("id, school_id, title, location, event_date, start_time, end_time, image_url")
       .eq("school_id", school.id)
       .eq("is_active", true)
       .gte("event_date", startDate)
@@ -87,7 +87,7 @@ export async function fetchSchoolOfflineSnapshot(
       .returns<SchoolOfflineSnapshot["data"]["events"]>(),
     supabase
       .from("resources")
-      .select("id, title, description, url, file_url, category")
+      .select("id, school_id, title, description, url, file_url, category")
       .eq("school_id", school.id)
       .eq("is_active", true)
       .order("category", { ascending: true })
@@ -96,7 +96,7 @@ export async function fetchSchoolOfflineSnapshot(
       .returns<SchoolOfflineSnapshot["data"]["resources"]>(),
     supabase
       .from("sports")
-      .select("id, name, icon, icon_color")
+      .select("id, school_id, name, icon, icon_color")
       .eq("school_id", school.id)
       .eq("is_active", true)
       .order("name", { ascending: true })
@@ -104,7 +104,7 @@ export async function fetchSchoolOfflineSnapshot(
       .returns<OfflineSport[]>(),
     supabase
       .from("teams")
-      .select("id, sport_id, name, level, gender")
+      .select("id, school_id, sport_id, name, level, gender")
       .eq("school_id", school.id)
       .eq("is_active", true)
       .order("name", { ascending: true })
@@ -112,7 +112,7 @@ export async function fetchSchoolOfflineSnapshot(
       .returns<OfflineTeam[]>(),
     supabase
       .from("games")
-      .select("id, team_id, opponent, game_date, location, is_home")
+      .select("id, school_id, team_id, opponent, game_date, location, is_home")
       .eq("school_id", school.id)
       .gte("game_date", startDate)
       .order("game_date", { ascending: true })
@@ -139,7 +139,7 @@ export async function fetchSchoolOfflineSnapshot(
   if (sportsResultWithColor.error?.code === "42703") {
     const fallbackSportsResult = await supabase
       .from("sports")
-      .select("id, name, icon")
+      .select("id, school_id, name, icon")
       .eq("school_id", school.id)
       .eq("is_active", true)
       .order("name", { ascending: true })
@@ -164,7 +164,8 @@ export async function fetchSchoolOfflineSnapshot(
   if (scheduleIds.length > 0) {
     const { data, error } = await supabase
       .from("periods")
-      .select("id, schedule_id, name, start_time, end_time, sort_order")
+      .select("id, school_id, schedule_id, name, start_time, end_time, sort_order")
+      .eq("school_id", school.id)
       .in("schedule_id", scheduleIds)
       .returns<PeriodWithSchedule[]>();
 

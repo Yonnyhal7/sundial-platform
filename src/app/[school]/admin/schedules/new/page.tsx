@@ -22,7 +22,7 @@ export default async function NewSchedulePage({
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
+    .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
     .single<{ id: string; name: string }>();
@@ -86,6 +86,7 @@ export default async function NewSchedulePage({
 
     const periods = validPeriodInputs
       .map((period) => ({
+        school_id: schoolId,
         schedule_id: schedule.id,
         ...period,
       }));

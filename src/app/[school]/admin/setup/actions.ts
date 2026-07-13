@@ -350,7 +350,7 @@ export async function uploadSetupLogoAction(formData: FormData) {
 
   const { schoolData, serviceSupabase } = await requireSetupAccess(school);
   const extension = getLogoExtension(file);
-  const filePath = `logos/${school}/${crypto.randomUUID()}.${extension}`;
+  const filePath = `schools/${schoolData.id}/logos/${crypto.randomUUID()}.${extension}`;
   const { error: uploadError } = await serviceSupabase.storage
     .from("school-logos")
     .upload(filePath, file, {

@@ -137,7 +137,7 @@ export async function uploadSchoolLogoAction(formData: FormData) {
   const schoolData = await requireSettingsAccess(school);
   const serviceSupabase = createSupabaseServiceRoleClient();
   const extension = getLogoExtension(file);
-  const filePath = `logos/${school}/${crypto.randomUUID()}.${extension}`;
+  const filePath = `schools/${schoolData.id}/logos/${crypto.randomUUID()}.${extension}`;
   const { error: uploadError } = await serviceSupabase.storage
     .from("school-logos")
     .upload(filePath, file, {

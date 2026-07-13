@@ -23,7 +23,7 @@ export default async function SchoolPage({
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData, error: schoolError } = await supabase
-    .rpc("get_school_by_subdomain", {
+    .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
     .single<School>();

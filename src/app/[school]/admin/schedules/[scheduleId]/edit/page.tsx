@@ -16,7 +16,7 @@ export default async function EditSchedulePage({
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
+    .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
     .single<{ id: string; name: string }>();
@@ -43,16 +43,14 @@ export default async function EditSchedulePage({
     .from("periods")
     .select("id, name, start_time, end_time, sort_order")
     .eq("schedule_id", scheduleId)
+    .eq("school_id", schoolId)
     .order("sort_order", { ascending: true });
-
-  const existingPeriodIds = periods?.map((period) => period.id) || [];
 
 const updateSchedule = updateScheduleAction.bind(
   null,
   school,
   schoolId,
-  scheduleId,
-  existingPeriodIds
+  scheduleId
 );
 
   return (

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSchoolLifecycleBySubdomain } from "@/lib/schools";
 
 type SchoolManifestRouteContext = {
   params: Promise<{ school: string }>;
@@ -6,6 +7,16 @@ type SchoolManifestRouteContext = {
 
 export async function GET(_request: Request, { params }: SchoolManifestRouteContext) {
   const { school } = await params;
+  const lifecycle = await getSchoolLifecycleBySubdomain(school);
+  if (!lifecycle) {
+    return NextResponse.json({ error: "School not found." }, { status: 404 });
+  }
+  if (lifecycle.archived_at) {
+    return NextResponse.json(
+      { error: "This school is currently unavailable." },
+      { status: 410, headers: { "Cache-Control": "no-store" } }
+    );
+  }
   const schoolRoot = `/${school}`;
   const appPath = `${schoolRoot}/app`;
 

@@ -6,8 +6,10 @@ import { useState } from "react";
 const supabase = createSupabaseBrowserClient();
 
 export default function ResourceFileUpload({
+  schoolId,
   initialFileUrl = "",
 }: {
+  schoolId: string;
   initialFileUrl?: string;
 }) {
   const [uploading, setUploading] = useState(false);
@@ -22,7 +24,7 @@ export default function ResourceFileUpload({
 
     const fileExt = file.name.split(".").pop();
     const fileName = `${crypto.randomUUID()}.${fileExt}`;
-    const filePath = `resources/${fileName}`;
+    const filePath = `schools/${schoolId}/resources/${fileName}`;
 
     const { error } = await supabase.storage
       .from("resource-file")

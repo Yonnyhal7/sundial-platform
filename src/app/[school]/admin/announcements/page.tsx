@@ -13,7 +13,7 @@ export default async function AdminAnnouncementsPage({
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
+    .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
     .single<{ id: string; name: string; subdomain: string }>();

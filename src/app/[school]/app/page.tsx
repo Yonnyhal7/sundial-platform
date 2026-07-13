@@ -78,6 +78,7 @@ export default async function MobileAppHome({
       supabase
         .from("periods")
         .select("id, name, start_time, end_time, sort_order")
+        .eq("school_id", schoolData.id)
         .eq("schedule_id", calendarDay.schedule_id)
         .order("sort_order", { ascending: true })
         .order("start_time", { ascending: true })

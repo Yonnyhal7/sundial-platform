@@ -60,6 +60,7 @@ export async function loadCalendarWizardPageData(
     ? await supabase
         .from("periods")
         .select("schedule_id, name, start_time, end_time")
+        .eq("school_id", schoolData.id)
         .in("schedule_id", scheduleIds)
         .order("start_time", { ascending: true })
         .returns<PeriodRow[]>()

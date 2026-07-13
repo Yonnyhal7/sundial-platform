@@ -35,7 +35,7 @@ export function isValidSchoolOfflineSnapshot(
   if (data.school.id !== value.schoolId) return false;
   if (data.school.subdomain !== value.schoolSlug) return false;
 
-  return [
+  const tenantCollectionKeys = [
     "schedules",
     "periods",
     "calendarDays",
@@ -45,7 +45,77 @@ export function isValidSchoolOfflineSnapshot(
     "sports",
     "teams",
     "games",
-  ].every((key) => Array.isArray(data[key]));
+  ] as const;
+
+  if (!tenantCollectionKeys.every((key) => Array.isArray(data[key]))) {
+    return false;
+  }
+
+  if (
+    !tenantCollectionKeys.every((key) =>
+      (data[key] as unknown[]).every(
+        (row) => isRecord(row) && row.school_id === value.schoolId
+      )
+    )
+  ) {
+    return false;
+  }
+
+  const schedules = data.schedules as Array<Record<string, unknown>>;
+  const scheduleIds = new Set(
+    schedules.filter((row) => isNonEmptyString(row.id)).map((row) => row.id as string)
+  );
+  if (scheduleIds.size !== schedules.length) return false;
+
+  const periods = data.periods as Array<Record<string, unknown>>;
+  if (
+    periods.some(
+      (row) =>
+        !isNonEmptyString(row.schedule_id) ||
+        !scheduleIds.has(row.schedule_id)
+    )
+  ) {
+    return false;
+  }
+
+  const calendarDays = data.calendarDays as Array<Record<string, unknown>>;
+  if (
+    calendarDays.some(
+      (row) =>
+        row.schedule_id !== null &&
+        (!isNonEmptyString(row.schedule_id) || !scheduleIds.has(row.schedule_id))
+    )
+  ) {
+    return false;
+  }
+
+  const sports = data.sports as Array<Record<string, unknown>>;
+  const sportIds = new Set(
+    sports.filter((row) => isNonEmptyString(row.id)).map((row) => row.id as string)
+  );
+  if (sportIds.size !== sports.length) return false;
+
+  const teams = data.teams as Array<Record<string, unknown>>;
+  const teamIds = new Set(
+    teams.filter((row) => isNonEmptyString(row.id)).map((row) => row.id as string)
+  );
+  if (teamIds.size !== teams.length) return false;
+  if (
+    teams.some(
+      (row) =>
+        row.sport_id !== null &&
+        (!isNonEmptyString(row.sport_id) || !sportIds.has(row.sport_id))
+    )
+  ) {
+    return false;
+  }
+
+  const games = data.games as Array<Record<string, unknown>>;
+  return !games.some(
+    (row) =>
+      row.team_id !== null &&
+      (!isNonEmptyString(row.team_id) || !teamIds.has(row.team_id))
+  );
 }
 
 export function assertValidSchoolOfflineSnapshot(

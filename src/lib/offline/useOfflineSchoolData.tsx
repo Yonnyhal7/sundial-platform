@@ -11,7 +11,11 @@ import {
   type ReactNode,
 } from "react";
 import { loadSchoolSnapshot } from "@/lib/offline/db";
-import { fetchAndStoreSchoolSnapshot } from "@/lib/offline/syncSchoolSnapshot";
+import {
+  fetchAndStoreSchoolSnapshot,
+  SchoolSnapshotUnavailableError,
+} from "@/lib/offline/syncSchoolSnapshot";
+import { shouldUseSnapshotForSchool } from "@/lib/offline/schoolSnapshot";
 import type {
   OfflineSyncState,
   SchoolOfflineSnapshot,
@@ -63,8 +67,10 @@ export function OfflineSchoolDataProvider({
   const snapshotRef = useRef<SchoolOfflineSnapshot | null>(null);
 
   useEffect(() => {
-    snapshotRef.current = snapshot;
-  }, [snapshot]);
+    snapshotRef.current = shouldUseSnapshotForSchool(snapshot, schoolId)
+      ? snapshot
+      : null;
+  }, [schoolId, snapshot]);
 
   const refresh = useCallback(async () => {
     if (syncingRef.current) {
@@ -81,7 +87,7 @@ export function OfflineSchoolDataProvider({
       setSyncState("syncing");
 
       try {
-        const nextSnapshot = await fetchAndStoreSchoolSnapshot(schoolSlug);
+        const nextSnapshot = await fetchAndStoreSchoolSnapshot(schoolSlug, schoolId);
 
         if (!mountedRef.current) return;
 
@@ -93,6 +99,14 @@ export function OfflineSchoolDataProvider({
         }
       } catch (error) {
         if (!mountedRef.current) return;
+
+        if (error instanceof SchoolSnapshotUnavailableError) {
+          snapshotRef.current = null;
+          setSnapshot(null);
+          setLastError(error.message);
+          setSyncState("offline-empty");
+          return;
+        }
 
         setLastError(error instanceof Error ? error.message : "Snapshot refresh failed");
         setSyncState(snapshotRef.current ? "cached" : "error");
@@ -150,7 +164,9 @@ export function OfflineSchoolDataProvider({
 
     function handleOffline() {
       setIsOnline(false);
-      setSyncState(snapshot ? "cached" : "offline-empty");
+      setSyncState(
+        shouldUseSnapshotForSchool(snapshot, schoolId) ? "cached" : "offline-empty"
+      );
     }
 
     function handleVisibilityChange() {
@@ -169,7 +185,7 @@ export function OfflineSchoolDataProvider({
       window.removeEventListener("offline", handleOffline);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [refresh, snapshot]);
+  }, [refresh, schoolId, snapshot]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -189,16 +205,22 @@ export function OfflineSchoolDataProvider({
   }, [refresh]);
 
   const value = useMemo<OfflineSchoolDataContextValue>(
-    () => ({
-      schoolId,
-      schoolSlug,
-      snapshot,
-      syncState,
-      isOnline,
-      lastSuccessfulSyncAt: snapshot?.syncedAt || null,
-      lastError,
-      refresh,
-    }),
+    () => {
+      const activeSnapshot = shouldUseSnapshotForSchool(snapshot, schoolId)
+        ? snapshot
+        : null;
+
+      return {
+        schoolId,
+        schoolSlug,
+        snapshot: activeSnapshot,
+        syncState,
+        isOnline,
+        lastSuccessfulSyncAt: activeSnapshot?.syncedAt || null,
+        lastError,
+        refresh,
+      };
+    },
     [isOnline, lastError, refresh, schoolId, schoolSlug, snapshot, syncState]
   );
 

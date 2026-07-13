@@ -39,6 +39,30 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "PURGE_SCHOOL_CACHE") return;
+  const schoolSlug = String(event.data.schoolSlug || "").trim().toLowerCase();
+  if (!/^[a-z0-9-]+$/.test(schoolSlug)) return;
+
+  event.waitUntil(
+    caches.open(NAVIGATION_CACHE).then(async (cache) => {
+      const keys = await cache.keys();
+      await Promise.all(
+        keys.map((request) => {
+          const url = new URL(request.url);
+          const pathMatches =
+            url.pathname === `/${schoolSlug}` ||
+            url.pathname.startsWith(`/${schoolSlug}/`);
+          const subdomainMatches =
+            url.hostname.toLowerCase().startsWith(`${schoolSlug}.`) &&
+            (/^\/app(?:\/|$)/.test(url.pathname) || /^\/kiosk(?:\/|$)/.test(url.pathname));
+          return pathMatches || subdomainMatches ? cache.delete(request) : Promise.resolve(false);
+        })
+      );
+    })
+  );
+});
+
 function isAppOrKioskPath(pathname) {
   return (
     /^\/[^/]+\/app(?:\/|$)/.test(pathname) ||

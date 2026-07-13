@@ -39,6 +39,10 @@ import type { CalendarWizardLaunchContext } from "@/lib/calendarWizard/launchCon
 import { completeSetupCalendarStep } from "@/lib/setupCalendarCompletion";
 import { getSchoolForSetup } from "@/lib/schools";
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  collectStoredDraftScheduleIds,
+  findForeignScheduleIds,
+} from "@/lib/calendarWizard/tenantIsolation";
 
 export type GenerateCalendarActionInput = {
   config: CalendarWizardConfig;
@@ -156,6 +160,30 @@ function expectedFlowForDraftType(draftType: CalendarWizardDraftType) {
   return draftType === AI_CALENDAR_WIZARD_DRAFT_TYPE ? "ai" : "guided";
 }
 
+async function storedDraftSchedulesBelongToSchool(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  schoolId: string,
+  data: CalendarWizardStoredData
+) {
+  const scheduleIds = collectStoredDraftScheduleIds(data);
+  if (scheduleIds.length === 0) return true;
+
+  const { data: schedules, error } = await supabase
+    .from("schedules")
+    .select("id")
+    .eq("school_id", schoolId)
+    .in("id", scheduleIds)
+    .returns<Array<{ id: string }>>();
+
+  if (error) return false;
+  return (
+    findForeignScheduleIds(
+      scheduleIds,
+      (schedules || []).map((schedule) => schedule.id)
+    ).length === 0
+  );
+}
+
 export async function loadCalendarWizardDraft(
   school: string,
   draftType: CalendarWizardDraftType = GUIDED_CALENDAR_WIZARD_DRAFT_TYPE
@@ -210,6 +238,7 @@ export async function loadCalendarWizardDraft(
         updated_by: adminUser.profile.id,
       })
       .eq("id", legacyDraft.id)
+      .eq("school_id", schoolData.id)
       .eq("draft_type", LEGACY_CALENDAR_WIZARD_DRAFT_TYPE)
       .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
       .single();
@@ -252,6 +281,19 @@ export async function saveCalendarWizardDraft(
     }
 
     const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    if (
+      !(await storedDraftSchedulesBelongToSchool(
+        adminUser.supabase,
+        schoolData.id,
+        serialized.data
+      ))
+    ) {
+      return {
+        status: "permission_error",
+        message: "This calendar draft references a schedule outside this school.",
+      };
+    }
+
     const { data: existing, error: existingError } = await adminUser.supabase
       .from("calendar_wizard_drafts")
       .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
@@ -319,7 +361,8 @@ export async function saveCalendarWizardDraft(
       await adminUser.supabase
         .from("calendar_wizard_drafts")
         .delete()
-        .eq("id", legacyDraft.id);
+        .eq("id", legacyDraft.id)
+        .eq("school_id", schoolData.id);
     }
 
     revalidatePath(`/${school}/admin/calendar`);
@@ -379,6 +422,22 @@ export async function connectDetectedScheduleInDraft(
     scheduleId: string;
   }
 ): Promise<CalendarWizardDraftActionResult> {
+  const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+  const { data: ownedSchedule, error: ownedScheduleError } = await adminUser.supabase
+    .from("schedules")
+    .select("id")
+    .eq("id", input.scheduleId)
+    .eq("school_id", schoolData.id)
+    .eq("active", true)
+    .maybeSingle<{ id: string }>();
+
+  if (ownedScheduleError || !ownedSchedule) {
+    return {
+      status: "permission_error",
+      message: "That schedule is not available in this school.",
+    };
+  }
+
   const loaded = await loadCalendarWizardDraft(school, AI_CALENDAR_WIZARD_DRAFT_TYPE);
   if (loaded.status !== "success" || !loaded.draft) return loaded;
 
@@ -832,7 +891,7 @@ export async function createAiCalendarFromDraftAction(
     }
 
     const { data: rpcData, error: rpcError } = await adminUser.supabase.rpc(
-      "create_ai_calendar_from_draft",
+      "create_available_ai_calendar_from_draft",
       {
         p_school_id: schoolData.id,
         p_draft_id: draft.id,

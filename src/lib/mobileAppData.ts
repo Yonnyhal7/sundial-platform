@@ -47,7 +47,7 @@ export const getMobileAppSchool = unstable_cache(
     recordSchoolCacheMiss(school);
     const supabase = createPublicSupabaseClient();
     const { data } = await supabase
-      .rpc("get_school_by_subdomain", { subdomain_input: school })
+    .rpc("get_available_school_by_subdomain", { subdomain_input: school })
       .single<MobileAppSchool>();
 
     return data || null;
@@ -55,6 +55,7 @@ export const getMobileAppSchool = unstable_cache(
   ["mobile-app-school"],
   {
     revalidate: 300,
+    tags: ["mobile-app-schools"],
   }
 );
 
@@ -92,5 +93,6 @@ export const getMobileAppQuickLinks = unstable_cache(
   ["mobile-app-quick-links"],
   {
     revalidate: 300,
+    tags: ["mobile-app-quick-links"],
   }
 );

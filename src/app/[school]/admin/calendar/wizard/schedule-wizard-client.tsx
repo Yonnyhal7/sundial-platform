@@ -890,8 +890,9 @@ export default function ScheduleWizardClient({
   const draftType = getDraftTypeForCalendarWizardFlow(flowMode);
   const isAiMode = flowMode === "ai";
   const isGuidedMode = flowMode === "guided";
-  const storageKey = `calendar-wizard-${flowMode}:${schoolSlug}`;
+  const storageKey = `sundial:calendar-wizard:${schoolId}:${flowMode}`;
   const legacyStorageKey = `sundial:schedule-wizard:${schoolId}:${schoolSlug}`;
+  const unsafeSlugStorageKey = `calendar-wizard-${flowMode}:${schoolSlug}`;
   const pageTitle = isAiMode ? "AI Calendar Import" : "Guided Calendar Setup";
   const pageDescription = isAiMode
     ? "Upload your school calendar PDF, review Sundial's draft, and create the calendar."
@@ -990,6 +991,9 @@ export default function ScheduleWizardClient({
 
   useEffect(() => {
     window.setTimeout(() => {
+      // Slug-only keys can outlive a deleted school and leak into a future
+      // tenant that reuses the slug, so they are invalidated, never restored.
+      window.sessionStorage.removeItem(unsafeSlugStorageKey);
       let localStored = parseLocalStoredDraft(window.sessionStorage.getItem(storageKey));
       const legacyStored = parseLocalStoredDraft(window.sessionStorage.getItem(legacyStorageKey));
       if (!localStored && legacyStored) {

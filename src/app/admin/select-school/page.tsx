@@ -48,6 +48,7 @@ export default async function SelectSchoolPage() {
     ? await supabase
         .from("schools")
         .select("id, name, subdomain")
+        .is("archived_at", null)
         .order("name", { ascending: true })
         .returns<School[]>()
     : profile.school_id && (isSchoolAdmin || isEditor)
@@ -55,6 +56,7 @@ export default async function SelectSchoolPage() {
           .from("schools")
           .select("id, name, subdomain")
           .eq("id", profile.school_id)
+          .is("archived_at", null)
           .returns<School[]>()
       : { data: [] };
   const schoolRows = await Promise.all(

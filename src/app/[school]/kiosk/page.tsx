@@ -92,7 +92,7 @@ export default async function KioskPage({
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
+    .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
     .single<{
@@ -144,6 +144,7 @@ export default async function KioskPage({
     const { data: periodData } = await supabase
       .from("periods")
       .select("id, name, start_time, end_time, sort_order")
+      .eq("school_id", schoolData.id)
       .eq("schedule_id", calendarDay.schedule_id)
       .order("sort_order", { ascending: true })
       .order("start_time", { ascending: true });

@@ -13,6 +13,7 @@ import {
   getSchoolSetupStepPath as getVisibleSchoolSetupStepPath,
 } from "@/lib/routing/paths";
 import type { SetupStepSlug } from "@/lib/setupSteps";
+import { isSchoolAvailableById } from "@/lib/schools";
 
 export const ADMIN_PERMISSION_KEYS = [
   "announcements",
@@ -183,6 +184,10 @@ async function getEditorPermissionKeys(
 export async function getCurrentAdminUser(
   schoolId: string
 ): Promise<CurrentAdminUser | null> {
+  if (!(await isSchoolAvailableById(schoolId))) {
+    return null;
+  }
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },

@@ -19,7 +19,7 @@ export default async function SchoolSchedulePage({
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
+    .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
     .single<{ id: string; name: string; timezone: string | null }>();
@@ -65,6 +65,7 @@ export default async function SchoolSchedulePage({
       ? await supabase
           .from("periods")
           .select("id, name, start_time, end_time, sort_order")
+          .eq("school_id", schoolData.id)
           .eq("schedule_id", schedule.id)
           .order("sort_order", { ascending: true })
       : { data: [], error: null };

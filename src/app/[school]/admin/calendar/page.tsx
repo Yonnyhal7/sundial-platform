@@ -24,7 +24,7 @@ export default async function AdminCalendarPage({
   const supabase = await createSupabaseServerClient();
 
   const { data: schoolData } = await supabase
-    .rpc("get_school_by_subdomain", {
+    .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
     .single<{ id: string; name: string }>();
@@ -102,6 +102,7 @@ export default async function AdminCalendarPage({
     ? await supabase
         .from("periods")
         .select("id, schedule_id, name, start_time, end_time, sort_order")
+        .eq("school_id", schoolId)
         .in("schedule_id", scheduleIds)
         .order("sort_order", { ascending: true })
     : { data: [], error: null };
@@ -125,6 +126,24 @@ export default async function AdminCalendarPage({
     const isSchoolDay = formData.get("is_school_day") === "on";
 
     if (!date) return;
+
+    if (isSchoolDay && scheduleId) {
+      const { data: ownedSchedule } = await supabase
+        .from("schedules")
+        .select("id")
+        .eq("id", scheduleId)
+        .eq("school_id", schoolId)
+        .eq("active", true)
+        .maybeSingle<{ id: string }>();
+
+      if (!ownedSchedule) {
+        console.warn("Rejected calendar assignment to an unavailable schedule", {
+          schoolId,
+          scheduleId,
+        });
+        return;
+      }
+    }
 
     const { error } = await supabase.from("calendar_days").upsert(
       {

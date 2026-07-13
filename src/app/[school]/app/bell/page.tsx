@@ -54,6 +54,7 @@ export default async function BellSchedulePage({
     const { data: periodData } = await supabase
       .from("periods")
       .select("id, schedule_id, name, start_time, end_time, sort_order")
+      .eq("school_id", schoolData.id)
       .in("schedule_id", scheduleIds)
       .returns<PeriodWithSchedule[]>();
 

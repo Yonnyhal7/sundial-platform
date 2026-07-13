@@ -17,19 +17,23 @@ export default async function SuperAdminDashboardPage() {
 
   const [
     { count: totalSchools },
+    { count: archivedSchools },
     { data: schoolStatusRows },
     { count: totalUsers },
     { data: recentSchools },
   ] = await Promise.all([
     supabase.from("schools").select("*", { count: "exact", head: true }),
+    supabase.from("schools").select("*", { count: "exact", head: true }).not("archived_at", "is", null),
     supabase
       .from("schools")
       .select("is_active, setup_complete")
+      .is("archived_at", null)
       .returns<{ is_active: boolean | null; setup_complete: boolean | null }[]>(),
     supabase.from("users").select("*", { count: "exact", head: true }),
     supabase
       .from("schools")
-      .select("id, name, subdomain, is_active, created_at")
+      .select("id, name, subdomain, is_active, created_at, archived_at")
+      .is("archived_at", null)
       .order("created_at", { ascending: false })
       .limit(5)
       .returns<School[]>(),
@@ -48,6 +52,7 @@ export default async function SuperAdminDashboardPage() {
 
   const statCards = [
     { label: "Total Schools", value: totalSchools || 0 },
+    { label: "Archived Schools", value: archivedSchools || 0 },
     { label: "Active Schools", value: activeSchools },
     { label: "Setup Incomplete", value: setupIncomplete },
     { label: "Total Users", value: totalUsers || 0 },
@@ -74,7 +79,7 @@ export default async function SuperAdminDashboardPage() {
         </Link>
       </div>
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {statCards.map((card) => (
           <article
             key={card.label}

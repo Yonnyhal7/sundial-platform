@@ -458,7 +458,7 @@ function OfflineBellPage({
   snapshot: SchoolOfflineSnapshot;
 }) {
   const periodsByScheduleId = getPeriodsByScheduleId(snapshot);
-  const schedules = snapshot.data.schedules.map((schedule) => ({
+  const schedules = snapshot.data.schedules.filter((schedule) => schedule.active).map((schedule) => ({
     id: schedule.id,
     name: schedule.schedule_name,
     type: schedule.schedule_type,

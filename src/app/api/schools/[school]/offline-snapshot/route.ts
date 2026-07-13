@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchSchoolOfflineSnapshot } from "@/lib/offline/fetchSchoolSnapshot.server";
+import { getSchoolLifecycleBySubdomain } from "@/lib/schools";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,19 @@ export async function GET(
   { params }: { params: Promise<{ school: string }> }
 ) {
   const { school } = await params;
+  const lifecycle = await getSchoolLifecycleBySubdomain(school);
+  if (!lifecycle) {
+    return NextResponse.json(
+      { error: "School not found." },
+      { status: 404, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+  if (lifecycle.archived_at) {
+    return NextResponse.json(
+      { error: "This school is currently unavailable." },
+      { status: 410, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 
   try {
     const snapshot = await fetchSchoolOfflineSnapshot(school);

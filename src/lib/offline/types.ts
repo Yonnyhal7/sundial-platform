@@ -1,6 +1,6 @@
 import type { SchedulePeriod } from "@/lib/scheduleTime";
 
-export const SCHOOL_OFFLINE_SCHEMA_VERSION = 1;
+export const SCHOOL_OFFLINE_SCHEMA_VERSION = 2;
 
 export type OfflineSchoolProfile = {
   id: string;
@@ -16,6 +16,7 @@ export type OfflineSchoolProfile = {
 
 export type OfflineSchedule = {
   id: string;
+  school_id: string;
   schedule_name: string;
   schedule_type: string | null;
   calendar_color: string | null;
@@ -25,6 +26,7 @@ export type OfflineSchedule = {
 
 export type OfflineCalendarDay = {
   id: string;
+  school_id: string;
   date: string;
   label: string | null;
   is_school_day: boolean;
@@ -33,6 +35,7 @@ export type OfflineCalendarDay = {
 
 export type OfflineAnnouncement = {
   id: string;
+  school_id: string;
   title: string;
   body: string | null;
   priority: boolean | null;
@@ -41,6 +44,7 @@ export type OfflineAnnouncement = {
 
 export type OfflineEvent = {
   id: string;
+  school_id: string;
   title: string;
   location: string | null;
   event_date: string;
@@ -51,6 +55,7 @@ export type OfflineEvent = {
 
 export type OfflineResource = {
   id: string;
+  school_id: string;
   title: string;
   description: string | null;
   url: string | null;
@@ -60,6 +65,7 @@ export type OfflineResource = {
 
 export type OfflineSport = {
   id: string;
+  school_id: string;
   name: string;
   icon: string | null;
   icon_color: string | null;
@@ -67,6 +73,7 @@ export type OfflineSport = {
 
 export type OfflineTeam = {
   id: string;
+  school_id: string;
   sport_id: string | null;
   name: string;
   level: string | null;
@@ -75,6 +82,7 @@ export type OfflineTeam = {
 
 export type OfflineGame = {
   id: string;
+  school_id: string;
   team_id: string | null;
   opponent: string;
   game_date: string | null;
@@ -91,7 +99,7 @@ export type SchoolOfflineSnapshot = {
   data: {
     school: OfflineSchoolProfile;
     schedules: OfflineSchedule[];
-    periods: (SchedulePeriod & { schedule_id: string })[];
+    periods: (SchedulePeriod & { schedule_id: string; school_id: string })[];
     calendarDays: OfflineCalendarDay[];
     announcements: OfflineAnnouncement[];
     events: OfflineEvent[];

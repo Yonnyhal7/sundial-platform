@@ -10,7 +10,36 @@ export type SuperAdminSchoolSummary = {
   subdomain: string;
   is_active: boolean | null;
   created_at: string | null;
+  archived_at: string | null;
+  archived_by?: string | null;
 };
+
+export type SchoolLifecycleLookup = {
+  id: string;
+  subdomain: string;
+  archived_at: string | null;
+};
+
+export async function getSchoolLifecycleBySubdomain(subdomain: string) {
+  const serviceSupabase = createSupabaseServiceRoleClient();
+  const { data } = await serviceSupabase
+    .from("schools")
+    .select("id, subdomain, archived_at")
+    .eq("subdomain", subdomain.trim().toLowerCase())
+    .maybeSingle<SchoolLifecycleLookup>();
+  return data || null;
+}
+
+export async function isSchoolAvailableById(schoolId: string) {
+  const serviceSupabase = createSupabaseServiceRoleClient();
+  const { data } = await serviceSupabase
+    .from("schools")
+    .select("id")
+    .eq("id", schoolId)
+    .is("archived_at", null)
+    .maybeSingle<{ id: string }>();
+  return Boolean(data);
+}
 
 const RESERVED_SUBDOMAINS = new Set([
   "admin",
@@ -207,6 +236,7 @@ export async function getSchoolForSetup(subdomain: string) {
     .from("schools")
     .select(setupSelect)
     .eq("subdomain", normalizedSubdomain)
+    .is("archived_at", null)
     .maybeSingle<SetupSchool>();
 
   if (!error && data) {
@@ -214,7 +244,7 @@ export async function getSchoolForSetup(subdomain: string) {
   }
 
   const { data: rpcSchool } = await serviceSupabase
-    .rpc("get_school_by_subdomain", {
+    .rpc("get_available_school_by_subdomain", {
       subdomain_input: normalizedSubdomain,
     })
     .maybeSingle<SetupSchool>();
@@ -229,6 +259,7 @@ export async function getSchoolForSetup(subdomain: string) {
       "id, name, subdomain, mascot, logo_url, primary_color, secondary_color, timezone, district_id, is_active"
     )
     .eq("subdomain", normalizedSubdomain)
+    .is("archived_at", null)
     .maybeSingle<SetupSchool>();
 
   return fallbackData || null;

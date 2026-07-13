@@ -36,6 +36,7 @@ function createSnapshot(overrides: Partial<SchoolOfflineSnapshot> = {}) {
       schedules: [
         {
           id: "schedule-brown",
+          school_id: "school-deloro",
           schedule_name: "Brown Day",
           schedule_type: "Regular",
           calendar_color: "#8B5E34",
@@ -46,6 +47,7 @@ function createSnapshot(overrides: Partial<SchoolOfflineSnapshot> = {}) {
       periods: [
         {
           id: "period-1",
+          school_id: "school-deloro",
           schedule_id: "schedule-brown",
           name: "Period 1",
           start_time: "08:30:00",
@@ -56,6 +58,7 @@ function createSnapshot(overrides: Partial<SchoolOfflineSnapshot> = {}) {
       calendarDays: [
         {
           id: "day-1",
+          school_id: "school-deloro",
           date: getLocalTodayISO(),
           label: null,
           is_school_day: true,
@@ -99,7 +102,7 @@ describe("offline school snapshots", () => {
   it("accepts valid snapshots and rejects unsupported schema versions", () => {
     expect(isValidSchoolOfflineSnapshot(createSnapshot())).toBe(true);
     expect(
-      isValidSchoolOfflineSnapshot(createSnapshot({ schemaVersion: 999 as 1 }))
+      isValidSchoolOfflineSnapshot(createSnapshot({ schemaVersion: 999 as 2 }))
     ).toBe(false);
   });
 
@@ -117,6 +120,23 @@ describe("offline school snapshots", () => {
         })
       )
     ).toBe(false);
+  });
+
+  it("rejects a schedule row from another tenant", () => {
+    const snapshot = createSnapshot();
+    snapshot.data.schedules[0].school_id = "school-liberty";
+
+    expect(isValidSchoolOfflineSnapshot(snapshot)).toBe(false);
+  });
+
+  it("rejects periods and calendar days that reference an unavailable tenant schedule", () => {
+    const periodSnapshot = createSnapshot();
+    periodSnapshot.data.periods[0].schedule_id = "schedule-liberty";
+    expect(isValidSchoolOfflineSnapshot(periodSnapshot)).toBe(false);
+
+    const calendarSnapshot = createSnapshot();
+    calendarSnapshot.data.calendarDays[0].schedule_id = "schedule-liberty";
+    expect(isValidSchoolOfflineSnapshot(calendarSnapshot)).toBe(false);
   });
 
   it("keeps cached schedule data usable offline", () => {
