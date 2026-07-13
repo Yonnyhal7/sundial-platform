@@ -13,15 +13,54 @@ function source(path: string) {
 
 describe("school lifecycle rolling-deployment compatibility", () => {
   it("keeps the deployed lookup RPC signature and application-role permissions", () => {
+    const legacyLookup = migration.slice(
+      migration.indexOf(
+        "create or replace function public.get_school_by_subdomain(subdomain_input text)"
+      ),
+      migration.indexOf(
+        "-- intentionally do not revoke or grant on the legacy function here."
+      )
+    );
     expect(migration).toContain(
       "create or replace function public.get_school_by_subdomain(subdomain_input text)"
     );
-    expect(migration).toContain("returns setof public.schools");
-    expect(migration).toContain(
-      "grant execute on function public.get_school_by_subdomain(text) to anon, authenticated"
-    );
+    expect(legacyLookup).toContain(`returns table(
+  id uuid,
+  district_id uuid,
+  name text,
+  slug text,
+  subdomain text,
+  mascot text,
+  primary_color text,
+  secondary_color text,
+  logo_url text,
+  timezone text,
+  is_active boolean
+)`);
+    expect(legacyLookup).not.toContain("returns setof public.schools");
+    expect(legacyLookup).toContain(`select
+    s.id,
+    s.district_id,
+    s.name,
+    s.slug,
+    s.subdomain,
+    s.mascot,
+    s.primary_color,
+    s.secondary_color,
+    s.logo_url,
+    s.timezone,
+    s.is_active`);
+    expect(legacyLookup).toContain("and s.is_active = true");
+    expect(legacyLookup).toContain("and s.archived_at is null");
+    expect(legacyLookup).toContain("where lower(s.subdomain) = lower(subdomain_input)");
     expect(migration).not.toContain(
       "revoke all on function public.get_school_by_subdomain(text) from public, anon, authenticated"
+    );
+    expect(migration).not.toContain(
+      "revoke all on function public.get_school_by_subdomain(text) from public;"
+    );
+    expect(migration).not.toContain(
+      "grant execute on function public.get_school_by_subdomain(text)"
     );
   });
 

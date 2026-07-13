@@ -37,7 +37,7 @@ describe("school lifecycle migration security", () => {
     expect(migration).toContain("archived school storage is unavailable");
     expect(migration).toContain("create_available_ai_calendar_from_draft");
     expect(migration).toContain("create or replace function public.get_school_by_subdomain");
-    expect(migration).toContain("grant execute on function public.get_school_by_subdomain(text) to anon, authenticated");
+    expect(migration).toContain("create or replace preserves its existing public, anon, authenticated, and");
     for (const table of [
       "analytics",
       "announcements",

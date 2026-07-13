@@ -310,22 +310,45 @@ grant execute on function public.get_available_school_by_subdomain(text) to serv
 -- exact signature and permissions until the archive-aware application has been
 -- deployed and verified. A future cleanup migration may revoke and remove it.
 create or replace function public.get_school_by_subdomain(subdomain_input text)
-returns setof public.schools
+returns table(
+  id uuid,
+  district_id uuid,
+  name text,
+  slug text,
+  subdomain text,
+  mascot text,
+  primary_color text,
+  secondary_color text,
+  logo_url text,
+  timezone text,
+  is_active boolean
+)
 language sql
-stable
 security definer
 set search_path = public
 as $$
-  select school.*
-  from public.schools school
-  where lower(school.subdomain) = lower(trim(subdomain_input))
-    and school.archived_at is null
+  select
+    s.id,
+    s.district_id,
+    s.name,
+    s.slug,
+    s.subdomain,
+    s.mascot,
+    s.primary_color,
+    s.secondary_color,
+    s.logo_url,
+    s.timezone,
+    s.is_active
+  from public.schools s
+  where lower(s.subdomain) = lower(subdomain_input)
+    and s.is_active = true
+    and s.archived_at is null
   limit 1;
 $$;
 
-revoke all on function public.get_school_by_subdomain(text) from public;
-grant execute on function public.get_school_by_subdomain(text) to anon, authenticated;
-grant execute on function public.get_school_by_subdomain(text) to service_role;
+-- Intentionally do not revoke or grant on the legacy function here.
+-- CREATE OR REPLACE preserves its existing PUBLIC, anon, authenticated, and
+-- service_role execute ACL during the rolling deployment.
 
 -- Compatibility policies make the migration safe even if one of these legacy
 -- content tables previously relied on RLS being disabled. They mirror the live
