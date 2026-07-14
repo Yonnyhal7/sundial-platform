@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { DEFAULT_ADMIN_PERMISSIONS } from "@/lib/adminDefaultPermissions";
 import {
   getSchoolAdminPath,
+  getSchoolSetupPath,
   getSchoolSetupStepPath,
   requireAdminPortalAccess,
 } from "@/lib/auth/adminPermissions";
@@ -454,5 +455,5 @@ export async function saveSetupProgressAction(formData: FormData) {
   if (currentStep === "appearance") {
     revalidateAppearanceRoutes(school);
   }
-  redirect(await getSchoolAdminPath(school));
+  redirect(await getSchoolSetupPath(school));
 }

@@ -100,7 +100,7 @@ export function getSchoolSetupPath(
   pathname: string,
   hostname: string
 ) {
-  return `${getSchoolAdminPath(school, pathname, hostname)}/setup`;
+  return `${getSchoolAdminPath(school, pathname, hostname)}/setup/welcome`;
 }
 
 export function getSchoolSetupStepPath(
@@ -109,7 +109,18 @@ export function getSchoolSetupStepPath(
   hostname: string,
   step: string
 ) {
-  return `${getSchoolSetupPath(school, pathname, hostname)}/${step}`;
+  return `${getSchoolAdminPath(school, pathname, hostname)}/setup/${step}`;
+}
+
+export function getSchoolLoginDestination(
+  school: string,
+  pathname: string,
+  hostname: string,
+  setupComplete: boolean
+) {
+  return setupComplete
+    ? getSchoolAdminPath(school, pathname, hostname)
+    : getSchoolSetupPath(school, pathname, hostname);
 }
 
 export function getAdminUtilityPath(pathname: string, hostname: string, path: string) {

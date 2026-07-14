@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 import { proxy } from "@/proxy";
 import { getCanonicalSchoolSetupInvitationUrl } from "@/lib/routing/canonicalUrls";
+import { getSchoolSetupPath } from "@/lib/routing/paths";
 import {
   createSchoolSetupInvitationToken,
   hashSchoolSetupInvitationToken,
@@ -72,6 +73,13 @@ describe("school invitation end-to-end contract", () => {
     expect(actions).toContain("password !== confirmPassword");
     expect(actions).toContain("sessionSupabase.auth.signInWithPassword");
     expect(actions).toContain("redirect(await getSchoolSetupPath(result.schoolSubdomain))");
+    expect(
+      getSchoolSetupPath(
+        "del-oro",
+        "/invitations",
+        "admin.sundialk12.com"
+      )
+    ).toBe("/del-oro/dashboard/setup/welcome");
     expect(acceptance).toContain("email_confirm: true");
   });
 

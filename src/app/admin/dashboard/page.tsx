@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { getSchoolAdminPath, requireSuperAdminAccess } from "@/lib/auth/adminPermissions";
+import {
+  getSchoolAdminPath,
+  getSchoolSetupPath,
+  requireSuperAdminAccess,
+} from "@/lib/auth/adminPermissions";
 import {
   getSchoolSetupStatus,
   getSchoolSetupStatusLabel,
@@ -46,7 +50,10 @@ export default async function SuperAdminDashboardPage() {
   const recentSchoolRows = await Promise.all(
     (recentSchools || []).map(async (school) => ({
       school,
-      href: await getSchoolAdminPath(school.subdomain),
+      href:
+        getSchoolSetupStatus(school) === "incomplete"
+          ? await getSchoolSetupPath(school.subdomain)
+          : await getSchoolAdminPath(school.subdomain),
     }))
   );
 

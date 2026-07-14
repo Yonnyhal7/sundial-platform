@@ -3,9 +3,15 @@
 import { createBrowserClient } from "@supabase/ssr";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSchoolAdminBasePath } from "@/lib/routing/paths";
+import { getSchoolLoginDestination } from "@/lib/routing/paths";
 
-export default function LoginForm({ school }: { school: string }) {
+export default function LoginForm({
+  school,
+  setupComplete,
+}: {
+  school: string;
+  setupComplete: boolean;
+}) {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -37,10 +43,11 @@ export default function LoginForm({ school }: { school: string }) {
     }
 
     router.push(
-      getSchoolAdminBasePath(
+      getSchoolLoginDestination(
         school,
         window.location.pathname,
-        window.location.hostname.toLowerCase()
+        window.location.hostname.toLowerCase(),
+        setupComplete
       )
     );
     router.refresh();

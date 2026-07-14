@@ -48,7 +48,7 @@ describe("school invitation actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.cookieGet.mockReturnValue({ value: "S".repeat(43) });
-    mocks.setupPath.mockResolvedValue("/del-oro/dashboard/setup");
+    mocks.setupPath.mockResolvedValue("/del-oro/dashboard/setup/welcome");
     mocks.signIn.mockResolvedValue({ error: null });
   });
 
@@ -100,7 +100,7 @@ describe("school invitation actions", () => {
     });
     expect(mocks.cookieDelete).toHaveBeenCalledWith("sundial_school_setup_acceptance");
     expect(mocks.setupPath).toHaveBeenCalledWith("del-oro");
-    expect(mocks.redirect).toHaveBeenCalledWith("/del-oro/dashboard/setup");
+    expect(mocks.redirect).toHaveBeenCalledWith("/del-oro/dashboard/setup/welcome");
   });
 
   it("does not attach an invitation when the email already has an Auth account", async () => {

@@ -10,6 +10,7 @@ import { getForwardedHost, parseSundialHost } from "@/lib/routing/hosts";
 import {
   getAdminUtilityPath as getVisibleAdminUtilityPath,
   getSchoolAdminPath as getVisibleSchoolAdminPath,
+  getSchoolSetupPath as getVisibleSchoolSetupPath,
   getSchoolSetupStepPath as getVisibleSchoolSetupStepPath,
 } from "@/lib/routing/paths";
 import type { SetupStepSlug } from "@/lib/setupSteps";
@@ -87,7 +88,11 @@ export async function getSchoolAdminPath(school: string) {
 }
 
 export async function getSchoolSetupPath(school: string) {
-  return `${await getSchoolAdminPath(school)}/setup`;
+  const host = await getRequestHost();
+  const pathname = await getRequestPathname();
+  const parsedHost = parseSundialHost(host);
+
+  return getVisibleSchoolSetupPath(school, pathname, parsedHost.hostname);
 }
 
 export async function getSchoolSetupStepPath(school: string, step: SetupStepSlug) {

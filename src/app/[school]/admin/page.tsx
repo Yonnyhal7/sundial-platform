@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getSchoolAdminPath, getSchoolSetupStepPath, requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
+import { getSchoolAdminPath, getSchoolSetupPath, requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
 import { ADMIN_TAB_ICONS } from "@/components/admin/AdminNavIcons";
 import { notFound, redirect } from "next/navigation";
 import { getSchoolForSetup, isSchoolSetupComplete } from "@/lib/schools";
-import { normalizeSetupStep } from "@/lib/setupSteps";
 import { addDaysToLocalDateString, formatDateInTimeZone } from "@/lib/localDate";
 
 function QuickActionIcon({
@@ -36,9 +35,7 @@ export default async function SchoolAdminPage({
   const adminUser = await requireAdminPortalAccess(schoolData.id, school);
 
   if (!(await isSchoolSetupComplete(supabase, schoolData.id))) {
-    redirect(
-      await getSchoolSetupStepPath(school, normalizeSetupStep(schoolData.setup_step))
-    );
+    redirect(await getSchoolSetupPath(school));
   }
 
   const firstName = adminUser.profile.first_name?.trim() || "Admin";

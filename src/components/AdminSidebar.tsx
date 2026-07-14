@@ -19,7 +19,11 @@ import {
   normalizeSetupStep,
   SETUP_STEPS,
 } from "@/lib/setupSteps";
-import { getSchoolAdminBasePath } from "@/lib/routing/paths";
+import {
+  getSchoolAdminBasePath,
+  getSchoolSetupPath,
+  getSchoolSetupStepPath,
+} from "@/lib/routing/paths";
 import { setupAccent } from "@/lib/ui/setupStyles";
 
 type AdminSidebarProps = {
@@ -72,6 +76,7 @@ export default function AdminSidebar({
 }: AdminSidebarProps) {
   const pathname = usePathname();
   const base = getSchoolAdminBasePath(school, pathname, "");
+  const setupLandingHref = getSchoolSetupPath(school, pathname, "");
   const activePathname = pathname;
   const isSetupIncomplete = setupComplete === false;
 
@@ -242,7 +247,7 @@ export default function AdminSidebar({
     compact = false,
   ) {
     const status = getSetupStepStatus(step.slug, savedSetupStep, false);
-    const href = `${base}/setup/${step.slug}`;
+    const href = getSchoolSetupStepPath(school, pathname, "", step.slug);
 
     const isActive =
       activePathname === href ||
@@ -312,7 +317,7 @@ export default function AdminSidebar({
       <header className="admin-sidebar fixed inset-x-0 top-0 z-40 flex flex-col gap-3 bg-zinc-800 px-4 py-3 text-white shadow-xl shadow-black/15 dark:bg-black lg:hidden">
         <div className="flex items-center justify-between gap-3">
           <Link
-            href={isSetupIncomplete ? `${base}/setup` : base}
+            href={isSetupIncomplete ? setupLandingHref : base}
             className="flex min-w-0 items-center gap-3"
           >
             {isSetupIncomplete ? (
@@ -355,7 +360,7 @@ export default function AdminSidebar({
       <aside className="admin-sidebar fixed inset-y-0 left-0 z-40 hidden w-[var(--admin-sidebar-width)] flex-col overflow-hidden bg-zinc-800 px-3 py-5 text-white shadow-2xl shadow-black/20 dark:bg-black min-[1180px]:px-4 min-[1180px]:py-6 lg:flex">
         <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/10 px-3 pb-4">
           {isSetupIncomplete ? (
-            <Link href={`${base}/setup`} className="flex min-w-0 items-center gap-3">
+            <Link href={setupLandingHref} className="flex min-w-0 items-center gap-3">
               <Image
                 src="/sundial-icon.png"
                 alt=""

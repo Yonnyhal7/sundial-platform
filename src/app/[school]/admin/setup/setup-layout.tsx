@@ -1,9 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import {
-  getSchoolAdminPath,
-  getSchoolSetupStepPath,
-} from "@/lib/auth/adminPermissions";
+import { getSchoolSetupStepPath } from "@/lib/auth/adminPermissions";
 import { setupPrimaryButtonClass } from "@/lib/ui/setupStyles";
 import {
   getNextSetupStep,
@@ -37,7 +34,7 @@ export default async function SetupLayout({
   const previousStep = getPreviousSetupStep(currentStep);
   const backHref = previousStep
     ? await getSchoolSetupStepPath(school, previousStep)
-    : await getSchoolAdminPath(school);
+    : null;
 
   return (
     <main className="min-h-screen bg-slate-50 p-6 text-slate-950 dark:bg-black dark:text-white lg:p-10">
@@ -69,12 +66,16 @@ export default async function SetupLayout({
 
           {showFooter && (
             <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6 dark:border-slate-700">
-              <Link
-                href={backHref}
-                className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
-              >
-                Back
-              </Link>
+              {backHref ? (
+                <Link
+                  href={backHref}
+                  className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
+                >
+                  Back
+                </Link>
+              ) : (
+                <span aria-hidden="true" />
+              )}
 
               <div className="flex flex-wrap items-center gap-3">
                 <button

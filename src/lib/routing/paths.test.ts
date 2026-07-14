@@ -2,10 +2,65 @@ import { describe, expect, it } from "vitest";
 import {
   getAdminUtilityPath,
   getSchoolAdminPath,
+  getSchoolLoginDestination,
+  getSchoolSetupPath,
   getSchoolSetupStepPath,
 } from "./paths";
 
 describe("admin route path helpers", () => {
+  it("uses Welcome as the exact production setup landing", () => {
+    expect(
+      getSchoolSetupPath(
+        "deloro",
+        "/deloro/dashboard/setup",
+        "admin.sundialk12.com"
+      )
+    ).toBe("/deloro/dashboard/setup/welcome");
+  });
+
+  it("uses Welcome as the exact localhost setup landing", () => {
+    expect(
+      getSchoolSetupPath("deloro", "/deloro/admin/setup", "localhost")
+    ).toBe("/deloro/admin/setup/welcome");
+  });
+
+  it("keeps the Welcome landing idempotent to prevent redirect loops", () => {
+    expect(
+      getSchoolSetupPath(
+        "deloro",
+        "/deloro/dashboard/setup/welcome",
+        "admin.sundialk12.com"
+      )
+    ).toBe("/deloro/dashboard/setup/welcome");
+  });
+
+  it("sends incomplete logins to Welcome and completed logins to the dashboard", () => {
+    expect(
+      getSchoolLoginDestination(
+        "deloro",
+        "/deloro/login",
+        "admin.sundialk12.com",
+        false
+      )
+    ).toBe("/deloro/dashboard/setup/welcome");
+    expect(
+      getSchoolLoginDestination(
+        "deloro",
+        "/deloro/login",
+        "admin.sundialk12.com",
+        true
+      )
+    ).toBe("/deloro/dashboard");
+    expect(
+      getSchoolLoginDestination(
+        "deloro",
+        "/deloro/login",
+        "localhost",
+        false
+      )
+    ).toBe("/deloro/admin/setup/welcome");
+  });
+
   it("keeps school-first setup routes on plain localhost", () => {
     expect(
       getSchoolAdminPath("test", "/test/admin/setup/schedule", "localhost")
@@ -123,6 +178,25 @@ describe("admin route path helpers", () => {
         "schedule"
       )
     ).toBe("/test/dashboard/setup/schedule");
+  });
+
+  it("keeps every explicit setup step independent from the Welcome landing", () => {
+    for (const step of [
+      "school-profile",
+      "appearance",
+      "administrators",
+      "schedule",
+      "complete",
+    ]) {
+      expect(
+        getSchoolSetupStepPath(
+          "test",
+          `/test/dashboard/setup/${step}`,
+          "admin.sundialk12.com",
+          step
+        )
+      ).toBe(`/test/dashboard/setup/${step}`);
+    }
   });
 
   it("does not generate old localhost admin setup aliases", () => {
