@@ -9,6 +9,7 @@ const acceptance = read("src/lib/invitations/acceptance.server.ts");
 const acceptanceActions = read("src/app/admin/invitations/actions.ts");
 const setupActions = read("src/app/[school]/admin/setup/actions.ts");
 const setupContext = read("src/app/[school]/admin/setup/context.ts");
+const serviceRoleClient = read("src/lib/supabase/serviceRole.ts");
 
 describe("school setup invitation application workflow", () => {
   it("creates the school and invitation before delivery and retains both on failure", () => {
@@ -38,10 +39,26 @@ describe("school setup invitation application workflow", () => {
     expect(acceptance).toContain('.eq("school_id", school.id)');
     expect(acceptance).toContain('.gt("expires_at", now.toISOString())');
     expect(acceptance).toContain('.is("used_at", null)');
-    expect(acceptance).toContain('role: "school_admin"');
+    expect(acceptance).toContain("buildSchoolAdminProfileInsert");
+    expect(read("src/lib/invitations/profile.ts")).toContain(
+      'SCHOOL_ADMIN_DATABASE_ROLE = "SchoolAdmin"'
+    );
     expect(acceptanceActions).toContain("confirmPassword");
     expect(acceptanceActions).toContain("signInWithPassword");
     expect(acceptanceActions).toContain("getSchoolSetupPath");
+  });
+
+  it("uses the service-role client for profile creation and preserves compensation", () => {
+    expect(acceptance).toContain("createSupabaseServiceRoleClient");
+    expect(serviceRoleClient).toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(serviceRoleClient).toContain("persistSession: false");
+
+    const profileFailure = acceptance.indexOf("if (profileError)");
+    const authCompensation = acceptance.indexOf("auth.admin.deleteUser", profileFailure);
+    const invitationReset = acceptance.indexOf("releaseClaim()", authCompensation);
+    expect(profileFailure).toBeGreaterThanOrEqual(0);
+    expect(authCompensation).toBeGreaterThan(profileFailure);
+    expect(invitationReset).toBeGreaterThan(authCompensation);
   });
 
   it("keeps the delivered owner invitation out of setup-wizard staff drafts", () => {

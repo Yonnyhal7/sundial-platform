@@ -9,6 +9,8 @@ import {
   hashSchoolSetupInvitationToken,
   isPlausibleSchoolSetupInvitationToken,
 } from "./tokens";
+import { logInvitationAcceptanceDatabaseFailure } from "./diagnostics.server";
+import { buildSchoolAdminProfileInsert } from "./profile";
 
 const ACCEPTANCE_SESSION_TTL_MS = 15 * 60 * 1000;
 
@@ -227,17 +229,18 @@ export async function acceptSchoolSetupInvitation({
     };
   }
 
-  const { error: profileError } = await supabase.from("users").insert({
-    id: authData.user.id,
-    school_id: school.id,
-    email: row.email,
-    full_name: fullName,
-    first_name: firstName,
-    last_name: lastName,
-    role: "school_admin",
-    is_active: true,
-  });
+  const { error: profileError } = await supabase.from("users").insert(
+    buildSchoolAdminProfileInsert({
+      authUserId: authData.user.id,
+      schoolId: school.id,
+      email: row.email,
+      fullName,
+      firstName,
+      lastName,
+    })
+  );
   if (profileError) {
+    logInvitationAcceptanceDatabaseFailure("profile_insert", profileError);
     await supabase.auth.admin.deleteUser(authData.user.id);
     await releaseClaim();
     return { ok: false as const, reason: "account_error" as const };
