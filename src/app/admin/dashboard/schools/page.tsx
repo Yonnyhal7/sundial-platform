@@ -10,16 +10,28 @@ import { normalizeDeletionCounts } from "@/lib/schoolLifecycle";
 import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
 import SchoolLifecycleDialog from "./SchoolLifecycleDialog";
 import { retrySchoolStorageCleanupAction } from "./lifecycle-actions";
+import ResendSetupEmailButton from "./ResendSetupEmailButton";
 
 type SchoolsPageProps = {
-  searchParams: Promise<{ created?: string; subdomain?: string }>;
+  searchParams: Promise<{ created?: string; subdomain?: string; inviteDelivery?: string }>;
+};
+
+type SetupInvitation = {
+  id: string;
+  school_id: string;
+  email: string;
+  delivery_status: "pending" | "sending" | "sent" | "failed";
+  sent_at: string | null;
+  delivery_attempt_count: number;
+  delivery_failure_reason: string | null;
+  created_at: string;
 };
 
 type School = SuperAdminSchoolSummary;
 
 export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
   const { supabase } = await requireSuperAdminAccess();
-  const { created, subdomain } = await searchParams;
+  const { created, subdomain, inviteDelivery } = await searchParams;
   const schoolsHref = "/admin/dashboard/schools";
 
   const [{ data: schools }, { data: cleanupJobs }] = await Promise.all([
@@ -46,8 +58,28 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
 
   const activeSchools = (schools || []).filter((school) => !school.archived_at);
   const archivedSchools = (schools || []).filter((school) => school.archived_at);
+  const { data: setupInvitations } = activeSchools.length
+    ? await supabase
+        .from("pending_admin_invites")
+        .select("id, school_id, email, delivery_status, sent_at, delivery_attempt_count, delivery_failure_reason, created_at")
+        .in("school_id", activeSchools.map((school) => school.id))
+        .or("role.eq.school_admin,role.is.null")
+        .not("created_by", "is", null)
+        .order("created_at", { ascending: false })
+        .returns<SetupInvitation[]>()
+    : { data: [] as SetupInvitation[] };
+  const latestInvitationBySchool = new Map<string, SetupInvitation>();
+  for (const invitation of setupInvitations || []) {
+    if (!latestInvitationBySchool.has(invitation.school_id)) {
+      latestInvitationBySchool.set(invitation.school_id, invitation);
+    }
+  }
   const activeRows = await Promise.all(
-    activeSchools.map(async (school) => ({ school, href: await getSchoolAdminPath(school.subdomain) }))
+    activeSchools.map(async (school) => ({
+      school,
+      href: await getSchoolAdminPath(school.subdomain),
+      invitation: latestInvitationBySchool.get(school.id),
+    }))
   );
   const archivedRows = await Promise.all(
     archivedSchools.map(async (school) => {
@@ -72,6 +104,13 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
       {created && (
         <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-200">
           <p className="font-semibold">{created} was created and marked setup incomplete.</p>
+          <p className="mt-1">
+            {inviteDelivery === "sent"
+              ? "The school administrator setup email was sent."
+              : inviteDelivery === "record_failed"
+                ? "The school was retained, but its setup invitation record could not be created."
+                : "The school and invitation were retained, but the setup email was not delivered."}
+          </p>
           {subdomain && <div className="mt-2 space-y-1 font-mono text-xs"><p>{subdomain}.sundialk12.com</p><p>admin.sundialk12.com/{subdomain}</p></div>}
         </div>
       )}
@@ -83,12 +122,12 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
             <table className="w-full min-w-[64rem] text-left text-sm">
               <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400"><tr><th className="px-6 py-3">School</th><th className="px-6 py-3">Subdomain</th><th className="px-6 py-3">Setup</th><th className="px-6 py-3">Created</th><th className="px-6 py-3">Actions</th></tr></thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                {activeRows.map(({ school, href }) => {
+                {activeRows.map(({ school, href, invitation }) => {
                   const status = getSchoolSetupStatus(school);
                   return <tr key={school.id}>
                     <td className="px-6 py-4 font-bold">{school.name}</td>
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-300">{school.subdomain}</td>
-                    <td className="px-6 py-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold dark:bg-slate-800">{getSchoolSetupStatusLabel(status)}</span></td>
+                    <td className="px-6 py-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold dark:bg-slate-800">{getSchoolSetupStatusLabel(status)}</span>{invitation && <div className="mt-2"><p className="text-xs text-slate-500">Setup email: <span className="font-bold capitalize">{invitation.delivery_status}</span> · {invitation.email}</p>{invitation.delivery_status === "failed" && invitation.delivery_failure_reason && <p className="mt-1 max-w-xs text-xs text-amber-700 dark:text-amber-300">{invitation.delivery_failure_reason}</p>}{(invitation.delivery_status === "pending" || invitation.delivery_status === "failed") && <ResendSetupEmailButton inviteId={invitation.id} schoolId={school.id} />}</div>}</td>
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-300">{formatShortDate(school.created_at)}</td>
                     <td className="px-6 py-4"><div className="flex items-center gap-3"><Link href={href} className="font-bold text-blue-600 hover:text-blue-500 dark:text-blue-400">Open Dashboard</Link><SchoolLifecycleDialog mode="archive" school={school} /></div></td>
                   </tr>;

@@ -9,6 +9,7 @@ const RESERVED_ADMIN_PATHS = new Set([
   "admin",
   "api",
   "dashboard",
+  "invitations",
   "schools",
   "select-school",
   "status",
@@ -85,6 +86,11 @@ export function proxy(req: NextRequest) {
       return NextResponse.rewrite(url);
     }
 
+    if (pathname === "/invitations" || pathname.startsWith("/invitations/")) {
+      url.pathname = `/admin${pathname}`;
+      return rewritePreservingHost(url);
+    }
+
     // Keep internal /admin/* paths out of the visible admin-subdomain URL.
     if (pathname === "/admin") {
       url.pathname = "/";
@@ -149,7 +155,7 @@ export function proxy(req: NextRequest) {
       return nextPreservingPath();
     }
 
-    if (school === "dashboard" || school === "select-school") {
+    if (school === "dashboard" || school === "select-school" || school === "invitations") {
       return nextPreservingPath();
     }
 

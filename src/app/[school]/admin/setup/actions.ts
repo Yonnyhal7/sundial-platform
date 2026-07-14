@@ -233,6 +233,7 @@ async function saveStepData(
       .from("pending_admin_invites")
       .delete()
       .eq("school_id", schoolData.id)
+      .is("created_by", null)
       .in("role", ["school_admin", "editor"]);
 
     if (deleteError) {

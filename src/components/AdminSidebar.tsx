@@ -9,6 +9,7 @@ import {
   CalendarIcon,
   DashboardIcon,
 } from "@/components/admin/AdminNavIcons";
+import AdminLogoutButton from "@/components/admin/AdminLogoutButton";
 import SchoolLogo from "@/components/SchoolLogo";
 import SetupProgress from "@/components/setup/SetupProgress";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -341,6 +342,7 @@ export default function AdminSidebar({
             scope="admin"
             className="h-9 w-9 shrink-0 border-white/15 bg-white/10 text-white shadow-none hover:bg-white/15 dark:border-white/15 dark:bg-white/10 dark:hover:bg-white/15"
           />
+          <AdminLogoutButton school={school} compact />
         </div>
 
         <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
@@ -392,6 +394,10 @@ export default function AdminSidebar({
             ? renderSetupNav()
             : navItems.map((item) => renderNavItem(item))}
         </nav>
+
+        <div className="mt-auto border-t border-white/10 pt-4">
+          <AdminLogoutButton school={school} />
+        </div>
 
       </aside>
     </>

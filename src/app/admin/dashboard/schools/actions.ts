@@ -5,6 +5,12 @@ import { redirect } from "next/navigation";
 import { requireSuperAdminAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 import { generateSchoolSubdomainBase, generateUniqueSchoolSubdomain } from "@/lib/schools";
+import {
+  createSchoolSetupInvitationToken,
+  getSchoolSetupInvitationExpiration,
+  hashSchoolSetupInvitationToken,
+} from "@/lib/invitations/tokens";
+import { deliverSchoolSetupInvitation } from "@/lib/email/schoolSetupDelivery.server";
 
 export type CreateSchoolState = {
   error?: string;
@@ -20,10 +26,6 @@ function normalizeEmail(formData: FormData) {
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function createInviteToken() {
-  return crypto.randomUUID().replace(/-/g, "");
 }
 
 class SchoolInsertError extends Error {
@@ -99,19 +101,25 @@ async function createPendingAdminInvite({
   createdBy: string;
 }) {
   const serviceSupabase = createSupabaseServiceRoleClient();
-  const { error } = await serviceSupabase.from("pending_admin_invites").insert({
-    school_id: schoolId,
-    email,
-    invite_token: createInviteToken(),
-    status: "pending",
-    created_by: createdBy,
-  });
+  const rawToken = createSchoolSetupInvitationToken();
+  const tokenHash = hashSchoolSetupInvitationToken(rawToken);
+  const expiresAt = getSchoolSetupInvitationExpiration();
+  const { data, error } = await serviceSupabase
+    .from("pending_admin_invites")
+    .insert({
+      school_id: schoolId,
+      email,
+      invite_token: tokenHash,
+      expires_at: expiresAt.toISOString(),
+      status: "pending",
+      role: "school_admin",
+      created_by: createdBy,
+    })
+    .select("id")
+    .single<{ id: string }>();
 
-  if (error) {
-    console.error("Pending admin invite error:", JSON.stringify(error, null, 2));
-  }
-
-  // TODO: Email the temporary login/invite link to the school admin.
+  if (error || !data) throw new Error("Could not create the school setup invitation.");
+  return { inviteId: data.id, rawToken, tokenHash, expiresAt };
 }
 
 export async function createSchoolAction(
@@ -182,11 +190,27 @@ export async function createSchoolAction(
     };
   }
 
-  await createPendingAdminInvite({
-    schoolId: school.id,
-    email: adminEmail,
-    createdBy: profile.id,
-  });
+  let inviteDelivery = "record_failed";
+  try {
+    const invitation = await createPendingAdminInvite({
+      schoolId: school.id,
+      email: adminEmail,
+      createdBy: profile.id,
+    });
+    const delivery = await deliverSchoolSetupInvitation({
+      supabase,
+      inviteId: invitation.inviteId,
+      schoolId: school.id,
+      rawToken: invitation.rawToken,
+      tokenHash: invitation.tokenHash,
+      expiresAt: invitation.expiresAt,
+      rotateToken: false,
+    });
+    inviteDelivery = delivery.status;
+  } catch {
+    // The school is intentionally retained. The SuperAdmin can inspect and
+    // retry invitation delivery without recreating tenant data.
+  }
 
   // TODO: Provision custom/preview domain through the Vercel Domains API.
   // TODO: Create the school DNS record through the Cloudflare DNS API.
@@ -195,6 +219,6 @@ export async function createSchoolAction(
   redirect(
     `/admin/dashboard/schools?created=${encodeURIComponent(name)}&subdomain=${encodeURIComponent(
       school.subdomain
-    )}`
+    )}&inviteDelivery=${encodeURIComponent(inviteDelivery)}`
   );
 }

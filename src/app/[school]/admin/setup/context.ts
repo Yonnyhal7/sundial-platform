@@ -54,6 +54,7 @@ export async function getSetupContext(school: string) {
     .from("pending_admin_invites")
     .select("id, email, role, permission_keys")
     .eq("school_id", schoolData.id)
+    .is("created_by", null)
     .in("role", ["school_admin", "editor"])
     .returns<
       Array<{
