@@ -1,7 +1,21 @@
 import { notFound } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  getAssignedScheduleForCalendarDay,
+  getScheduleByIdForSchool,
+  type CalendarDayScheduleSummary,
+} from "@/lib/calendarDaySchedule";
 import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 import { formatDateInTimeZone } from "@/lib/localDate";
+
+type CalendarDay = {
+  id: string;
+  school_id: string;
+  date: string;
+  label: string | null;
+  is_school_day: boolean;
+  schedule_id: string | null;
+};
 
 function formatTime(time: string) {
   return new Date(`2000-01-01T${time}`).toLocaleTimeString([], {
@@ -35,29 +49,42 @@ export default async function SchoolSchedulePage({
     .select(
       `
       id,
+      school_id,
       date,
       label,
       is_school_day,
-      schedule:schedules (
-        id,
-        schedule_name,
-        schedule_type,
-        calendar_color,
-        setup_status
-      )
+      schedule_id
     `
     )
     .eq("school_id", schoolData.id)
     .eq("date", today)
-    .maybeSingle();
+    .maybeSingle<CalendarDay>();
 
   if (calendarError) {
     console.error("Public schedule calendar error:", JSON.stringify(calendarError, null, 2));
   }
 
-  const schedule = Array.isArray(calendarDay?.schedule)
-    ? calendarDay?.schedule[0]
-    : calendarDay?.schedule;
+  let schedule: CalendarDayScheduleSummary | null = null;
+
+  if (calendarDay?.schedule_id && calendarDay.is_school_day !== false) {
+    const { data: schedules, error: scheduleError } = await supabase
+      .from("schedules")
+      .select("id, school_id, schedule_name, schedule_type, calendar_color, setup_status, active")
+      .eq("school_id", schoolData.id)
+      .eq("active", true)
+      .eq("id", calendarDay.schedule_id)
+      .returns<CalendarDayScheduleSummary[]>();
+
+    if (scheduleError) {
+      console.error("Public schedule schedule error:", JSON.stringify(scheduleError, null, 2));
+    }
+
+    schedule = getAssignedScheduleForCalendarDay(
+      calendarDay,
+      getScheduleByIdForSchool(schedules || [], schoolData.id)
+    );
+  }
+
   const scheduleColor = schedule ? getScheduleCalendarColor(schedule) : null;
 
   const { data: periods, error: periodsError } =

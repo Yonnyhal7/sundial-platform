@@ -1,4 +1,10 @@
 import AppScheduleDashboard from "@/components/mobile-app/AppScheduleDashboard";
+import {
+  getAssignedScheduleForCalendarDay,
+  getScheduleByIdForSchool,
+  getScheduleDisplayName,
+  type CalendarDayScheduleSummary,
+} from "@/lib/calendarDaySchedule";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -7,24 +13,11 @@ import type { SchedulePeriod } from "@/lib/scheduleTime";
 
 type CalendarDay = {
   id: string;
+  school_id: string;
   date: string;
   label: string | null;
   is_school_day: boolean;
   schedule_id: string | null;
-      schedule:
-    | {
-        id: string;
-        schedule_name: string;
-        schedule_type: string | null;
-        setup_status: string | null;
-      }
-    | {
-        id: string;
-        schedule_name: string;
-        schedule_type: string | null;
-        setup_status: string | null;
-      }[]
-    | null;
 };
 
 function getGreeting() {
@@ -54,16 +47,11 @@ export default async function MobileAppHome({
       .select(
         `
       id,
+      school_id,
       date,
       label,
       is_school_day,
-      schedule_id,
-      schedule:schedules (
-        id,
-        schedule_name,
-        schedule_type,
-        setup_status
-      )
+      schedule_id
     `
       )
       .eq("school_id", schoolData.id)
@@ -71,15 +59,34 @@ export default async function MobileAppHome({
       .maybeSingle<CalendarDay>()
   );
 
-  let periods: SchedulePeriod[] = [];
+  let assignedSchedule: CalendarDayScheduleSummary | null = null;
 
   if (calendarDay?.schedule_id && calendarDay.is_school_day !== false) {
+    const { data: schedules } = await navTiming.query("schedules", () =>
+      supabase
+        .from("schedules")
+        .select("id, school_id, schedule_name, schedule_type, setup_status, active")
+        .eq("school_id", schoolData.id)
+        .eq("active", true)
+        .eq("id", calendarDay.schedule_id)
+        .returns<CalendarDayScheduleSummary[]>()
+    );
+
+    assignedSchedule = getAssignedScheduleForCalendarDay(
+      calendarDay,
+      getScheduleByIdForSchool(schedules || [], schoolData.id)
+    );
+  }
+
+  let periods: SchedulePeriod[] = [];
+
+  if (assignedSchedule) {
     const { data: periodData } = await navTiming.query("periods", () =>
       supabase
         .from("periods")
         .select("id, name, start_time, end_time, sort_order")
         .eq("school_id", schoolData.id)
-        .eq("schedule_id", calendarDay.schedule_id)
+        .eq("schedule_id", assignedSchedule.id)
         .order("sort_order", { ascending: true })
         .order("start_time", { ascending: true })
     );
@@ -87,17 +94,14 @@ export default async function MobileAppHome({
     periods = periodData || [];
   }
 
-  const assignedSchedule = Array.isArray(calendarDay?.schedule)
-    ? calendarDay?.schedule[0]
-    : calendarDay?.schedule;
   const scheduleName = calendarDay?.is_school_day === false
     ? calendarDay.label || "No School"
     : assignedSchedule?.schedule_name || "No Schedule Assigned";
-  const scheduleType = assignedSchedule?.schedule_type || "";
   const scheduleNeedsTimes = assignedSchedule?.setup_status === "needs_times";
-  const todayScheduleLabel = scheduleType
-    ? `${scheduleName} (${scheduleType})`
-    : scheduleName;
+  const todayScheduleLabel =
+    calendarDay?.is_school_day === false || !assignedSchedule
+      ? scheduleName
+      : getScheduleDisplayName(assignedSchedule);
   const todayLabel = new Date(`${today}T00:00:00`).toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",

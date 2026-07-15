@@ -2,6 +2,12 @@ import KioskDisplay from "./KioskDisplay";
 import OfflineKioskRuntime from "@/components/offline/OfflineKioskRuntime";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { formatGameTime } from "@/lib/athletics";
+import {
+  getAssignedScheduleForCalendarDay,
+  getScheduleByIdForSchool,
+  getScheduleDisplayName,
+  type CalendarDayScheduleSummary,
+} from "@/lib/calendarDaySchedule";
 import { addDaysToLocalDateString, formatDateInTimeZone } from "@/lib/localDate";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeAppearancePreference } from "@/lib/themeScope";
@@ -18,24 +24,11 @@ type Period = {
 
 type CalendarDay = {
   id: string;
+  school_id: string;
   date: string;
   is_school_day: boolean;
   label: string | null;
   schedule_id: string | null;
-      schedule:
-    | {
-        id: string;
-        schedule_name: string;
-        schedule_type: string | null;
-        setup_status: string | null;
-      }
-    | {
-        id: string;
-        schedule_name: string;
-        schedule_type: string | null;
-        setup_status: string | null;
-      }[]
-    | null;
 };
 
 type Sport = {
@@ -115,37 +108,47 @@ export default async function KioskPage({
     .select(
       `
       id,
+      school_id,
       date,
       is_school_day,
       label,
-      schedule_id,
-      schedule:schedules (
-        id,
-        schedule_name,
-        schedule_type,
-        setup_status
-      )
+      schedule_id
     `
     )
     .eq("school_id", schoolData.id)
     .eq("date", today)
     .maybeSingle<CalendarDay>();
 
-  const assignedSchedule = Array.isArray(calendarDay?.schedule)
-    ? calendarDay?.schedule[0]
-    : calendarDay?.schedule;
-  const scheduleName = assignedSchedule?.schedule_name || "No Schedule Assigned";
-  const scheduleType = assignedSchedule?.schedule_type || "";
-  const scheduleNeedsTimes = assignedSchedule?.setup_status === "needs_times";
-  const dayType = scheduleType ? `${scheduleName} (${scheduleType})` : scheduleName;
-  let periods: Period[] = [];
+  let assignedSchedule: CalendarDayScheduleSummary | null = null;
 
   if (calendarDay?.schedule_id && calendarDay.is_school_day !== false) {
+    const { data: schedules } = await supabase
+      .from("schedules")
+      .select("id, school_id, schedule_name, schedule_type, setup_status, active")
+      .eq("school_id", schoolData.id)
+      .eq("active", true)
+      .eq("id", calendarDay.schedule_id)
+      .returns<CalendarDayScheduleSummary[]>();
+
+    assignedSchedule = getAssignedScheduleForCalendarDay(
+      calendarDay,
+      getScheduleByIdForSchool(schedules || [], schoolData.id)
+    );
+  }
+
+  const scheduleName = assignedSchedule?.schedule_name || "No Schedule Assigned";
+  const scheduleNeedsTimes = assignedSchedule?.setup_status === "needs_times";
+  const dayType = assignedSchedule
+    ? getScheduleDisplayName(assignedSchedule)
+    : scheduleName;
+  let periods: Period[] = [];
+
+  if (assignedSchedule) {
     const { data: periodData } = await supabase
       .from("periods")
       .select("id, name, start_time, end_time, sort_order")
       .eq("school_id", schoolData.id)
-      .eq("schedule_id", calendarDay.schedule_id)
+      .eq("schedule_id", assignedSchedule.id)
       .order("sort_order", { ascending: true })
       .order("start_time", { ascending: true });
 

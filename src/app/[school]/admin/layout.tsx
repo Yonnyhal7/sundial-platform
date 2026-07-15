@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import type { CSSProperties } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
+import { getForwardedHost } from "@/lib/routing/hosts";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
 import { getSchoolForSetup } from "@/lib/schools";
 import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
@@ -35,6 +37,7 @@ export default async function AdminLayout({
     notFound();
   }
 
+  const requestHostname = getForwardedHost(await headers());
   const schoolTheme = getSchoolThemeModes(setupSchoolData);
   const adminUser = await requireAdminPortalAccess(setupSchoolData.id, school);
 
@@ -68,6 +71,7 @@ export default async function AdminLayout({
         logoUrl={setupSchoolData.logo_url || null}
         setupComplete={setupSchoolData.setup_complete}
         setupStep={setupSchoolData.setup_step}
+        requestHostname={requestHostname}
         canManageSettings={
           isSuperAdminRole(adminUser.profile.role) ||
           isSchoolAdminRole(adminUser.profile.role)

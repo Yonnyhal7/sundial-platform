@@ -21,6 +21,8 @@ import {
 } from "@/lib/setupSteps";
 import {
   getSchoolAdminBasePath,
+  getSchoolAppUrl,
+  getSchoolKioskUrl,
   getSchoolSetupPath,
   getSchoolSetupStepPath,
 } from "@/lib/routing/paths";
@@ -34,6 +36,7 @@ type AdminSidebarProps = {
   allowedPermissionKeys?: AdminPermissionKey[];
   setupComplete?: boolean | null;
   setupStep?: string | null;
+  requestHostname?: string;
 };
 
 type SidebarNavItem = {
@@ -43,6 +46,12 @@ type SidebarNavItem = {
   exact?: boolean;
   locked?: boolean;
   badge?: string;
+};
+
+type SidebarExperienceItem = {
+  label: string;
+  href: string;
+  icon: ReactNode;
 };
 
 function SettingsGearIcon({ className = "" }: { className?: string }) {
@@ -65,6 +74,54 @@ function SettingsGearIcon({ className = "" }: { className?: string }) {
   );
 }
 
+function PhoneDeviceIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.9"
+    >
+      <rect x="7.25" y="3" width="9.5" height="18" rx="2.25" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.25 6h3.5M11 17.5h2" />
+    </svg>
+  );
+}
+
+function KioskDisplayIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.9"
+    >
+      <rect x="3.75" y="4.5" width="16.5" height="11" rx="2" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 20h6M12 15.5V20" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth="1.9"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 5h5v5M19 5l-8 8" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 7H6.5A1.5 1.5 0 0 0 5 8.5v9A1.5 1.5 0 0 0 6.5 19h9a1.5 1.5 0 0 0 1.5-1.5V13" />
+    </svg>
+  );
+}
+
 export default function AdminSidebar({
   school,
   schoolName,
@@ -73,6 +130,7 @@ export default function AdminSidebar({
   allowedPermissionKeys = [],
   setupComplete = true,
   setupStep,
+  requestHostname = "",
 }: AdminSidebarProps) {
   const pathname = usePathname();
   const base = getSchoolAdminBasePath(school, pathname, "");
@@ -89,6 +147,8 @@ export default function AdminSidebar({
   const ResourcesIcon = ADMIN_TAB_ICONS.resources;
   const UsersIcon = ADMIN_TAB_ICONS.users;
   const SettingsIcon = SettingsGearIcon;
+  const AppIcon = PhoneDeviceIcon;
+  const KioskIcon = KioskDisplayIcon;
 
   const canAccess = (permissionKey: AdminPermissionKey) =>
     allowedPermissionKeys.includes(permissionKey);
@@ -186,6 +246,21 @@ export default function AdminSidebar({
           : []),
       ];
 
+  const experienceNavItems: SidebarExperienceItem[] = isSetupIncomplete
+    ? []
+    : [
+        {
+          label: "View App",
+          href: getSchoolAppUrl(school, pathname, requestHostname),
+          icon: <AppIcon className={iconClass} />,
+        },
+        {
+          label: "View Kiosk",
+          href: getSchoolKioskUrl(school, pathname, requestHostname),
+          icon: <KioskIcon className={iconClass} />,
+        },
+      ];
+
   function renderNavItem(item: SidebarNavItem, compact = false) {
     const isActive =
       item.href &&
@@ -239,6 +314,70 @@ export default function AdminSidebar({
           </span>
         )}
       </Link>
+    );
+  }
+
+  function renderExperienceItem(item: SidebarExperienceItem, compact = false) {
+    const baseClass = compact
+      ? "flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/45"
+      : "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/45";
+
+    return (
+      <a
+        key={item.label}
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={baseClass}
+        aria-label={`${item.label} for ${schoolName}. Opens in a new tab.`}
+      >
+        {item.icon}
+
+        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+
+        <ExternalLinkIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+      </a>
+    );
+  }
+
+  function renderMainNav(compact = false) {
+    if (isSetupIncomplete) {
+      return renderSetupNav(compact);
+    }
+
+    if (compact) {
+      return (
+        <>
+          {navItems.map((item) => renderNavItem(item, true))}
+
+          {experienceNavItems.length > 0 && (
+            <>
+              <span
+                className="my-2 h-8 w-px shrink-0 bg-white/15"
+                aria-hidden="true"
+              />
+              {experienceNavItems.map((item) => renderExperienceItem(item, true))}
+            </>
+          )}
+        </>
+      );
+    }
+
+    return (
+      <>
+        {navItems.map((item) => renderNavItem(item))}
+
+        {experienceNavItems.length > 0 && (
+          <div className="mt-4 border-t border-white/10 pt-4">
+            <p className="px-4 pb-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-white/45">
+              School experience
+            </p>
+            <div className="space-y-1.5 min-[1180px]:space-y-2">
+              {experienceNavItems.map((item) => renderExperienceItem(item))}
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -351,9 +490,7 @@ export default function AdminSidebar({
         </div>
 
         <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-          {isSetupIncomplete
-            ? renderSetupNav(true)
-            : navItems.map((item) => renderNavItem(item, true))}
+          {renderMainNav(true)}
         </nav>
       </header>
 
@@ -394,10 +531,8 @@ export default function AdminSidebar({
           />
         </div>
 
-        <nav className="space-y-1.5 min-[1180px]:space-y-2">
-          {isSetupIncomplete
-            ? renderSetupNav()
-            : navItems.map((item) => renderNavItem(item))}
+        <nav className="min-h-0 flex-1 overflow-y-auto pr-1 space-y-1.5 min-[1180px]:space-y-2">
+          {renderMainNav()}
         </nav>
 
         <div className="mt-auto border-t border-white/10 pt-4">

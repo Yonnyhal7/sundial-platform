@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   getAdminUtilityPath,
+  getSchoolAppUrl,
   getSchoolAdminPath,
+  getSchoolKioskUrl,
   getSchoolLoginDestination,
   getSchoolSetupPath,
   getSchoolSetupStepPath,
@@ -245,6 +247,51 @@ describe("admin route path helpers", () => {
     );
     expect(getAdminUtilityPath("/deloro/admin/setup", "localhost", "/select-school")).toBe(
       "/select-school"
+    );
+  });
+
+  it("builds tenant-scoped public App and Kiosk URLs from the production admin host", () => {
+    expect(
+      getSchoolAppUrl("deloro", "/deloro/dashboard", "admin.sundialk12.com")
+    ).toBe("https://www.sundialk12.com/deloro/app");
+    expect(
+      getSchoolKioskUrl("deloro", "/deloro/dashboard", "admin.sundialk12.com")
+    ).toBe("https://www.sundialk12.com/deloro/kiosk");
+  });
+
+  it("keeps App and Kiosk shortcuts path-based on localhost", () => {
+    expect(getSchoolAppUrl("test", "/test/admin", "localhost:3000")).toBe(
+      "/test/app"
+    );
+    expect(getSchoolKioskUrl("test", "/test/admin", "localhost:3000")).toBe(
+      "/test/kiosk"
+    );
+  });
+
+  it("keeps App and Kiosk shortcuts school-first on the public www host", () => {
+    expect(getSchoolAppUrl("deloro", "/deloro/admin", "www.sundialk12.com")).toBe(
+      "/deloro/app"
+    );
+    expect(
+      getSchoolKioskUrl("deloro", "/deloro/admin", "www.sundialk12.com")
+    ).toBe("/deloro/kiosk");
+  });
+
+  it("keeps App and Kiosk shortcuts root-relative on school subdomains", () => {
+    expect(getSchoolAppUrl("deloro", "/deloro/admin", "deloro.sundialk12.com")).toBe(
+      "/app"
+    );
+    expect(
+      getSchoolKioskUrl("deloro", "/deloro/admin", "deloro.sundialk12.com")
+    ).toBe("/kiosk");
+  });
+
+  it("does not leak one school's shortcut URLs into another tenant", () => {
+    expect(getSchoolAppUrl("north", "/north/admin", "admin.sundialk12.com")).toBe(
+      "https://www.sundialk12.com/north/app"
+    );
+    expect(getSchoolAppUrl("north", "/north/admin", "admin.sundialk12.com")).not.toContain(
+      "deloro"
     );
   });
 });

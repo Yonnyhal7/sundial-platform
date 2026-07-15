@@ -53,6 +53,63 @@ export function getSchoolAppBasePath(
   return `${getSchoolSiteBasePath(school, pathname, hostname)}/app`;
 }
 
+export function getSchoolKioskBasePath(
+  school: string,
+  pathname: string,
+  hostname: string
+) {
+  return `${getSchoolSiteBasePath(school, pathname, hostname)}/kiosk`;
+}
+
+function getRootDomain() {
+  return process.env.NEXT_PUBLIC_ROOT_DOMAIN || "sundialk12.com";
+}
+
+function normalizeRouteHostname(hostname: string) {
+  const forwardedHost = hostname.split(",")[0]?.trim() || "";
+
+  if (forwardedHost.startsWith("[")) {
+    const closingBracketIndex = forwardedHost.indexOf("]");
+
+    return closingBracketIndex === -1
+      ? forwardedHost.toLowerCase()
+      : forwardedHost.slice(0, closingBracketIndex + 1).toLowerCase();
+  }
+
+  return forwardedHost.split(":")[0]?.toLowerCase() || "";
+}
+
+function getPublicSchoolExperienceBase(
+  school: string,
+  pathname: string,
+  hostname: string
+) {
+  const normalizedHostname = normalizeRouteHostname(hostname);
+  const rootDomain = getRootDomain();
+
+  if (normalizedHostname === `admin.${rootDomain}`) {
+    return `https://www.${rootDomain}/${school}`;
+  }
+
+  return getSchoolSiteBasePath(school, pathname, normalizedHostname);
+}
+
+export function getSchoolAppUrl(
+  school: string,
+  pathname: string,
+  hostname: string
+) {
+  return `${getPublicSchoolExperienceBase(school, pathname, hostname)}/app`;
+}
+
+export function getSchoolKioskUrl(
+  school: string,
+  pathname: string,
+  hostname: string
+) {
+  return `${getPublicSchoolExperienceBase(school, pathname, hostname)}/kiosk`;
+}
+
 export function getSchoolAdminBasePath(
   school: string,
   pathname: string,

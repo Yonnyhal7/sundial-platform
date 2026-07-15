@@ -1,6 +1,12 @@
 import CalendarScheduleClient, {
   type CalendarScheduleDay,
 } from "@/components/mobile-app/CalendarScheduleClient";
+import {
+  getAssignedScheduleForCalendarDay,
+  getCalendarDayScheduleIds,
+  getScheduleByIdForSchool,
+  type CalendarDayScheduleSummary,
+} from "@/lib/calendarDaySchedule";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { formatLocalDate, getMonthKey } from "@/lib/localDate";
 import { createNavDiagnostics } from "@/lib/navDiagnostics";
@@ -12,26 +18,11 @@ import {
 
 type CalendarDay = {
   id: string;
+  school_id: string;
   date: string;
   label: string | null;
   is_school_day: boolean;
   schedule_id: string | null;
-      schedule:
-    | {
-        id: string;
-        schedule_name: string;
-        schedule_type: string | null;
-        calendar_color: string | null;
-        setup_status: string | null;
-      }
-    | {
-        id: string;
-        schedule_name: string;
-        schedule_type: string | null;
-        calendar_color: string | null;
-        setup_status: string | null;
-      }[]
-    | null;
 };
 
 type PeriodWithSchedule = SchedulePeriod & {
@@ -102,17 +93,11 @@ export default async function MobileSchedulePage({
       .select(
         `
       id,
+      school_id,
       date,
       label,
       is_school_day,
-      schedule_id,
-      schedule:schedules (
-        id,
-        schedule_name,
-        schedule_type,
-        calendar_color,
-        setup_status
-      )
+      schedule_id
     `
       )
       .eq("school_id", schoolData.id)
@@ -122,20 +107,32 @@ export default async function MobileSchedulePage({
       .returns<CalendarDay[]>()
   );
 
-  const scheduleIds = Array.from(
-    new Set((calendarDays || []).map((day) => day.schedule_id).filter(Boolean))
-  ) as string[];
+  const scheduleIds = getCalendarDayScheduleIds(calendarDays || []);
+  let scheduleById = new Map<string, CalendarDayScheduleSummary>();
   let periodsByScheduleId: Record<string, SchedulePeriod[]> = {};
 
   if (scheduleIds.length > 0) {
-    const { data: periodData } = await navTiming.query("periods", () =>
-      supabase
-        .from("periods")
-        .select("id, schedule_id, name, start_time, end_time, sort_order")
-        .eq("school_id", schoolData.id)
-        .in("schedule_id", scheduleIds)
-        .returns<PeriodWithSchedule[]>()
-    );
+    const [{ data: scheduleData }, { data: periodData }] = await Promise.all([
+      navTiming.query("schedules", () =>
+        supabase
+          .from("schedules")
+          .select("id, school_id, schedule_name, schedule_type, calendar_color, setup_status, active")
+          .eq("school_id", schoolData.id)
+          .eq("active", true)
+          .in("id", scheduleIds)
+          .returns<CalendarDayScheduleSummary[]>()
+      ),
+      navTiming.query("periods", () =>
+        supabase
+          .from("periods")
+          .select("id, schedule_id, name, start_time, end_time, sort_order")
+          .eq("school_id", schoolData.id)
+          .in("schedule_id", scheduleIds)
+          .returns<PeriodWithSchedule[]>()
+      ),
+    ]);
+
+    scheduleById = getScheduleByIdForSchool(scheduleData || [], schoolData.id);
 
     periodsByScheduleId = (periodData || []).reduce<Record<string, SchedulePeriod[]>>(
       (acc, period) => {
@@ -162,9 +159,10 @@ export default async function MobileSchedulePage({
   const days: CalendarScheduleDay[] = monthDates.map((date) => {
     const dateKey = formatLocalDate(date);
     const calendarDay = calendarDayByDate.get(dateKey);
-    const assignedSchedule = Array.isArray(calendarDay?.schedule)
-      ? calendarDay?.schedule[0]
-      : calendarDay?.schedule;
+    const assignedSchedule = getAssignedScheduleForCalendarDay(
+      calendarDay,
+      scheduleById
+    );
     const periods = calendarDay?.schedule_id
       ? periodsByScheduleId[calendarDay.schedule_id] || []
       : [];
