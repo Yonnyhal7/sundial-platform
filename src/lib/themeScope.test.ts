@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getPreferredAppearance,
   getStoredAppearancePreference,
   getTenantThemeStorageKey,
   setStoredAppearancePreference,
@@ -76,5 +77,23 @@ describe("theme scope storage", () => {
     expect(getStoredAppearancePreference("kiosk", "deloro")).toBe("system");
     expect(localStorage.getItem("sundial:kiosk:appearance:deloro")).toBe("system");
     expect(localStorage.getItem("sundial:kiosk:appearance")).toBeNull();
+  });
+
+  it("defaults the global admin appearance to system before login", () => {
+    expect(getPreferredAppearance("admin")).toBe("system");
+  });
+
+  it("persists admin light, dark, and system appearance choices locally", () => {
+    setStoredAppearancePreference("admin", "light");
+    expect(getStoredAppearancePreference("admin")).toBe("light");
+    expect(getPreferredAppearance("admin")).toBe("light");
+
+    setStoredAppearancePreference("admin", "dark");
+    expect(getStoredAppearancePreference("admin")).toBe("dark");
+    expect(getPreferredAppearance("admin")).toBe("dark");
+
+    setStoredAppearancePreference("admin", "system");
+    expect(getStoredAppearancePreference("admin")).toBe("system");
+    expect(getPreferredAppearance("admin")).toBe("system");
   });
 });

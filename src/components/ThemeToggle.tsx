@@ -3,9 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   applyTheme,
-  getPreferredTheme,
   getPreferredAppearance,
-  getThemeStorageKey,
   isDeviceAppearanceScope,
   resolveAppearanceTheme,
   setStoredAppearancePreference,
@@ -13,6 +11,12 @@ import {
   type Theme,
   type ThemeScope,
 } from "@/lib/themeScope";
+
+const appearanceOptions: { value: AppearancePreference; label: string }[] = [
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "system", label: "System" },
+];
 
 function MoonIcon() {
   return (
@@ -57,79 +61,52 @@ export default function ThemeToggle({
   className = "",
   schoolDefaultAppearance,
   schoolSlug,
+  variant = "auto",
 }: {
   scope: ThemeScope;
   className?: string;
   schoolDefaultAppearance?: AppearancePreference;
   schoolSlug?: string;
+  variant?: "auto" | "icon" | "segmented";
 }) {
   const [theme, setTheme] = useState<Theme | null>(null);
   const [appearance, setAppearance] = useState<AppearancePreference>("system");
-  const storageKey = getThemeStorageKey(scope);
   const isDeviceAppearance = isDeviceAppearanceScope(scope);
+  const useSegmentedControl =
+    variant === "segmented" || (variant === "auto" && isDeviceAppearance);
 
   useEffect(() => {
-    if (isDeviceAppearance) {
-      const preferredAppearance = getPreferredAppearance(
+    const preferredAppearance = getPreferredAppearance(
+      scope,
+      schoolDefaultAppearance,
+      schoolSlug
+    );
+    const preferredTheme = resolveAppearanceTheme(preferredAppearance);
+
+    applyTheme(preferredTheme, scope, preferredAppearance);
+
+    const timeout = window.setTimeout(() => {
+      setAppearance(preferredAppearance);
+      setTheme(preferredTheme);
+    }, 0);
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+    function handleSystemThemeChange(event: MediaQueryListEvent) {
+      const currentAppearance = getPreferredAppearance(
         scope,
         schoolDefaultAppearance,
         schoolSlug
       );
-      const preferredTheme = resolveAppearanceTheme(preferredAppearance);
 
-      applyTheme(preferredTheme, scope, preferredAppearance);
-
-      const timeout = window.setTimeout(() => {
-        setAppearance(preferredAppearance);
-        setTheme(preferredTheme);
-      }, 0);
-      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
-      function handleSystemThemeChange(event: MediaQueryListEvent) {
-        const currentAppearance = getPreferredAppearance(
-          scope,
-          schoolDefaultAppearance,
-          schoolSlug
-        );
-
-        if (currentAppearance !== "system") {
-          return;
-        }
-
-        const nextTheme = event.matches ? "dark" : "light";
-
-        setAppearance(currentAppearance);
-        setTheme(nextTheme);
-        applyTheme(nextTheme, scope, currentAppearance);
-      }
-
-      mediaQuery.addEventListener("change", handleSystemThemeChange);
-
-      return () => {
-        window.clearTimeout(timeout);
-        mediaQuery.removeEventListener("change", handleSystemThemeChange);
-      };
-    }
-
-    const preferredTheme = getPreferredTheme(storageKey);
-
-    applyTheme(preferredTheme, scope);
-
-    const timeout = window.setTimeout(() => {
-      setTheme(preferredTheme);
-    }, 0);
-
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-
-    function handleSystemThemeChange(event: MediaQueryListEvent) {
-      if (window.localStorage.getItem(storageKey)) {
+      if (currentAppearance !== "system") {
         return;
       }
 
       const nextTheme = event.matches ? "dark" : "light";
 
+      setAppearance(currentAppearance);
       setTheme(nextTheme);
-      applyTheme(nextTheme, scope);
+      applyTheme(nextTheme, scope, currentAppearance);
     }
 
     mediaQuery.addEventListener("change", handleSystemThemeChange);
@@ -138,7 +115,7 @@ export default function ThemeToggle({
       window.clearTimeout(timeout);
       mediaQuery.removeEventListener("change", handleSystemThemeChange);
     };
-  }, [isDeviceAppearance, schoolDefaultAppearance, schoolSlug, scope, storageKey]);
+  }, [schoolDefaultAppearance, schoolSlug, scope]);
 
   const isDark = theme === "dark";
   const nextTheme = isDark ? "light" : "dark";
@@ -154,17 +131,12 @@ export default function ThemeToggle({
 
   function toggleTheme() {
     setTheme(nextTheme);
-    window.localStorage.setItem(storageKey, nextTheme);
-    applyTheme(nextTheme, scope);
+    setAppearance(nextTheme);
+    setStoredAppearancePreference(scope, nextTheme, schoolSlug);
+    applyTheme(nextTheme, scope, nextTheme);
   }
 
-  if (isDeviceAppearance) {
-    const options: { value: AppearancePreference; label: string }[] = [
-      { value: "light", label: "Light" },
-      { value: "dark", label: "Dark" },
-      { value: "system", label: "System" },
-    ];
-
+  if (useSegmentedControl) {
     return (
       <div
         className={[
@@ -172,9 +144,9 @@ export default function ThemeToggle({
           className,
         ].join(" ")}
         role="radiogroup"
-        aria-label="Appearance"
+        aria-label={`Appearance. ${appearance} selected`}
       >
-        {options.map((option) => {
+        {appearanceOptions.map((option, index) => {
           const selected = appearance === option.value;
 
           return (
@@ -184,6 +156,27 @@ export default function ThemeToggle({
               role="radio"
               aria-checked={selected}
               onClick={() => chooseAppearance(option.value)}
+              onKeyDown={(event) => {
+                const lastIndex = appearanceOptions.length - 1;
+                let nextIndex: number | null = null;
+
+                if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                  nextIndex = index === lastIndex ? 0 : index + 1;
+                } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                  nextIndex = index === 0 ? lastIndex : index - 1;
+                } else if (event.key === "Home") {
+                  nextIndex = 0;
+                } else if (event.key === "End") {
+                  nextIndex = lastIndex;
+                }
+
+                if (nextIndex === null) {
+                  return;
+                }
+
+                event.preventDefault();
+                chooseAppearance(appearanceOptions[nextIndex].value);
+              }}
               className={[
                 "rounded-full px-3 py-2 transition focus:outline-none focus:ring-2 focus:ring-[var(--school-primary,#d4a017)] focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-black",
                 selected
