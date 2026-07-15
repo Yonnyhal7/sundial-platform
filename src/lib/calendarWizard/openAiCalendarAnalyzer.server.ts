@@ -9,9 +9,11 @@ import { buildCalendarImportResponsesRequest } from "./openAiCalendarRequest";
 import { createMockAiCalendarImportResult } from "./mockAiCalendarAnalyzer";
 import {
   OpenAiCalendarApplicationTimeoutError,
+  OpenAiCalendarPdfPreparationError,
   createOpenAiCalendarTimeoutController,
   getCalendarImportMode,
   getOpenAiCalendarTimeoutMs,
+  logOpenAiCalendarDiagnostic,
   mapOpenAiError,
   openAiResponseHasRefusal,
   openAiResponseIncomplete,
@@ -67,22 +69,46 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
   let stage: OpenAiCalendarAnalysisStage = "preparing_file";
   let fileUploadSucceeded = false;
   let responsesApiCallBegan = false;
-  const uploadableFile = await toFile(file, file.name || "calendar.pdf", {
-    type: "application/pdf",
-  });
+  let uploadableFile: Awaited<ReturnType<typeof toFile>>;
+  try {
+    uploadableFile = await toFile(file, file.name || "calendar.pdf", {
+      type: "application/pdf",
+    });
+  } catch {
+    return mapOpenAiError(new OpenAiCalendarPdfPreparationError());
+  }
   let openAiFileId: string | null = null;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const timeoutController = createOpenAiCalendarTimeoutController(timeoutMs);
 
     try {
-      stage = "uploading_file";
-      const uploaded = await client.files.create({
-        file: uploadableFile,
-        purpose: "user_data",
+      logOpenAiCalendarDiagnostic("info", "openai_attempt_started", {
+        model,
+        stage,
+        fileUploadSucceeded,
+        responsesApiCallBegan,
+        durationMs: Date.now() - startedAt,
       });
+
+      stage = "uploading_file";
+      const uploaded = await client.files.create(
+        {
+          file: uploadableFile,
+          purpose: "user_data",
+        },
+        { signal: timeoutController.controller.signal }
+      );
       openAiFileId = uploaded.id;
       fileUploadSucceeded = true;
+      stage = "file_uploaded";
+      logOpenAiCalendarDiagnostic("info", "openai_file_uploaded", {
+        model,
+        stage,
+        fileUploadSucceeded,
+        responsesApiCallBegan,
+        durationMs: Date.now() - startedAt,
+      });
 
       stage = "creating_response";
       responsesApiCallBegan = true;
@@ -112,9 +138,18 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
 
       const raw = parseStructuredOutput(response.output_text);
       if (!raw) {
+        logOpenAiCalendarDiagnostic("warn", "openai_malformed_json_response", {
+          model,
+          stage,
+          fileUploadSucceeded,
+          responsesApiCallBegan,
+          durationMs: Date.now() - startedAt,
+          requestId,
+        });
         return {
           status: "analysis_failed",
-          message: "Sundial read the PDF but could not build a reliable calendar draft. You can try another PDF or continue manually.",
+          message: "Sundial read the PDF, but the AI response did not match the calendar format we need. Try again or continue manually.",
+          retryable: true,
         };
       }
 
@@ -140,11 +175,12 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
         });
         return {
           status: "analysis_failed",
-          message: "Sundial read the PDF but could not build a reliable calendar draft. You can try another PDF or continue manually.",
+          message: "Sundial read the PDF, but the AI response did not match the calendar format we need. Try again or continue manually.",
+          retryable: true,
         };
       }
 
-      console.info("AI calendar import completed", {
+      logOpenAiCalendarDiagnostic("info", "openai_analysis_completed", {
         model,
         requestId,
         stage: "complete",

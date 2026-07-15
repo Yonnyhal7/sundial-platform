@@ -12,6 +12,11 @@ import {
   getEstimatedAiImportProgress,
 } from "@/lib/calendarWizard/aiImportProgress";
 import {
+  createAiImportClientTimeoutController,
+  mapAiImportClientError,
+  parseAiImportResponse,
+} from "@/lib/calendarWizard/aiImportClient";
+import {
   clearAiImportMetadata,
   convertAiImportToWizardDraft,
   getAiImportReadinessSummary,
@@ -1728,6 +1733,12 @@ function AiCalendarImportCard({
       : status === "failed"
         ? message
         : "";
+  const failureRetryable =
+    Boolean(selectedFile) &&
+    (!actionResult ||
+      (actionResult.status !== "success" &&
+        actionResult.status !== "permission_error" &&
+        actionResult.retryable !== false));
 
   useEffect(() => {
     if (!isWorking) return undefined;
@@ -1773,6 +1784,7 @@ function AiCalendarImportCard({
   async function analyzeSelectedFile() {
     if (!selectedFile || isWorking) return;
 
+    const timeoutController = createAiImportClientTimeoutController();
     setStatus("uploading");
     setMessage("Reading your calendar...");
     setActionResult(null);
@@ -1790,9 +1802,10 @@ function AiCalendarImportCard({
         {
           method: "POST",
           body: formData,
+          signal: timeoutController.controller.signal,
         }
       );
-      const result = (await response.json()) as AnalyzeCalendarPdfResult;
+      const result = await parseAiImportResponse(response);
       setActionResult(result);
 
       if (result.status !== "success") {
@@ -1830,9 +1843,13 @@ function AiCalendarImportCard({
           warningResolutions: createDefaultWarningResolutions(result.importResult.warnings),
         },
       }));
-    } catch {
+    } catch (error) {
+      const result = mapAiImportClientError(error);
+      setActionResult(result);
       setStatus("failed");
-      setMessage("Sundial could not analyze this PDF yet. Please continue manually.");
+      setMessage(result.message);
+    } finally {
+      timeoutController.clear();
     }
   }
 
@@ -2109,7 +2126,7 @@ function AiCalendarImportCard({
           elapsedSeconds={elapsedSeconds}
           progress={progress}
           error={failureMessage}
-          retryable={Boolean(selectedFile)}
+          retryable={failureRetryable}
           onRetry={analyzeSelectedFile}
           onContinueManually={() => {
             setStatus("idle");
@@ -2826,6 +2843,11 @@ function AiCalendarImportProgress({
       <div className="mt-4 grid gap-2">
         <p className="font-bold">{stageLabel}</p>
         <p className="leading-6 text-slate-600 dark:text-slate-300">{description}</p>
+        {state === "working" && displayProgress >= 15 && (
+          <p className="leading-6 text-slate-600 dark:text-slate-300">
+            Processing is still running. This step can take longer for scanned or image-heavy PDFs.
+          </p>
+        )}
         <p className="font-semibold text-slate-500 dark:text-slate-400">
           Elapsed time: {elapsedSeconds} {elapsedSeconds === 1 ? "second" : "seconds"}
         </p>

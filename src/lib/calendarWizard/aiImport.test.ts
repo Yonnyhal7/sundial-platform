@@ -421,6 +421,17 @@ describe("OpenAI calendar analyzer behavior", () => {
     expect(result).toMatchObject({ status: "analysis_failed", retryable: true });
   });
 
+  it("maps PDF preparation failures safely", async () => {
+    const { OpenAiCalendarPdfPreparationError } = await import(
+      "./openAiCalendarAnalyzerUtils"
+    );
+    const result = mapOpenAiError(new OpenAiCalendarPdfPreparationError());
+
+    expect(result).toMatchObject({ status: "analysis_failed", retryable: true });
+    if (result.status === "success") throw new Error("Expected failure result");
+    expect(result.message).toContain("read this PDF");
+  });
+
   it("uses a 3-minute default application timeout", () => {
     expect(parseOpenAiCalendarTimeoutMs(undefined)).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
   });

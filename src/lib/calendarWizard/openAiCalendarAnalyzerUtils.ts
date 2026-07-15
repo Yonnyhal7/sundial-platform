@@ -51,6 +51,13 @@ export class OpenAiCalendarApplicationTimeoutError extends Error {
   }
 }
 
+export class OpenAiCalendarPdfPreparationError extends Error {
+  constructor() {
+    super("Calendar PDF could not be prepared for analysis.");
+    this.name = "OpenAiCalendarPdfPreparationError";
+  }
+}
+
 export function parseOpenAiCalendarTimeoutMs(value: string | null | undefined) {
   if (!value?.trim()) return DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS;
 
@@ -105,6 +112,14 @@ export function shouldRetryOpenAiError(error: unknown, attempt: number) {
 }
 
 export function mapOpenAiError(error: unknown): CalendarAnalyzerResult {
+  if (error instanceof OpenAiCalendarPdfPreparationError) {
+    return {
+      status: "analysis_failed",
+      message: "Sundial could not read this PDF. Please try exporting the calendar as a standard PDF or continue manually.",
+      retryable: true,
+    };
+  }
+
   if (error instanceof OpenAiCalendarApplicationTimeoutError) {
     return {
       status: "analysis_failed",
@@ -217,4 +232,35 @@ export function buildOpenAiErrorDiagnostics(
     responsesApiCallBegan: context.responsesApiCallBegan,
     durationMs: context.durationMs,
   };
+}
+
+export function logOpenAiCalendarDiagnostic(
+  level: "info" | "warn",
+  event: string,
+  context: OpenAiErrorDiagnosticContext & {
+    requestId?: string | null;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  }
+) {
+  const payload = {
+    event,
+    model: context.model,
+    stage: context.stage,
+    fileUploadSucceeded: context.fileUploadSucceeded,
+    responsesApiCallBegan: context.responsesApiCallBegan,
+    durationMs: context.durationMs,
+    requestId: context.requestId || undefined,
+    inputTokens: context.inputTokens,
+    outputTokens: context.outputTokens,
+    totalTokens: context.totalTokens,
+  };
+
+  if (level === "warn") {
+    console.warn("AI calendar import diagnostic", payload);
+    return;
+  }
+
+  console.info("AI calendar import diagnostic", payload);
 }
