@@ -4320,184 +4320,245 @@ function AiCreateCalendarModal({
     errorResult?.status === "validation_error" && errorResult.fieldErrors
       ? Object.values(errorResult.fieldErrors)
       : [];
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const scrollRegionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const previousOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    scrollRegionRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+      previouslyFocused?.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    const focusableSelector = [
+      "a[href]",
+      "button:not([disabled])",
+      "textarea:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(",");
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape" && !isSaving) onClose();
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector) || []
+      ).filter((element) => element.getAttribute("aria-hidden") !== "true");
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+        return;
+      }
+
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isSaving, onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-4 py-8">
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-black/50 px-4 py-4 sm:py-6 lg:py-8">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ai-create-calendar-title"
-        className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-[#242424]"
+        className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl outline-none dark:bg-[#242424]"
       >
-        <h2 id="ai-create-calendar-title" className="text-2xl font-bold">
-          {replacementRequired
-            ? "Replace existing calendar?"
-            : "Create imported calendar?"}
-        </h2>
+        <div className="shrink-0 px-6 pt-6">
+          <h2 id="ai-create-calendar-title" className="text-2xl font-bold">
+            {replacementRequired
+              ? "Replace existing calendar?"
+              : "Create imported calendar?"}
+          </h2>
+        </div>
 
-        {replacementRequired ? (
-          <div className="mt-3 space-y-4">
-            <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">
-              This will replace {replacementRequired.existingCount} existing calendar
-              rows for{" "}
-              {replacementRequired.firstExistingDate && replacementRequired.lastExistingDate
-                ? `${formatDateForDisplay(
-                    replacementRequired.firstExistingDate
-                  )} through ${formatDateForDisplay(
-                    replacementRequired.lastExistingDate
-                  )}`
-                : "the selected school-year range"}
-              .
-            </p>
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
-              Rows outside this range will remain untouched. This operation creates
-              schedules and calendar rows together.
-            </div>
-          </div>
-        ) : (
-          <>
-            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Sundial will create missing schedules, assign them to imported dates,
-              and save the generated calendar for{" "}
-              {formatDateForDisplay(importResult.schoolYear.startDate)} through{" "}
-              {formatDateForDisplay(importResult.schoolYear.endDate)}.
-            </p>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <MetricCard
-                label="Instructional days"
-                value={String(importResult.expectedInstructionalDayCount || "Review")}
-              />
-              <MetricCard label="Schedules to create" value={String(schedulesToCreate.length)} />
-              <MetricCard label="Schedules matched" value={String(matchedCount)} />
-              <MetricCard label="Need bell times" value={String(schedulesToCreate.length)} />
-              <MetricCard
-                label="Blocking issues"
-                value={String(warningClassification.blockingWarnings.length)}
-              />
-              <MetricCard
-                label="Review items"
-                value={String(warningClassification.reviewWarnings.length)}
-              />
-              <MetricCard label="No-school ranges" value={String(importResult.noSchoolRanges.length)} />
-            </div>
-
-            {schedulesToCreate.length > 0 && (
-              <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
-                <h3 className="text-sm font-bold text-amber-950 dark:text-amber-100">
-                  {schedulesToCreate.length}{" "}
-                  {schedulesToCreate.length === 1 ? "schedule" : "schedules"} will be created
-                  without bell times.
-                </h3>
-                <ul className="mt-2 space-y-1 text-sm font-semibold text-amber-900 dark:text-amber-100">
-                  {schedulesToCreate.map((resolution) => (
-                    <li key={resolution.tempId}>
-                      {reviewedScheduleName(resolution)}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
-                  {schedulesToCreate.map((resolution) => reviewedScheduleName(resolution)).join(", ")}{" "}
-                  can be completed later from the Schedules dashboard.
-                </p>
-              </div>
-            )}
-
-            {hasBlockingWarnings && (
-              <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
-                <p className="font-bold">
-                  Fix these calendar issues before creating the calendar:
-                </p>
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {warningClassification.blockingWarnings.map((warning) => (
-                    <li key={warning.code}>{warning.message}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {!hasBlockingWarnings && warningClassification.resolvedReviewWarnings.length > 0 && (
-              <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100">
-                {warningClassification.resolvedReviewWarnings.length}{" "}
-                {warningClassification.resolvedReviewWarnings.length === 1 ? "item was" : "items were"}{" "}
-                reviewed and will not prevent calendar creation.
-              </div>
-            )}
-
-            {needsReviewAcknowledgment && (
-              <label className="mt-5 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
-                <input
-                  type="checkbox"
-                  checked={reviewAcknowledged}
-                  onChange={(event) => setReviewAcknowledged(event.target.checked)}
-                  className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-700 focus:ring-amber-500"
-                />
-                <span>
-                  I reviewed these warnings and want to continue.
-                </span>
-              </label>
-            )}
-          </>
-        )}
-
-        {isSaving && (
-          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-            Creating schedules and calendar...
-          </div>
-        )}
-
-        {errorResult && (
-          <div
-            role="alert"
-            className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100"
-          >
-            <p>{errorResult.message}</p>
-            {validationErrors.length > 0 && (
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                {validationErrors.map((message, index) => (
-                  <li key={`${message}-${index}`}>{message}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-
-        <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSaving}
-            className={secondaryButtonClass}
-          >
-            Close
-          </button>
+        <div
+          ref={scrollRegionRef}
+          tabIndex={0}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-3 outline-none"
+        >
           {replacementRequired ? (
-            <button
-              type="button"
-              onClick={onReplace}
-              disabled={isSaving}
-              className="inline-flex items-center justify-center rounded-lg border border-transparent bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSaving ? "Creating schedules and calendar..." : "Replace Existing Calendar"}
-            </button>
+            <div className="space-y-4">
+              <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">
+                This will replace {replacementRequired.existingCount} existing calendar
+                rows for{" "}
+                {replacementRequired.firstExistingDate && replacementRequired.lastExistingDate
+                  ? `${formatDateForDisplay(
+                      replacementRequired.firstExistingDate
+                    )} through ${formatDateForDisplay(
+                      replacementRequired.lastExistingDate
+                    )}`
+                  : "the selected school-year range"}
+                .
+              </p>
+              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
+                Rows outside this range will remain untouched. This operation creates
+                schedules and calendar rows together.
+              </div>
+            </div>
           ) : (
+            <>
+              <p className="text-sm leading-6 text-slate-500 dark:text-slate-400">
+                Sundial will create missing schedules, assign them to imported dates,
+                and save the generated calendar for{" "}
+                {formatDateForDisplay(importResult.schoolYear.startDate)} through{" "}
+                {formatDateForDisplay(importResult.schoolYear.endDate)}.
+              </p>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <MetricCard
+                  label="Instructional days"
+                  value={String(importResult.expectedInstructionalDayCount || "Review")}
+                />
+                <MetricCard label="Schedules to create" value={String(schedulesToCreate.length)} />
+                <MetricCard label="Schedules matched" value={String(matchedCount)} />
+                <MetricCard label="Need bell times" value={String(schedulesToCreate.length)} />
+                <MetricCard
+                  label="Blocking issues"
+                  value={String(warningClassification.blockingWarnings.length)}
+                />
+                <MetricCard
+                  label="Review items"
+                  value={String(warningClassification.reviewWarnings.length)}
+                />
+                <MetricCard label="No-school ranges" value={String(importResult.noSchoolRanges.length)} />
+              </div>
+
+              {schedulesToCreate.length > 0 && (
+                <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+                  <h3 className="text-sm font-bold text-amber-950 dark:text-amber-100">
+                    {schedulesToCreate.length}{" "}
+                    {schedulesToCreate.length === 1 ? "schedule" : "schedules"} will be created
+                    without bell times.
+                  </h3>
+                  <ul className="mt-2 space-y-1 text-sm font-semibold text-amber-900 dark:text-amber-100">
+                    {schedulesToCreate.map((resolution) => (
+                      <li key={resolution.tempId}>
+                        {reviewedScheduleName(resolution)}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
+                    {schedulesToCreate.map((resolution) => reviewedScheduleName(resolution)).join(", ")}{" "}
+                    can be completed later from the Schedules dashboard.
+                  </p>
+                </div>
+              )}
+
+              {hasBlockingWarnings && (
+                <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
+                  <p className="font-bold">
+                    Fix these calendar issues before creating the calendar:
+                  </p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {warningClassification.blockingWarnings.map((warning) => (
+                      <li key={warning.code}>{warning.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {!hasBlockingWarnings && warningClassification.resolvedReviewWarnings.length > 0 && (
+                <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100">
+                  {warningClassification.resolvedReviewWarnings.length}{" "}
+                  {warningClassification.resolvedReviewWarnings.length === 1 ? "item was" : "items were"}{" "}
+                  reviewed and will not prevent calendar creation.
+                </div>
+              )}
+
+              {needsReviewAcknowledgment && (
+                <label className="mt-5 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                  <input
+                    type="checkbox"
+                    checked={reviewAcknowledged}
+                    onChange={(event) => setReviewAcknowledged(event.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-700 focus:ring-amber-500"
+                  />
+                  <span>
+                    I reviewed these warnings and want to continue.
+                  </span>
+                </label>
+              )}
+            </>
+          )}
+
+          {isSaving && (
+            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+              Creating schedules and calendar...
+            </div>
+          )}
+
+          {errorResult && (
+            <div
+              role="alert"
+              className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100"
+            >
+              <p>{errorResult.message}</p>
+              {validationErrors.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {validationErrors.map((message, index) => (
+                    <li key={`${message}-${index}`}>{message}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-slate-200 px-6 pb-6 pt-4 dark:border-slate-700">
+          <div className="flex flex-wrap justify-end gap-3">
             <button
               type="button"
-              onClick={onConfirm}
-              disabled={!canConfirm}
-              className={sundialPrimaryButtonClass()}
+              onClick={onClose}
+              disabled={isSaving}
+              className={secondaryButtonClass}
             >
-              {isSaving ? "Creating schedules and calendar..." : "Create Calendar"}
+              Close
             </button>
-          )}
+            {replacementRequired ? (
+              <button
+                type="button"
+                onClick={onReplace}
+                disabled={isSaving}
+                className="inline-flex items-center justify-center rounded-lg border border-transparent bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSaving ? "Creating schedules and calendar..." : "Replace Existing Calendar"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onConfirm}
+                disabled={!canConfirm}
+                className={sundialPrimaryButtonClass()}
+              >
+                {isSaving ? "Creating schedules and calendar..." : "Create Calendar"}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
