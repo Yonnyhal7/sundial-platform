@@ -1,6 +1,20 @@
 import type { AnalyzeCalendarPdfResult } from "./aiImportTypes";
+import {
+  getAiImportClientTimeoutMs,
+  parseOpenAiCalendarTimeoutMs,
+} from "./aiImportTimeouts";
 
-export const AI_IMPORT_CLIENT_TIMEOUT_MS = 310_000;
+function getConfiguredAnalyzerTimeoutMs() {
+  return parseOpenAiCalendarTimeoutMs(
+    process.env.NEXT_PUBLIC_OPENAI_CALENDAR_TIMEOUT_MS
+  );
+}
+
+export function getConfiguredAiImportClientTimeoutMs() {
+  return getAiImportClientTimeoutMs(getConfiguredAnalyzerTimeoutMs());
+}
+
+export const AI_IMPORT_CLIENT_TIMEOUT_MS = getConfiguredAiImportClientTimeoutMs();
 export type AnalyzeCalendarPdfFailureResult = Exclude<
   AnalyzeCalendarPdfResult,
   { status: "success" }
@@ -16,9 +30,10 @@ export class AiImportClientTimeoutError extends Error {
 function safeResult(
   status: AnalyzeCalendarPdfFailureResult["status"],
   message: string,
-  retryable = true
+  retryable = true,
+  reasonCode?: string
 ): AnalyzeCalendarPdfFailureResult {
-  return { status, message, retryable };
+  return { status, message, retryable, reasonCode };
 }
 
 function isAnalyzeCalendarPdfResult(value: unknown): value is AnalyzeCalendarPdfResult {
@@ -67,7 +82,9 @@ export async function parseAiImportResponse(
   if (response.status === 408 || response.status === 504) {
     return safeResult(
       "analysis_failed",
-      "Calendar analysis took longer than expected. Please try again or continue manually."
+      "Calendar analysis took longer than expected. Please try again or continue manually.",
+      true,
+      "client_timeout"
     );
   }
 
@@ -107,8 +124,10 @@ export function mapAiImportClientError(error: unknown): AnalyzeCalendarPdfFailur
   if (isAbortLikeError(error)) {
     return {
       status: "analysis_failed",
-      message: "Calendar analysis took longer than expected. Please try again or continue manually.",
+      message:
+        "Calendar analysis is still taking longer than this browser request can safely wait. Please retry, or continue manually.",
       retryable: true,
+      reasonCode: "client_timeout",
     };
   }
 

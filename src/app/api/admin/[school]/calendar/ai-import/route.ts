@@ -3,6 +3,7 @@ import { canAccessAdminSection } from "@/lib/auth/adminPermissions";
 import type { AnalyzeCalendarPdfResult } from "@/lib/calendarWizard/aiImportTypes";
 import { validateCalendarPdfFile } from "@/lib/calendarWizard/aiPdfValidation";
 import { analyzeCalendarPdf } from "@/lib/calendarWizard/openAiCalendarAnalyzer.server";
+import { logOpenAiCalendarEnvironmentDiagnostic } from "@/lib/calendarWizard/openAiCalendarAnalyzerUtils";
 import { getSchoolForSetup } from "@/lib/schools";
 
 export const runtime = "nodejs";
@@ -72,6 +73,7 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
   try {
+    logOpenAiCalendarEnvironmentDiagnostic("api_route_start");
     logAiImportRouteDiagnostic({
       event: "request_received",
       requestId,

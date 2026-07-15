@@ -19,6 +19,7 @@ import {
   buildAiCalendarProcessingDiagnostics,
   createOpenAiCalendarTimeoutController,
   getOpenAiCalendarConfiguration,
+  logOpenAiCalendarEnvironmentDiagnostic,
   logOpenAiCalendarDiagnostic,
   mapOpenAiError,
   openAiResponseHasRefusal,
@@ -32,6 +33,7 @@ import {
 export { DEFAULT_OPENAI_CALENDAR_MODEL };
 
 function getOpenAiClient(apiKey: string) {
+  logOpenAiCalendarEnvironmentDiagnostic("before_openai_client_create");
   return new OpenAI({ apiKey });
 }
 
@@ -115,6 +117,7 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
 
       stage = "creating_response";
       responsesApiCallBegan = true;
+      logOpenAiCalendarEnvironmentDiagnostic("before_responses_api_call");
       const { data: response, request_id: requestId } = await client.responses
         .create(
           buildCalendarImportResponsesRequest(model, uploaded.id),

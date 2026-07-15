@@ -6,6 +6,13 @@ import {
   RateLimitError,
 } from "openai";
 import type { AiCalendarImportResult } from "./aiImportTypes";
+export {
+  DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS,
+  MAX_OPENAI_CALENDAR_TIMEOUT_MS,
+  MIN_OPENAI_CALENDAR_TIMEOUT_MS,
+  parseOpenAiCalendarTimeoutMs,
+} from "./aiImportTimeouts";
+import { parseOpenAiCalendarTimeoutMs } from "./aiImportTimeouts";
 
 export type CalendarAnalyzerResult =
   | { status: "success"; importResult: AiCalendarImportResult }
@@ -39,9 +46,6 @@ export type OpenAiErrorDiagnosticContext = {
 
 const TRANSIENT_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 export const DEFAULT_OPENAI_CALENDAR_MODEL = "gpt-5";
-export const DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS = 180_000;
-export const MIN_OPENAI_CALENDAR_TIMEOUT_MS = 30_000;
-export const MAX_OPENAI_CALENDAR_TIMEOUT_MS = 300_000;
 
 export type OpenAiCalendarConfigurationReasonCode =
   | "missing_openai_api_key"
@@ -69,7 +73,8 @@ export type AiCalendarImportFailureReasonCode =
   | "missing_required_schedule"
   | "invalid_date_range"
   | "invalid_schedule_reference"
-  | "malformed_calendar_structure";
+  | "malformed_calendar_structure"
+  | "client_timeout";
 
 export type CalendarImportMode = "mock" | "openai" | "disabled";
 type CalendarImportEnv = Record<string, string | undefined>;
@@ -133,17 +138,26 @@ export class AiCalendarImportProcessingError extends Error {
   }
 }
 
-export function parseOpenAiCalendarTimeoutMs(value: string | null | undefined) {
-  if (!value?.trim()) return DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS;
+export function buildOpenAiCalendarEnvironmentDiagnostics() {
+  return {
+    hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
+    openAiKeyLength: process.env.OPENAI_API_KEY?.length ?? 0,
+    hasModel: Boolean(process.env.OPENAI_CALENDAR_MODEL),
+    model: process.env.OPENAI_CALENDAR_MODEL,
+    hasAnalyzerTimeout: Boolean(process.env.OPENAI_CALENDAR_TIMEOUT_MS),
+    analyzerTimeout: process.env.OPENAI_CALENDAR_TIMEOUT_MS,
+    hasClientTimeout: Boolean(process.env.NEXT_PUBLIC_OPENAI_CALENDAR_TIMEOUT_MS),
+    clientTimeout: process.env.NEXT_PUBLIC_OPENAI_CALENDAR_TIMEOUT_MS,
+    importMode: process.env.AI_CALENDAR_IMPORT_MODE,
+    nodeEnv: process.env.NODE_ENV,
+    vercelEnv: process.env.VERCEL_ENV,
+  };
+}
 
-  const parsed = Number(value.trim());
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
-    return DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS;
-  }
-
-  return Math.min(
-    MAX_OPENAI_CALENDAR_TIMEOUT_MS,
-    Math.max(MIN_OPENAI_CALENDAR_TIMEOUT_MS, parsed)
+export function logOpenAiCalendarEnvironmentDiagnostic(event: string) {
+  console.info(
+    `AI calendar import environment diagnostic: ${event}`,
+    buildOpenAiCalendarEnvironmentDiagnostics()
   );
 }
 
