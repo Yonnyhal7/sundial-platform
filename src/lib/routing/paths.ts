@@ -109,7 +109,8 @@ export function getSchoolSetupStepPath(
   hostname: string,
   step: string
 ) {
-  return `${getSchoolAdminPath(school, pathname, hostname)}/setup/${step}`;
+  const visibleStep = step === "complete" ? "launch" : step;
+  return `${getSchoolAdminPath(school, pathname, hostname)}/setup/${visibleStep}`;
 }
 
 export function getSchoolLoginDestination(

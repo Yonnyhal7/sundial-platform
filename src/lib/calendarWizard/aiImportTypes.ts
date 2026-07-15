@@ -164,7 +164,22 @@ export type AiImportDraftMetadata = {
 
 export type AiImportValidationResult =
   | { success: true; data: AiCalendarImportResult }
-  | { success: false; errors: string[] };
+  | { success: false; errors: string[]; validationErrors: AiImportValidationErrorDetail[] };
+
+export type AiImportValidationErrorCode =
+  | "required"
+  | "invalid_type"
+  | "invalid_value"
+  | "invalid_date"
+  | "too_small";
+
+export type AiImportValidationErrorDetail = {
+  path: string;
+  code: AiImportValidationErrorCode;
+  expected: string;
+  received: string;
+  message: string;
+};
 
 export type AnalyzeCalendarPdfResult =
   | {
@@ -183,6 +198,41 @@ export type AnalyzeCalendarPdfResult =
       retryable?: boolean;
       reasonCode?: string;
     };
+
+export function summarizeAiImportValidationErrors(
+  validationErrors: AiImportValidationErrorDetail[]
+) {
+  return validationErrors.map(({ path, code, expected, received }) => ({
+    path,
+    code,
+    expected,
+    received,
+  }));
+}
+
+export function getAiImportValidationReasonCode(
+  validationErrors: AiImportValidationErrorDetail[]
+) {
+  if (
+    validationErrors.some(
+      (error) =>
+        error.path === "pattern.scheduleTempIds" ||
+        error.path.includes("scheduleTempId")
+    )
+  ) {
+    return "missing_required_schedule";
+  }
+
+  if (validationErrors.some((error) => error.code === "invalid_date")) {
+    return "invalid_date_range";
+  }
+
+  if (validationErrors.some((error) => error.path.includes("schedule"))) {
+    return "invalid_schedule_reference";
+  }
+
+  return "ai_schema_validation_failed";
+}
 
 const confidenceValues = new Set<AiImportConfidence>(["high", "review", "uncertain"]);
 const patternValues = new Set<PatternType>(["same", "repeating", "weekday"]);
@@ -205,34 +255,121 @@ function isConfidence(value: unknown): value is AiImportConfidence {
   return typeof value === "string" && confidenceValues.has(value as AiImportConfidence);
 }
 
-function assertDate(value: unknown, path: string, errors: string[]) {
+function describeReceivedValue(value: unknown) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return `array(length=${value.length})`;
+  const type = typeof value;
+  if (type === "string") {
+    const stringValue = value as string;
+    const valueLabel =
+      stringValue.length > 32 ? `${stringValue.slice(0, 32)}...` : stringValue;
+    return stringValue.trim() ? `string(${JSON.stringify(valueLabel)})` : "empty string";
+  }
+  if (type === "number" || type === "boolean") return `${type}(${String(value)})`;
+  if (type === "object") return "object";
+  return type;
+}
+
+function pushValidationError(
+  errors: string[],
+  validationErrors: AiImportValidationErrorDetail[],
+  detail: Omit<AiImportValidationErrorDetail, "message"> & { message?: string }
+) {
+  const message = detail.message || `${detail.path} must be ${detail.expected}.`;
+  errors.push(message);
+  validationErrors.push({ ...detail, message });
+}
+
+function assertDate(
+  value: unknown,
+  path: string,
+  errors: string[],
+  validationErrors: AiImportValidationErrorDetail[]
+) {
   if (typeof value !== "string" || !isDateString(value)) {
-    errors.push(`${path} must be a YYYY-MM-DD date.`);
+    pushValidationError(errors, validationErrors, {
+      path,
+      code: "invalid_date",
+      expected: "YYYY-MM-DD date",
+      received: describeReceivedValue(value),
+      message: `${path} must be a YYYY-MM-DD date.`,
+    });
   }
 }
 
-function assertString(value: unknown, path: string, errors: string[]) {
+function assertString(
+  value: unknown,
+  path: string,
+  errors: string[],
+  validationErrors: AiImportValidationErrorDetail[]
+) {
   if (typeof value !== "string" || !value.trim()) {
-    errors.push(`${path} is required.`);
+    pushValidationError(errors, validationErrors, {
+      path,
+      code: "required",
+      expected: "non-empty string",
+      received: describeReceivedValue(value),
+      message: `${path} is required.`,
+    });
   }
 }
 
-function assertConfidence(value: unknown, path: string, errors: string[]) {
-  if (!isConfidence(value)) errors.push(`${path} has an unsupported confidence value.`);
+function assertConfidence(
+  value: unknown,
+  path: string,
+  errors: string[],
+  validationErrors: AiImportValidationErrorDetail[]
+) {
+  if (!isConfidence(value)) {
+    pushValidationError(errors, validationErrors, {
+      path,
+      code: "invalid_value",
+      expected: "high, review, or uncertain",
+      received: describeReceivedValue(value),
+      message: `${path} has an unsupported confidence value.`,
+    });
+  }
 }
 
 export function validateAiCalendarImportResult(value: unknown): AiImportValidationResult {
   const errors: string[] = [];
+  const validationErrors: AiImportValidationErrorDetail[] = [];
 
   if (!isRecord(value)) {
-    return { success: false, errors: ["Import result must be an object."] };
+    return {
+      success: false,
+      errors: ["Import result must be an object."],
+      validationErrors: [
+        {
+          path: "",
+          code: "invalid_type",
+          expected: "object",
+          received: describeReceivedValue(value),
+          message: "Import result must be an object.",
+        },
+      ],
+    };
   }
 
-  if (value.schemaVersion !== 1) errors.push("schemaVersion must be 1.");
-  if (value.source !== "mock" && value.source !== "openai") {
-    errors.push("source must be mock or openai.");
+  if (value.schemaVersion !== 1) {
+    pushValidationError(errors, validationErrors, {
+      path: "schemaVersion",
+      code: "invalid_value",
+      expected: "1",
+      received: describeReceivedValue(value.schemaVersion),
+      message: "schemaVersion must be 1.",
+    });
   }
-  assertDate(value.analyzedAt, "analyzedAt", errors);
+  if (value.source !== "mock" && value.source !== "openai") {
+    pushValidationError(errors, validationErrors, {
+      path: "source",
+      code: "invalid_value",
+      expected: "mock or openai",
+      received: describeReceivedValue(value.source),
+      message: "source must be mock or openai.",
+    });
+  }
+  assertDate(value.analyzedAt, "analyzedAt", errors, validationErrors);
   if (
     value.expectedInstructionalDayCount !== undefined &&
     value.expectedInstructionalDayCount !== null &&
@@ -240,111 +377,213 @@ export function validateAiCalendarImportResult(value: unknown): AiImportValidati
       !Number.isInteger(value.expectedInstructionalDayCount) ||
       value.expectedInstructionalDayCount < 0)
   ) {
-    errors.push("expectedInstructionalDayCount must be a positive integer.");
+    pushValidationError(errors, validationErrors, {
+      path: "expectedInstructionalDayCount",
+      code: "invalid_type",
+      expected: "non-negative integer or null",
+      received: describeReceivedValue(value.expectedInstructionalDayCount),
+      message: "expectedInstructionalDayCount must be a positive integer.",
+    });
   }
 
   const schoolYear = value.schoolYear;
   if (!isRecord(schoolYear)) {
-    errors.push("schoolYear is required.");
+    pushValidationError(errors, validationErrors, {
+      path: "schoolYear",
+      code: "required",
+      expected: "object",
+      received: describeReceivedValue(schoolYear),
+      message: "schoolYear is required.",
+    });
   } else {
-    assertDate(schoolYear.startDate, "schoolYear.startDate", errors);
-    assertDate(schoolYear.endDate, "schoolYear.endDate", errors);
+    assertDate(schoolYear.startDate, "schoolYear.startDate", errors, validationErrors);
+    assertDate(schoolYear.endDate, "schoolYear.endDate", errors, validationErrors);
     if (
       !Array.isArray(schoolYear.operatingWeekdays) ||
       schoolYear.operatingWeekdays.length === 0 ||
       schoolYear.operatingWeekdays.some((weekday) => !isWeekday(weekday))
     ) {
-      errors.push("schoolYear.operatingWeekdays must include valid weekdays.");
+      pushValidationError(errors, validationErrors, {
+        path: "schoolYear.operatingWeekdays",
+        code: Array.isArray(schoolYear.operatingWeekdays) ? "too_small" : "invalid_type",
+        expected: "at least one weekday integer from 0 to 6",
+        received: describeReceivedValue(schoolYear.operatingWeekdays),
+        message: "schoolYear.operatingWeekdays must include valid weekdays.",
+      });
     }
-    assertConfidence(schoolYear.confidence, "schoolYear.confidence", errors);
+    assertConfidence(schoolYear.confidence, "schoolYear.confidence", errors, validationErrors);
   }
 
   if (!Array.isArray(value.detectedSchedules)) {
-    errors.push("detectedSchedules must be an array.");
+    pushValidationError(errors, validationErrors, {
+      path: "detectedSchedules",
+      code: "invalid_type",
+      expected: "array",
+      received: describeReceivedValue(value.detectedSchedules),
+      message: "detectedSchedules must be an array.",
+    });
   } else {
     value.detectedSchedules.forEach((schedule, index) => {
       if (!isRecord(schedule)) {
-        errors.push(`detectedSchedules.${index} must be an object.`);
+        pushValidationError(errors, validationErrors, {
+          path: `detectedSchedules.${index}`,
+          code: "invalid_type",
+          expected: "object",
+          received: describeReceivedValue(schedule),
+          message: `detectedSchedules.${index} must be an object.`,
+        });
         return;
       }
-      assertString(schedule.tempId, `detectedSchedules.${index}.tempId`, errors);
-      assertString(schedule.detectedName, `detectedSchedules.${index}.detectedName`, errors);
-      assertString(schedule.normalizedName, `detectedSchedules.${index}.normalizedName`, errors);
-      assertConfidence(schedule.confidence, `detectedSchedules.${index}.confidence`, errors);
+      assertString(schedule.tempId, `detectedSchedules.${index}.tempId`, errors, validationErrors);
+      assertString(schedule.detectedName, `detectedSchedules.${index}.detectedName`, errors, validationErrors);
+      assertString(schedule.normalizedName, `detectedSchedules.${index}.normalizedName`, errors, validationErrors);
+      assertConfidence(schedule.confidence, `detectedSchedules.${index}.confidence`, errors, validationErrors);
       if (typeof schedule.needsSetup !== "boolean") {
-        errors.push(`detectedSchedules.${index}.needsSetup must be boolean.`);
+        pushValidationError(errors, validationErrors, {
+          path: `detectedSchedules.${index}.needsSetup`,
+          code: "invalid_type",
+          expected: "boolean",
+          received: describeReceivedValue(schedule.needsSetup),
+          message: `detectedSchedules.${index}.needsSetup must be boolean.`,
+        });
       }
     });
   }
 
   const pattern = value.pattern;
   if (!isRecord(pattern)) {
-    errors.push("pattern is required.");
+    pushValidationError(errors, validationErrors, {
+      path: "pattern",
+      code: "required",
+      expected: "object",
+      received: describeReceivedValue(pattern),
+      message: "pattern is required.",
+    });
   } else {
     if (typeof pattern.type !== "string" || !patternValues.has(pattern.type as PatternType)) {
-      errors.push("pattern.type must be same, repeating, or weekday.");
+      pushValidationError(errors, validationErrors, {
+        path: "pattern.type",
+        code: "invalid_value",
+        expected: "same, repeating, or weekday",
+        received: describeReceivedValue(pattern.type),
+        message: "pattern.type must be same, repeating, or weekday.",
+      });
     }
     if (!Array.isArray(pattern.scheduleTempIds) || pattern.scheduleTempIds.length === 0) {
-      errors.push("pattern.scheduleTempIds must include at least one schedule.");
+      pushValidationError(errors, validationErrors, {
+        path: "pattern.scheduleTempIds",
+        code: Array.isArray(pattern.scheduleTempIds) ? "too_small" : "invalid_type",
+        expected: "at least one schedule temp id",
+        received: describeReceivedValue(pattern.scheduleTempIds),
+        message: "pattern.scheduleTempIds must include at least one schedule.",
+      });
     }
-    assertConfidence(pattern.confidence, "pattern.confidence", errors);
+    assertConfidence(pattern.confidence, "pattern.confidence", errors, validationErrors);
   }
 
   if (!Array.isArray(value.noSchoolRanges)) {
-    errors.push("noSchoolRanges must be an array.");
+    pushValidationError(errors, validationErrors, {
+      path: "noSchoolRanges",
+      code: "invalid_type",
+      expected: "array",
+      received: describeReceivedValue(value.noSchoolRanges),
+      message: "noSchoolRanges must be an array.",
+    });
   } else {
     value.noSchoolRanges.forEach((range, index) => {
       if (!isRecord(range)) {
-        errors.push(`noSchoolRanges.${index} must be an object.`);
+        pushValidationError(errors, validationErrors, {
+          path: `noSchoolRanges.${index}`,
+          code: "invalid_type",
+          expected: "object",
+          received: describeReceivedValue(range),
+          message: `noSchoolRanges.${index} must be an object.`,
+        });
         return;
       }
-      assertString(range.id, `noSchoolRanges.${index}.id`, errors);
-      assertDate(range.startDate, `noSchoolRanges.${index}.startDate`, errors);
-      assertDate(range.endDate, `noSchoolRanges.${index}.endDate`, errors);
-      assertString(range.label, `noSchoolRanges.${index}.label`, errors);
-      assertConfidence(range.confidence, `noSchoolRanges.${index}.confidence`, errors);
+      assertString(range.id, `noSchoolRanges.${index}.id`, errors, validationErrors);
+      assertDate(range.startDate, `noSchoolRanges.${index}.startDate`, errors, validationErrors);
+      assertDate(range.endDate, `noSchoolRanges.${index}.endDate`, errors, validationErrors);
+      assertString(range.label, `noSchoolRanges.${index}.label`, errors, validationErrors);
+      assertConfidence(range.confidence, `noSchoolRanges.${index}.confidence`, errors, validationErrors);
     });
   }
 
   if (!Array.isArray(value.specialDays)) {
-    errors.push("specialDays must be an array.");
+    pushValidationError(errors, validationErrors, {
+      path: "specialDays",
+      code: "invalid_type",
+      expected: "array",
+      received: describeReceivedValue(value.specialDays),
+      message: "specialDays must be an array.",
+    });
   } else {
     value.specialDays.forEach((day, index) => {
       if (!isRecord(day)) {
-        errors.push(`specialDays.${index} must be an object.`);
+        pushValidationError(errors, validationErrors, {
+          path: `specialDays.${index}`,
+          code: "invalid_type",
+          expected: "object",
+          received: describeReceivedValue(day),
+          message: `specialDays.${index} must be an object.`,
+        });
         return;
       }
-      assertString(day.id, `specialDays.${index}.id`, errors);
-      assertDate(day.startDate, `specialDays.${index}.startDate`, errors);
-      assertDate(day.endDate, `specialDays.${index}.endDate`, errors);
-      assertString(day.label, `specialDays.${index}.label`, errors);
+      assertString(day.id, `specialDays.${index}.id`, errors, validationErrors);
+      assertDate(day.startDate, `specialDays.${index}.startDate`, errors, validationErrors);
+      assertDate(day.endDate, `specialDays.${index}.endDate`, errors, validationErrors);
+      assertString(day.label, `specialDays.${index}.label`, errors, validationErrors);
       if (typeof day.isInstructional !== "boolean") {
-        errors.push(`specialDays.${index}.isInstructional must be boolean.`);
+        pushValidationError(errors, validationErrors, {
+          path: `specialDays.${index}.isInstructional`,
+          code: "invalid_type",
+          expected: "boolean",
+          received: describeReceivedValue(day.isInstructional),
+          message: `specialDays.${index}.isInstructional must be boolean.`,
+        });
       }
-      assertConfidence(day.confidence, `specialDays.${index}.confidence`, errors);
+      assertConfidence(day.confidence, `specialDays.${index}.confidence`, errors, validationErrors);
     });
   }
 
   if (!Array.isArray(value.informationalDates)) {
-    errors.push("informationalDates must be an array.");
+    pushValidationError(errors, validationErrors, {
+      path: "informationalDates",
+      code: "invalid_type",
+      expected: "array",
+      received: describeReceivedValue(value.informationalDates),
+      message: "informationalDates must be an array.",
+    });
   } else {
     value.informationalDates.forEach((date, index) => {
       if (!isRecord(date)) {
-        errors.push(`informationalDates.${index} must be an object.`);
+        pushValidationError(errors, validationErrors, {
+          path: `informationalDates.${index}`,
+          code: "invalid_type",
+          expected: "object",
+          received: describeReceivedValue(date),
+          message: `informationalDates.${index} must be an object.`,
+        });
         return;
       }
-      assertString(date.id, `informationalDates.${index}.id`, errors);
-      assertDate(date.date, `informationalDates.${index}.date`, errors);
-      assertString(date.label, `informationalDates.${index}.label`, errors);
-      assertConfidence(date.confidence, `informationalDates.${index}.confidence`, errors);
+      assertString(date.id, `informationalDates.${index}.id`, errors, validationErrors);
+      assertDate(date.date, `informationalDates.${index}.date`, errors, validationErrors);
+      assertString(date.label, `informationalDates.${index}.label`, errors, validationErrors);
+      assertConfidence(date.confidence, `informationalDates.${index}.confidence`, errors, validationErrors);
     });
   }
 
   if (!Array.isArray(value.warnings)) {
-    errors.push("warnings must be an array.");
+    pushValidationError(errors, validationErrors, {
+      path: "warnings",
+      code: "invalid_type",
+      expected: "array",
+      received: describeReceivedValue(value.warnings),
+      message: "warnings must be an array.",
+    });
   }
 
   return errors.length
-    ? { success: false, errors }
+    ? { success: false, errors, validationErrors }
     : { success: true, data: value as AiCalendarImportResult };
 }

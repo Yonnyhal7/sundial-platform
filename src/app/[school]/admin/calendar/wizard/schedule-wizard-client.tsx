@@ -47,12 +47,15 @@ import {
 } from "@/lib/calendarWizard/aiQuickSetupPersistence";
 import {
   confidenceLabel,
+  getAiImportValidationReasonCode,
+  summarizeAiImportValidationErrors,
   type AnalyzeCalendarPdfResult,
   type AiCalendarImportResult,
   type AiImportDraftMetadata,
   type AiImportReviewState,
   type AiImportWarningResolution,
   type DetectedScheduleResolution,
+  validateAiCalendarImportResult,
 } from "@/lib/calendarWizard/aiImportTypes";
 import {
   matchDetectedSchedules,
@@ -106,6 +109,18 @@ export type ExistingCalendarRangeSummary = {
 };
 
 type WizardStep = "school-year" | "normal-schedule" | "no-school" | "special-days" | "review";
+type AiImportProcessingPhase =
+  | "normalization"
+  | "schema_validation"
+  | "review_generation"
+  | "draft_persistence"
+  | "consistency_checks";
+type AiImportProcessingReasonCode =
+  | "schema_validation_failed"
+  | "normalization_failed"
+  | "draft_save_failed"
+  | "review_generation_failed"
+  | "calendar_validation_failed";
 type PatternMode = "same" | "repeating" | "weekday";
 type NoSchoolType =
   | "Holiday"
@@ -323,6 +338,40 @@ function createDefaultWarningResolutions(
 
 function pluralize(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function aiImportReasonCodeForPhase(
+  phase: AiImportProcessingPhase
+): AiImportProcessingReasonCode {
+  if (phase === "schema_validation") return "schema_validation_failed";
+  if (phase === "normalization") return "normalization_failed";
+  if (phase === "draft_persistence") return "draft_save_failed";
+  if (phase === "review_generation") return "review_generation_failed";
+  return "calendar_validation_failed";
+}
+
+function buildAiImportProcessingFailure(
+  phase: AiImportProcessingPhase,
+  error: unknown,
+  requestId: string | null
+): Exclude<AnalyzeCalendarPdfResult, { status: "success" }> {
+  const reasonCode = aiImportReasonCodeForPhase(phase);
+  console.error("AI calendar import review processing error", {
+    phase,
+    reasonCode,
+    exceptionName: error instanceof Error ? error.name : "unknown",
+    exceptionMessage: error instanceof Error ? error.message : undefined,
+    stack: error instanceof Error ? error.stack : undefined,
+    requestId: requestId || undefined,
+  });
+
+  return {
+    status: "server_error",
+    message:
+      "Sundial read the PDF, but could not prepare the calendar review. Please try again or continue manually.",
+    retryable: true,
+    reasonCode,
+  };
 }
 
 function formatTime(time: string | null) {
@@ -1806,6 +1855,7 @@ function AiCalendarImportCard({
         }
       );
       const result = await parseAiImportResponse(response);
+      const requestId = response.headers.get("x-sundial-ai-import-request-id");
       setActionResult(result);
 
       if (result.status !== "success") {
@@ -1814,17 +1864,70 @@ function AiCalendarImportCard({
         return;
       }
 
+      const schemaValidation = validateAiCalendarImportResult(result.importResult);
+      if (!schemaValidation.success) {
+        const reasonCode = getAiImportValidationReasonCode(
+          schemaValidation.validationErrors
+        );
+        const failure = buildAiImportProcessingFailure(
+          "schema_validation",
+          new Error(
+            JSON.stringify(
+              summarizeAiImportValidationErrors(schemaValidation.validationErrors)
+            )
+          ),
+          requestId
+        );
+        failure.reasonCode = reasonCode;
+        failure.message =
+          "Sundial read the PDF, but one part of the calendar could not be validated. Retry, or continue manually.";
+        setActionResult(failure);
+        setStatus("failed");
+        setMessage(failure.message);
+        return;
+      }
+
       setProgress(getAiImportProgressAfterSuccess());
       setStatus("complete");
       setMessage("Calendar draft ready");
       await new Promise((resolve) => window.setTimeout(resolve, 400));
 
-      const matchedResolutions = matchDetectedSchedules(
-        result.importResult.detectedSchedules,
-        schedules
-      );
-      const nextState =
-        result.importResult.warnings.length > 0 ? "complete_with_warnings" : "complete";
+      let matchedResolutions: DetectedScheduleResolution[];
+      let warningResolutions: AiImportWarningResolution[];
+      let nextState: "complete" | "complete_with_warnings";
+      try {
+        matchedResolutions = matchDetectedSchedules(
+          result.importResult.detectedSchedules,
+          schedules
+        );
+        warningResolutions = createDefaultWarningResolutions(result.importResult.warnings);
+        nextState =
+          result.importResult.warnings.length > 0 ? "complete_with_warnings" : "complete";
+      } catch (error) {
+        const failure = buildAiImportProcessingFailure(
+          "review_generation",
+          error,
+          requestId
+        );
+        setActionResult(failure);
+        setStatus("failed");
+        setMessage(failure.message);
+        return;
+      }
+
+      try {
+        getDetectedScheduleUsageCounts(result.importResult);
+      } catch (error) {
+        const failure = buildAiImportProcessingFailure(
+          "consistency_checks",
+          error,
+          requestId
+        );
+        setActionResult(failure);
+        setStatus("failed");
+        setMessage(failure.message);
+        return;
+      }
 
       setStatus("review");
       setMessage(
@@ -1832,17 +1935,28 @@ function AiCalendarImportCard({
           ? "Analysis completed with warnings. Review before creating your calendar."
           : "Analysis complete. Review before creating your calendar."
       );
-      updateDraft((previousDraft) => ({
-        ...previousDraft,
-        aiImport: {
-          state: "review",
-          fileName: selectedFile.name,
-          result: result.importResult,
-          resolutions: matchedResolutions,
-          warnings: result.importResult.warnings,
-          warningResolutions: createDefaultWarningResolutions(result.importResult.warnings),
-        },
-      }));
+      try {
+        updateDraft((previousDraft) => ({
+          ...previousDraft,
+          aiImport: {
+            state: "review",
+            fileName: selectedFile.name,
+            result: result.importResult,
+            resolutions: matchedResolutions,
+            warnings: result.importResult.warnings,
+            warningResolutions,
+          },
+        }));
+      } catch (error) {
+        const failure = buildAiImportProcessingFailure(
+          "draft_persistence",
+          error,
+          requestId
+        );
+        setActionResult(failure);
+        setStatus("failed");
+        setMessage(failure.message);
+      }
     } catch (error) {
       const result = mapAiImportClientError(error);
       setActionResult(result);
@@ -4399,6 +4513,9 @@ function CompletionScreen({
   adminBasePath: string;
   summary: CalendarCompletionSummary;
 }) {
+  const schedulesNeedingTimes = summary.schedulesNeedingTimes || [];
+  const needsBellTimes = schedulesNeedingTimes.length > 0;
+
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
       <div className="mx-auto max-w-5xl px-5 py-10 lg:px-8">
@@ -4410,11 +4527,16 @@ function CompletionScreen({
             ✓
           </div>
           <h1 className="mt-6 text-3xl font-bold tracking-tight">
-            Your {summary.schoolYearLabel} calendar is ready.
+            {needsBellTimes
+              ? "Calendar created - Bell times still needed"
+              : "Calendar created - Continue to Launch"}
           </h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
             Sundial saved calendar rows for {formatDateForDisplay(summary.startDate)} through{" "}
-            {formatDateForDisplay(summary.endDate)}.
+            {formatDateForDisplay(summary.endDate)}.{" "}
+            {needsBellTimes
+              ? "Add bell times to the listed schedules before launching your school."
+              : "Your calendar setup is complete and the Launch step is unlocked."}
           </p>
 
           <div className="mt-8 grid gap-4 text-left sm:grid-cols-2 lg:grid-cols-5">
@@ -4444,7 +4566,7 @@ function CompletionScreen({
             </div>
           )}
 
-          {summary.schedulesNeedingTimes?.length ? (
+          {needsBellTimes ? (
             <div className="mx-auto mt-8 max-w-3xl rounded-2xl border border-amber-200 bg-amber-50 p-5 text-left dark:border-amber-900/60 dark:bg-amber-950/20">
               <h2 className="text-lg font-bold text-amber-950 dark:text-amber-100">
                 Add bell times when you are ready
@@ -4453,7 +4575,7 @@ function CompletionScreen({
                 You can add bell times later from Schedules.
               </p>
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {summary.schedulesNeedingTimes.map((schedule) => (
+                {schedulesNeedingTimes.map((schedule) => (
                   <Link
                     key={schedule.id}
                     href={`${adminBasePath}/schedules/${schedule.id}/edit`}
@@ -4480,21 +4602,21 @@ function CompletionScreen({
           )}
 
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Link href={`${adminBasePath}/calendar`} className={sundialPrimaryButtonClass()}>
-              View Calendar
-            </Link>
-            {summary.schedulesNeedingTimes?.length ? (
+            {needsBellTimes ? (
               <Link
-                href={`${adminBasePath}/schedules/${summary.schedulesNeedingTimes[0].id}/edit`}
-                className={secondaryButtonClass}
+                href={`${adminBasePath}/schedules/${schedulesNeedingTimes[0].id}/edit`}
+                className={sundialPrimaryButtonClass()}
               >
                 Add Bell Times
               </Link>
             ) : (
-              <Link href={`${adminBasePath}/calendar`} className={secondaryButtonClass}>
-                Edit a Day
+              <Link href={`${adminBasePath}/setup/launch`} className={sundialPrimaryButtonClass()}>
+                Continue to Launch
               </Link>
             )}
+            <Link href={`${adminBasePath}/calendar`} className={secondaryButtonClass}>
+              View Calendar
+            </Link>
             <Link href={adminBasePath} className={secondaryButtonClass}>
               Return to Dashboard
             </Link>

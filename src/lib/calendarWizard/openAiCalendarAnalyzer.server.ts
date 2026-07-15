@@ -5,12 +5,18 @@ import {
   normalizeAiCalendarExtraction,
   type RawAiCalendarExtraction,
 } from "./aiCalendarImportNormalizer";
+import {
+  getAiImportValidationReasonCode,
+  summarizeAiImportValidationErrors,
+} from "./aiImportTypes";
 import { buildCalendarImportResponsesRequest } from "./openAiCalendarRequest";
 import { createMockAiCalendarImportResult } from "./mockAiCalendarAnalyzer";
 import {
+  AiCalendarImportProcessingError,
   DEFAULT_OPENAI_CALENDAR_MODEL,
   OpenAiCalendarApplicationTimeoutError,
   OpenAiCalendarPdfPreparationError,
+  buildAiCalendarProcessingDiagnostics,
   createOpenAiCalendarTimeoutController,
   getOpenAiCalendarConfiguration,
   logOpenAiCalendarDiagnostic,
@@ -147,33 +153,63 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
           status: "analysis_failed",
           message: "Sundial read the PDF, but the AI response did not match the calendar format we need. Try again or continue manually.",
           retryable: true,
+          reasonCode: "ai_schema_validation_failed",
         };
       }
 
       stage = "normalizing_response";
-      const normalized = normalizeAiCalendarExtraction(raw, {
-        source: "openai",
-        usage: {
-          model,
-          requestId: requestId || undefined,
-          inputTokens: response.usage?.input_tokens,
-          outputTokens: response.usage?.output_tokens,
-          totalTokens: response.usage?.total_tokens,
-          durationMs: Date.now() - startedAt,
-        },
-      });
+      let normalized: ReturnType<typeof normalizeAiCalendarExtraction>;
+      try {
+        normalized = normalizeAiCalendarExtraction(raw, {
+          source: "openai",
+          usage: {
+            model,
+            requestId: requestId || undefined,
+            inputTokens: response.usage?.input_tokens,
+            outputTokens: response.usage?.output_tokens,
+            totalTokens: response.usage?.total_tokens,
+            durationMs: Date.now() - startedAt,
+          },
+        });
+      } catch (error) {
+        const processingError = new AiCalendarImportProcessingError({
+          phase: "review_generation",
+          reasonCode: "review_generation_failed",
+          message: "AI calendar import review generation failed.",
+          cause: error,
+        });
+        console.error(
+          "AI calendar import processing error",
+          buildAiCalendarProcessingDiagnostics({
+            error,
+            phase: processingError.phase,
+            reasonCode: processingError.reasonCode,
+            requestId,
+            durationMs: Date.now() - startedAt,
+          })
+        );
+        return mapOpenAiError(processingError);
+      }
 
       if (!normalized.success) {
+        const reasonCode = getAiImportValidationReasonCode(normalized.validationErrors);
+        const validationErrors = summarizeAiImportValidationErrors(
+          normalized.validationErrors
+        );
         console.warn("AI calendar import validation failed", {
           model,
           requestId,
           durationMs: Date.now() - startedAt,
           errorCount: normalized.errors.length,
+          phase: "schema_validation",
+          reasonCode,
+          validationErrors,
         });
         return {
           status: "analysis_failed",
-          message: "Sundial read the PDF, but the AI response did not match the calendar format we need. Try again or continue manually.",
+          message: "Sundial read the PDF, but one part of the calendar could not be validated. Retry, or continue manually.",
           retryable: true,
+          reasonCode,
         };
       }
 

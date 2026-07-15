@@ -121,7 +121,14 @@ describe("admin route path helpers", () => {
     expect(`${base}/setup/schedule?saved=1`).toBe(
       "/test/admin/setup/schedule?saved=1"
     );
-    expect(`${base}/setup/complete`).toBe("/test/admin/setup/complete");
+    expect(
+      getSchoolSetupStepPath(
+        "test",
+        "/test/admin/calendar/wizard/guided",
+        "localhost",
+        "complete"
+      )
+    ).toBe("/test/admin/setup/launch");
   });
 
   it("keeps Finish Later canonical when the current local route is the old alias", () => {
@@ -141,7 +148,7 @@ describe("admin route path helpers", () => {
     expect(
       getSchoolSetupStepPath(
         "test",
-        "/admin/test/setup/complete",
+        "/admin/test/setup/launch",
         "localhost",
         "schedule"
       )
@@ -156,7 +163,7 @@ describe("admin route path helpers", () => {
         "localhost",
         "complete"
       )
-    ).toBe("/test/admin/setup/complete");
+    ).toBe("/test/admin/setup/launch");
   });
 
   it("uses dashboard-style visible routes on the production admin host", () => {
@@ -186,14 +193,15 @@ describe("admin route path helpers", () => {
       "appearance",
       "administrators",
       "schedule",
-      "complete",
+      "launch",
     ]) {
+      const requestedStep = step === "launch" ? "complete" : step;
       expect(
         getSchoolSetupStepPath(
           "test",
           `/test/dashboard/setup/${step}`,
           "admin.sundialk12.com",
-          step
+          requestedStep
         )
       ).toBe(`/test/dashboard/setup/${step}`);
     }

@@ -23,7 +23,7 @@ import {
 } from "@/lib/setupSteps";
 import {
   completeSetupCalendarStep,
-  hasPersistedInstructionalCalendarDays,
+  getScheduleSetupReadiness,
 } from "@/lib/setupCalendarCompletion";
 import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
 
@@ -424,11 +424,11 @@ export async function finishSchoolSetupAction(formData: FormData) {
     formData
   );
 
-  const hasCalendar = await hasPersistedInstructionalCalendarDays(
+  const scheduleReadiness = await getScheduleSetupReadiness(
     serviceSupabase,
     schoolData.id
   );
-  if (!hasCalendar || normalizeSetupStep(schoolData.setup_step) !== "complete") {
+  if (!scheduleReadiness.complete || normalizeSetupStep(schoolData.setup_step) !== "complete") {
     redirect(await getSchoolSetupStepPath(school, "schedule"));
   }
 

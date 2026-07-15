@@ -59,6 +59,7 @@ describe("AI import API route", () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ status: "success" });
+    expect(response.headers.get("x-sundial-ai-import-request-id")).toBeTruthy();
     expect(mocks.analyzeCalendarPdf).toHaveBeenCalledOnce();
   });
 

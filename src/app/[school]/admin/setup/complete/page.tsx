@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { SETUP_STEPS } from "@/lib/setupSteps";
 import { getSchoolSetupStepPath } from "@/lib/auth/adminPermissions";
-import { hasPersistedInstructionalCalendarDays } from "@/lib/setupCalendarCompletion";
+import { getScheduleSetupReadiness } from "@/lib/setupCalendarCompletion";
 import { finishSchoolSetupAction } from "../actions";
 import { getSetupContext } from "../context";
 import SetupLayout from "../setup-layout";
@@ -13,12 +13,12 @@ type CompletePageProps = {
 export default async function CompleteSetupPage({ params }: CompletePageProps) {
   const { school } = await params;
   const context = await getSetupContext(school);
-  const hasCalendar = await hasPersistedInstructionalCalendarDays(
+  const scheduleReadiness = await getScheduleSetupReadiness(
     context.supabase,
     context.schoolData.id
   );
 
-  if (!hasCalendar || context.savedStep !== "complete") {
+  if (!scheduleReadiness.complete || context.savedStep !== "complete") {
     redirect(await getSchoolSetupStepPath(school, "schedule"));
   }
 

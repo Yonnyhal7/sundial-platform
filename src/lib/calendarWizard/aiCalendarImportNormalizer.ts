@@ -1,5 +1,6 @@
 import {
   compareDateStrings,
+  formatDateString,
   isDateString,
 } from "./dateUtils";
 import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
@@ -10,6 +11,7 @@ import {
   type AiDetectedScheduleCategory,
   type AiImportConfidence,
   type AiImportEvidence,
+  type AiImportValidationResult,
   type AiImportWarning,
 } from "./aiImportTypes";
 import type { CalendarWizardConfig, PatternType, Weekday } from "./types";
@@ -84,7 +86,7 @@ export type NormalizeAiCalendarImportOptions = {
 
 export type NormalizeAiCalendarImportResult =
   | { success: true; importResult: AiCalendarImportResult }
-  | { success: false; errors: string[] };
+  | Extract<AiImportValidationResult, { success: false }>;
 
 function trimOptional(value: string | null | undefined) {
   const next = (value || "").trim();
@@ -92,7 +94,7 @@ function trimOptional(value: string | null | undefined) {
 }
 
 function trimRequired(value: string, fallback: string) {
-  return value.trim() || fallback;
+  return typeof value === "string" ? value.trim() || fallback : fallback;
 }
 
 function evidence(raw: RawEvidence | null): AiImportEvidence | undefined {
@@ -102,6 +104,60 @@ function evidence(raw: RawEvidence | null): AiImportEvidence | undefined {
   const page = typeof raw.page === "number" && raw.page > 0 ? raw.page : undefined;
   if (!sourceText && !explanation && !page) return undefined;
   return { sourceText, explanation, page };
+}
+
+function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeConfidence(value: unknown): AiImportConfidence {
+  return value === "high" || value === "review" || value === "uncertain"
+    ? value
+    : "review";
+}
+
+function normalizeWeekday(value: unknown): Weekday | null {
+  const next = typeof value === "string" && value.trim() ? Number(value) : value;
+  return typeof next === "number" && Number.isInteger(next) && next >= 0 && next <= 6
+    ? (next as Weekday)
+    : null;
+}
+
+function normalizeWeekdays(values: unknown): Weekday[] {
+  return asArray(values as unknown[])
+    .map(normalizeWeekday)
+    .filter((weekday): weekday is Weekday => weekday !== null);
+}
+
+function normalizeDateValue(value: unknown) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, month, day, year] = slashMatch;
+    const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    const normalized = formatDateString(parsed);
+    return normalized.endsWith(
+      `${String(Number(month)).padStart(2, "0")}-${String(Number(day)).padStart(2, "0")}`
+    )
+      ? normalized
+      : trimmed;
+  }
+
+  const isoWithTime = trimmed.match(/^(\d{4}-\d{2}-\d{2})[T\s]/);
+  if (isoWithTime && isDateString(isoWithTime[1])) return isoWithTime[1];
+
+  return trimmed;
+}
+
+function normalizeInteger(value: unknown) {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    return Number(value.trim());
+  }
+  return null;
 }
 
 function dedupeByKey<T>(items: T[], key: (item: T) => string, warnings: AiImportWarning[]) {
@@ -135,6 +191,16 @@ function dateRangeKey(item: { startDate: string; endDate: string; label: string 
 
 function makeId(prefix: string, value: string, index: number) {
   return `${prefix}-${normalizeScheduleNameForMatching(value).replace(/\s+/g, "-") || index}`;
+}
+
+function scheduleNameFromTempId(tempId: string) {
+  const cleaned = tempId
+    .replace(/^(ai-|sched-|schedule-|temp-)+/i, "")
+    .replace(/[-_]+/g, " ")
+    .trim();
+  return cleaned
+    ? cleaned.replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : "Referenced Schedule";
 }
 
 function validateReferences(
@@ -233,17 +299,42 @@ export function normalizeAiCalendarExtraction(
   raw: RawAiCalendarExtraction,
   options: NormalizeAiCalendarImportOptions
 ): NormalizeAiCalendarImportResult {
-  const warnings = [...(raw.warnings || [])];
-  validateReferences(raw, warnings);
+  const rawDetectedSchedules = asArray(raw.detectedSchedules);
+  const rawNormalPattern = raw.normalPattern || {
+    type: "same" as const,
+    scheduleTempIds: [],
+    weekdayMappings: [],
+    confidence: "review" as const,
+    evidence: null,
+  };
+  const rawNoSchoolRanges = asArray(raw.noSchoolRanges);
+  const rawSpecialSchoolDays = asArray(raw.specialSchoolDays);
+  const rawInformationalDates = asArray(raw.informationalDates);
+  const warnings = asArray(raw.warnings);
+  validateReferences(
+    {
+      ...raw,
+      detectedSchedules: rawDetectedSchedules,
+      normalPattern: rawNormalPattern,
+      noSchoolRanges: rawNoSchoolRanges,
+      specialSchoolDays: rawSpecialSchoolDays,
+      informationalDates: rawInformationalDates,
+      warnings,
+    },
+    warnings
+  );
 
   const noSchoolRanges = dedupeByKey(
-    raw.noSchoolRanges.map((range, index) => ({
+    rawNoSchoolRanges.map((range, index) => ({
       id: trimRequired(range.id, makeId("ai-no-school", range.label, index)),
-      startDate: range.startDate,
-      endDate: normalizeRangeEnd(range.startDate, range.endDate),
+      startDate: normalizeDateValue(range.startDate),
+      endDate: normalizeRangeEnd(
+        normalizeDateValue(range.startDate),
+        normalizeDateValue(range.endDate)
+      ),
       label: trimRequired(range.label, "No School"),
       type: trimOptional(range.type) || undefined,
-      confidence: range.confidence,
+      confidence: normalizeConfidence(range.confidence),
       evidence: evidence(range.evidence),
     })),
     dateRangeKey,
@@ -251,15 +342,18 @@ export function normalizeAiCalendarExtraction(
   ).sort((a, b) => compareDateStrings(a.startDate, b.startDate));
 
   const specialDays = dedupeByKey(
-    raw.specialSchoolDays.map((day, index) => ({
+    rawSpecialSchoolDays.map((day, index) => ({
       id: trimRequired(day.id, makeId("ai-special", day.label, index)),
-      startDate: day.startDate,
-      endDate: normalizeRangeEnd(day.startDate, day.endDate),
+      startDate: normalizeDateValue(day.startDate),
+      endDate: normalizeRangeEnd(
+        normalizeDateValue(day.startDate),
+        normalizeDateValue(day.endDate)
+      ),
       label: trimRequired(day.label, "Special Day"),
       type: trimOptional(day.type) || undefined,
       scheduleTempId: trimOptional(day.scheduleTempId) || undefined,
       isInstructional: day.isInstructional,
-      confidence: day.confidence,
+      confidence: normalizeConfidence(day.confidence),
       evidence: evidence(day.evidence),
     })),
     dateRangeKey,
@@ -267,29 +361,57 @@ export function normalizeAiCalendarExtraction(
   ).sort((a, b) => compareDateStrings(a.startDate, b.startDate));
 
   const informationalDates = dedupeByKey(
-    raw.informationalDates.map((date, index) => ({
+    rawInformationalDates.map((date, index) => ({
       id: trimRequired(date.id, makeId("ai-info", date.label, index)),
-      date: date.date,
+      date: normalizeDateValue(date.date),
       label: trimRequired(date.label, "Important Date"),
-      confidence: date.confidence,
+      confidence: normalizeConfidence(date.confidence),
       evidence: evidence(date.evidence),
     })),
     (date) => `${date.date}|${date.label.toLowerCase()}`,
     warnings
   ).sort((a, b) => compareDateStrings(a.date, b.date));
 
-  const detectedSchedules = raw.detectedSchedules.map((schedule, index) => {
+  const detectedSchedules = rawDetectedSchedules.map((schedule, index) => {
     const detectedName = trimRequired(schedule.name, `Detected Schedule ${index + 1}`);
     return {
       tempId: trimRequired(schedule.tempId, makeId("ai-schedule", detectedName, index)),
       detectedName,
       normalizedName: normalizeScheduleNameForMatching(detectedName),
       category: schedule.category,
-      confidence: schedule.confidence,
+      confidence: normalizeConfidence(schedule.confidence),
       evidence: evidence(schedule.evidence),
       needsSetup: true,
     };
   });
+  const detectedScheduleIds = new Set(detectedSchedules.map((schedule) => schedule.tempId));
+  const referencedScheduleIds = new Set([
+    ...asArray(rawNormalPattern.scheduleTempIds),
+    ...specialDays
+      .filter((day) => day.isInstructional && day.scheduleTempId)
+      .map((day) => day.scheduleTempId as string),
+  ]);
+
+  for (const tempId of referencedScheduleIds) {
+    if (!tempId || detectedScheduleIds.has(tempId)) continue;
+    const detectedName = scheduleNameFromTempId(tempId);
+    detectedSchedules.push({
+      tempId,
+      detectedName,
+      normalizedName: normalizeScheduleNameForMatching(detectedName),
+      category: "unknown",
+      confidence: "review",
+      evidence: undefined,
+      needsSetup: true,
+    });
+    detectedScheduleIds.add(tempId);
+    warnings.push({
+      code: "missing_required_schedule_detected",
+      severity: "review",
+      message:
+        "The PDF referenced a schedule in the calendar pattern that was not listed in the legend. Sundial added it for review.",
+    });
+  }
 
   const importResult: AiCalendarImportResult = {
     schemaVersion: 1,
@@ -297,25 +419,25 @@ export function normalizeAiCalendarExtraction(
     analyzedAt: options.analyzedAt || getLocalTodayISO(),
     documentTitle: trimOptional(raw.documentTitle),
     detectedSchoolName: trimOptional(raw.detectedSchoolName),
-    expectedInstructionalDayCount: raw.expectedInstructionalDayCount,
+    expectedInstructionalDayCount: normalizeInteger(raw.expectedInstructionalDayCount),
     legendInterpretation: trimOptional(raw.legendInterpretation),
     extractionNotes: trimOptional(raw.extractionNotes),
     usage: options.usage,
     schoolYear: {
       label: trimOptional(raw.schoolYearLabel) || undefined,
-      startDate: raw.firstInstructionalDate,
-      endDate: raw.lastInstructionalDate,
-      operatingWeekdays: raw.operatingWeekdays,
-      confidence: raw.schoolYearConfidence,
+      startDate: normalizeDateValue(raw.firstInstructionalDate),
+      endDate: normalizeDateValue(raw.lastInstructionalDate),
+      operatingWeekdays: normalizeWeekdays(raw.operatingWeekdays),
+      confidence: normalizeConfidence(raw.schoolYearConfidence),
     },
     detectedSchedules,
     pattern: {
-      type: raw.normalPattern.type,
-      scheduleTempIds: raw.normalPattern.scheduleTempIds.filter((tempId) =>
+      type: rawNormalPattern.type,
+      scheduleTempIds: asArray(rawNormalPattern.scheduleTempIds).filter((tempId) =>
         detectedSchedules.some((schedule) => schedule.tempId === tempId)
       ),
-      confidence: raw.normalPattern.confidence,
-      evidence: evidence(raw.normalPattern.evidence),
+      confidence: normalizeConfidence(rawNormalPattern.confidence),
+      evidence: evidence(rawNormalPattern.evidence),
     },
     noSchoolRanges,
     specialDays,
@@ -324,6 +446,10 @@ export function normalizeAiCalendarExtraction(
   };
 
   addDateWarnings(importResult, warnings);
+
+  const preReviewValidation = validateAiCalendarImportResult(importResult);
+  if (!preReviewValidation.success) return preReviewValidation;
+
   addInstructionalDayCountWarning(importResult, warnings);
 
   const validation = validateAiCalendarImportResult(importResult);

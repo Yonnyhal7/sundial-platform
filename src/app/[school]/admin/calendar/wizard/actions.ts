@@ -709,12 +709,31 @@ async function getSetupCalendarCompletionRedirect({
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
   schoolId: string;
   school: string;
-}) {
+}): Promise<
+  | { status: "success"; redirectTo: string }
+  | {
+      status: "blocked";
+      message: string;
+      schedulesNeedingTimes: Array<{ id: string; name: string }>;
+    }
+  | { status: "validation_error"; result: GenerateCalendarActionResult }
+> {
   const result = await completeSetupCalendarStep({ supabase, schoolId, school });
   if (result.status !== "success") {
-    return validationError(result.message, {
-      calendar: result.message,
-    });
+    if (result.reason === "schedules_need_times") {
+      return {
+        status: "blocked",
+        message: result.message,
+        schedulesNeedingTimes: result.schedulesNeedingTimes || [],
+      };
+    }
+
+    return {
+      status: "validation_error",
+      result: validationError(result.message, {
+        calendar: result.message,
+      }),
+    };
   }
 
   return {
@@ -962,13 +981,13 @@ export async function createAiCalendarFromDraftAction(
             school,
           })
         : null;
-    if (setupCompletion && setupCompletion.status !== "success") {
-      return setupCompletion;
+    if (setupCompletion?.status === "validation_error") {
+      return setupCompletion.result;
     }
 
     return {
       status: "success",
-      redirectTo: setupCompletion?.redirectTo,
+      redirectTo: setupCompletion?.status === "success" ? setupCompletion.redirectTo : undefined,
       summary: {
         schoolYearLabel: config.schoolYear.name || "School Year",
         startDate: config.schoolYear.startDate,
@@ -984,7 +1003,10 @@ export async function createAiCalendarFromDraftAction(
           name: schedule.scheduleName,
         })),
         matchedScheduleCount: plan.matchedScheduleIds.length,
-        schedulesNeedingTimes: plan.schedulesNeedingTimes,
+        schedulesNeedingTimes:
+          setupCompletion?.status === "blocked"
+            ? setupCompletion.schedulesNeedingTimes
+            : plan.schedulesNeedingTimes,
         warningsRemaining:
           aiWarningClassification.unresolvedReviewWarnings.length +
           generatedWarningClassification.reviewWarnings.length,
@@ -1146,13 +1168,13 @@ export async function generateCalendarAction(
             });
           })()
         : null;
-    if (setupCompletion && setupCompletion.status !== "success") {
-      return setupCompletion;
+    if (setupCompletion?.status === "validation_error") {
+      return setupCompletion.result;
     }
 
     return {
       status: "success",
-      redirectTo: setupCompletion?.redirectTo,
+      redirectTo: setupCompletion?.status === "success" ? setupCompletion.redirectTo : undefined,
       summary: {
         schoolYearLabel: config.schoolYear.name || "School Year",
         startDate: config.schoolYear.startDate,
@@ -1163,6 +1185,10 @@ export async function generateCalendarAction(
         specialInstructionalDayCount: generated.summary.specialInstructionalDayCount,
         warningCount: generated.summary.warningCount,
         warnings: generated.warnings,
+        schedulesNeedingTimes:
+          setupCompletion?.status === "blocked"
+            ? setupCompletion.schedulesNeedingTimes
+            : undefined,
       },
     };
   } catch (error) {

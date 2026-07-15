@@ -60,6 +60,16 @@ export async function POST(request: Request, context: RouteContext) {
   const { school } = await context.params;
   const requestId = crypto.randomUUID();
   const startedAt = Date.now();
+  const respond = (result: AnalyzeCalendarPdfResult, init?: ResponseInit) =>
+    json(result, {
+      ...init,
+      headers: {
+        ...(init?.headers instanceof Headers
+          ? Object.fromEntries(init.headers.entries())
+          : init?.headers),
+        "x-sundial-ai-import-request-id": requestId,
+      },
+    });
 
   try {
     logAiImportRouteDiagnostic({
@@ -72,7 +82,7 @@ export async function POST(request: Request, context: RouteContext) {
     const schoolData = await getSchoolForSetup(school);
 
     if (!schoolData) {
-      return json(
+      return respond(
         {
           status: "validation_error",
           message: "School not found.",
@@ -89,7 +99,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const canImport = await canAccessAdminSection(schoolData.id, "calendar");
     if (!canImport) {
-      return json(
+      return respond(
         {
           status: "permission_error",
           message: "You do not have permission to import this calendar.",
@@ -115,7 +125,7 @@ export async function POST(request: Request, context: RouteContext) {
         school,
         durationMs: Date.now() - startedAt,
       });
-      return json(
+      return respond(
         {
           status: "validation_error",
           message: "Sundial could not read the uploaded PDF. Please choose the file again and retry.",
@@ -126,7 +136,7 @@ export async function POST(request: Request, context: RouteContext) {
     const upload = formData.get("calendarPdf");
 
     if (!(upload instanceof File)) {
-      return json(
+      return respond(
         {
           status: "validation_error",
           message: "Please upload a PDF calendar smaller than 20 MB.",
@@ -156,7 +166,7 @@ export async function POST(request: Request, context: RouteContext) {
         fileSize: upload.size,
         fileType: upload.type || "unknown",
       });
-      return json(
+      return respond(
         {
           status: "validation_error",
           message: "Sundial could not read the uploaded PDF. Please choose the file again and retry.",
@@ -176,7 +186,7 @@ export async function POST(request: Request, context: RouteContext) {
         fileSize: upload.size,
         fileType: upload.type || "unknown",
       });
-      return json(
+      return respond(
         {
           status: "validation_error",
           message: validation.message,
@@ -207,7 +217,7 @@ export async function POST(request: Request, context: RouteContext) {
     });
 
     if (result.status === "success") {
-      return json(result);
+      return respond(result);
     }
 
     const status =
@@ -219,7 +229,7 @@ export async function POST(request: Request, context: RouteContext) {
             ? 422
             : 500;
 
-    return json(result, { status });
+    return respond(result, { status });
   } catch (error) {
     console.error("AI calendar import route error:", {
       requestId,
@@ -227,7 +237,7 @@ export async function POST(request: Request, context: RouteContext) {
       category: error instanceof Error ? error.name : "unknown",
       durationMs: Date.now() - startedAt,
     });
-    return json(
+    return respond(
       {
         status: "server_error",
         message: "Sundial could not analyze this PDF yet. Please continue manually.",

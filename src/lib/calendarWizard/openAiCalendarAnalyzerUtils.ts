@@ -17,7 +17,7 @@ export type CalendarAnalyzerResult =
         | "server_error";
       message: string;
       retryable?: boolean;
-      reasonCode?: OpenAiCalendarConfigurationReasonCode;
+      reasonCode?: AiCalendarImportFailureReasonCode;
     };
 
 export type OpenAiCalendarAnalysisStage =
@@ -50,6 +50,26 @@ export type OpenAiCalendarConfigurationReasonCode =
   | "invalid_timeout"
   | "unsupported_model"
   | "openai_authentication_failed";
+
+export type AiCalendarImportProcessingPhase =
+  | "normalization"
+  | "schema_validation"
+  | "review_generation"
+  | "draft_persistence"
+  | "consistency_checks";
+
+export type AiCalendarImportFailureReasonCode =
+  | OpenAiCalendarConfigurationReasonCode
+  | "ai_schema_validation_failed"
+  | "schema_validation_failed"
+  | "normalization_failed"
+  | "draft_save_failed"
+  | "review_generation_failed"
+  | "calendar_validation_failed"
+  | "missing_required_schedule"
+  | "invalid_date_range"
+  | "invalid_schedule_reference"
+  | "malformed_calendar_structure";
 
 export type CalendarImportMode = "mock" | "openai" | "disabled";
 type CalendarImportEnv = Record<string, string | undefined>;
@@ -86,6 +106,30 @@ export class OpenAiCalendarPdfPreparationError extends Error {
   constructor() {
     super("Calendar PDF could not be prepared for analysis.");
     this.name = "OpenAiCalendarPdfPreparationError";
+  }
+}
+
+export class AiCalendarImportProcessingError extends Error {
+  phase: AiCalendarImportProcessingPhase;
+  reasonCode: AiCalendarImportFailureReasonCode;
+  cause?: unknown;
+
+  constructor({
+    phase,
+    reasonCode,
+    message,
+    cause,
+  }: {
+    phase: AiCalendarImportProcessingPhase;
+    reasonCode: AiCalendarImportFailureReasonCode;
+    message: string;
+    cause?: unknown;
+  }) {
+    super(message);
+    this.name = "AiCalendarImportProcessingError";
+    this.phase = phase;
+    this.reasonCode = reasonCode;
+    this.cause = cause;
   }
 }
 
@@ -188,6 +232,15 @@ export function shouldRetryOpenAiError(error: unknown, attempt: number) {
 }
 
 export function mapOpenAiError(error: unknown): CalendarAnalyzerResult {
+  if (error instanceof AiCalendarImportProcessingError) {
+    return {
+      status: "analysis_failed",
+      message: "Sundial read the PDF, but could not prepare the calendar review. Please try again or continue manually.",
+      retryable: true,
+      reasonCode: error.reasonCode,
+    };
+  }
+
   if (error instanceof OpenAiCalendarPdfPreparationError) {
     return {
       status: "analysis_failed",
@@ -308,6 +361,30 @@ export function buildOpenAiErrorDiagnostics(
     fileUploadSucceeded: context.fileUploadSucceeded,
     responsesApiCallBegan: context.responsesApiCallBegan,
     durationMs: context.durationMs,
+  };
+}
+
+export function buildAiCalendarProcessingDiagnostics({
+  error,
+  phase,
+  reasonCode,
+  requestId,
+  durationMs,
+}: {
+  error: unknown;
+  phase: AiCalendarImportProcessingPhase;
+  reasonCode: AiCalendarImportFailureReasonCode;
+  requestId?: string | null;
+  durationMs: number;
+}) {
+  return {
+    phase,
+    reasonCode,
+    exceptionName: error instanceof Error ? error.name : "unknown",
+    exceptionMessage: error instanceof Error ? error.message : undefined,
+    stack: error instanceof Error ? error.stack : undefined,
+    requestId: requestId || undefined,
+    durationMs,
   };
 }
 

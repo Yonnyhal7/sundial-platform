@@ -9,6 +9,7 @@ import {
   type CalendarWizardDraftRecord,
 } from "@/lib/calendarWizard/draftPersistence";
 import { setupPrimaryButtonClass } from "@/lib/ui/setupStyles";
+import { getScheduleSetupReadiness } from "@/lib/setupCalendarCompletion";
 import { loadCalendarWizardDraft } from "../../calendar/wizard/actions";
 
 type SchedulePageProps = {
@@ -24,9 +25,10 @@ export default async function OnboardingSchedulePage({
   const { saved } = await searchParams;
   const context = await getSetupContext(school);
   const adminBasePath = await getSchoolAdminPath(school);
-  const [aiDraftResult, guidedDraftResult] = await Promise.all([
+  const [aiDraftResult, guidedDraftResult, scheduleReadiness] = await Promise.all([
     loadCalendarWizardDraft(school, AI_CALENDAR_WIZARD_DRAFT_TYPE),
     loadCalendarWizardDraft(school, GUIDED_CALENDAR_WIZARD_DRAFT_TYPE),
+    getScheduleSetupReadiness(context.supabase, context.schoolData.id),
   ]);
   const drafts = [
     aiDraftResult.status === "success" && aiDraftResult.draft
@@ -76,6 +78,29 @@ export default async function OnboardingSchedulePage({
             Your calendar setup has been saved. Finish it before launching the school.
           </div>
         )}
+
+        {scheduleReadiness.hasInstructionalCalendarDays &&
+          scheduleReadiness.schedulesNeedingTimes.length > 0 && (
+            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm font-semibold text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+              <h3 className="text-lg font-bold">
+                Calendar created - Bell times still needed
+              </h3>
+              <p className="mt-2">
+                Add bell times to these schedules before launching your school.
+              </p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {scheduleReadiness.schedulesNeedingTimes.map((schedule) => (
+                  <Link
+                    key={schedule.id}
+                    href={`${adminBasePath}/schedules/${schedule.id}/edit`}
+                    className="rounded-xl bg-white px-4 py-3 text-sm font-bold text-amber-950 shadow-sm transition hover:bg-amber-100 dark:bg-black dark:text-amber-100 dark:hover:bg-amber-950/40"
+                  >
+                    Add Bell Times: {schedule.name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
 
         {drafts.length > 0 && (
           <div className="mt-7 rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-950/20">

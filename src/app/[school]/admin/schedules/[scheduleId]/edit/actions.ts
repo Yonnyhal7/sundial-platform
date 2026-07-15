@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { normalizeHexColor } from "@/lib/scheduleColors";
 import { getSchoolForSetup } from "@/lib/schools";
+import { completeSetupCalendarStep } from "@/lib/setupCalendarCompletion";
+import { createSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 
 export async function updateScheduleAction(
   school: string,
@@ -147,6 +149,18 @@ export async function updateScheduleAction(
         console.error("Update period error:", JSON.stringify(updatePeriodError, null, 2));
         redirect(`/${school}/admin/schedules/${scheduleId}/edit?error=1`);
       }
+    }
+  }
+
+  if (hasValidPeriods) {
+    try {
+      await completeSetupCalendarStep({
+        supabase: createSupabaseServiceRoleClient(),
+        schoolId,
+        school,
+      });
+    } catch (error) {
+      console.error("Schedule setup readiness update failed:", error);
     }
   }
 

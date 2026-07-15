@@ -30,6 +30,7 @@ import {
 } from "./aiImportTypes";
 import {
   DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS,
+  AiCalendarImportProcessingError,
   MAX_OPENAI_CALENDAR_TIMEOUT_MS,
   MIN_OPENAI_CALENDAR_TIMEOUT_MS,
   OpenAiCalendarApplicationTimeoutError,
@@ -325,6 +326,81 @@ describe("AI calendar import normalization", () => {
     expect(normalized.success).toBe(false);
   });
 
+  it("returns schema errors before final review generation for invalid imported dates", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        noSchoolRanges: [
+          {
+            id: "holiday-1",
+            startDate: "2026-99-99",
+            endDate: null,
+            label: "Broken Holiday",
+            type: "Holiday",
+            confidence: "review",
+            evidence: null,
+          },
+        ],
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(false);
+    if (!normalized.success) {
+      expect(normalized.errors).toContain("noSchoolRanges.0.startDate must be a YYYY-MM-DD date.");
+    }
+  });
+
+  it("keeps a referenced pattern schedule for review when GPT omits it from detected schedules", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        detectedSchedules: [],
+        normalPattern: {
+          type: "same",
+          scheduleTempIds: ["sched-allperiods"],
+          weekdayMappings: [],
+          confidence: "review",
+          evidence: null,
+        },
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.importResult.pattern.scheduleTempIds).toEqual(["sched-allperiods"]);
+      expect(normalized.importResult.detectedSchedules[0]).toMatchObject({
+        tempId: "sched-allperiods",
+        detectedName: "Allperiods",
+        confidence: "review",
+      });
+      expect(normalized.importResult.warnings).toContainEqual(
+        expect.objectContaining({ code: "missing_required_schedule_detected" })
+      );
+    }
+  });
+
+  it("reports structured validation details for missing required schedules", () => {
+    const result = validateAiCalendarImportResult({
+      ...createMockAiCalendarImportResult(),
+      pattern: {
+        type: "same",
+        scheduleTempIds: [],
+        confidence: "high",
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.validationErrors).toContainEqual(
+        expect.objectContaining({
+          path: "pattern.scheduleTempIds",
+          code: "too_small",
+          expected: "at least one schedule temp id",
+        })
+      );
+    }
+  });
+
   it("adds expected instructional-day mismatch warnings", () => {
     const normalized = normalizeAiCalendarExtraction(
       rawExtraction({ expectedInstructionalDayCount: 180 }),
@@ -388,6 +464,22 @@ describe("OpenAI calendar analyzer behavior", () => {
     expect(result).toMatchObject({
       status: "configuration_error",
       reasonCode: "openai_authentication_failed",
+    });
+  });
+
+  it("maps post-analysis processing failures to safe reason codes", () => {
+    const result = mapOpenAiError(
+      new AiCalendarImportProcessingError({
+        phase: "review_generation",
+        reasonCode: "review_generation_failed",
+        message: "review failed",
+      })
+    );
+
+    expect(result).toMatchObject({
+      status: "analysis_failed",
+      reasonCode: "review_generation_failed",
+      retryable: true,
     });
   });
 
