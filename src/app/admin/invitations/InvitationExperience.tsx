@@ -30,8 +30,10 @@ export default function InvitationExperience({
   );
 
   useEffect(() => {
-    const rawToken = new URLSearchParams(window.location.hash.slice(1)).get("token");
-    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    const hashToken = new URLSearchParams(window.location.hash.slice(1)).get("token");
+    const queryToken = new URLSearchParams(window.location.search).get("token");
+    const rawToken = hashToken || queryToken;
+    window.history.replaceState(null, "", window.location.pathname);
     const exchange = rawToken
       ? exchangeInvitationTokenAction(rawToken)
       : Promise.resolve(initialView);

@@ -17,7 +17,12 @@ import { retrySchoolStorageCleanupAction } from "./lifecycle-actions";
 import ResendSetupEmailButton from "./ResendSetupEmailButton";
 
 type SchoolsPageProps = {
-  searchParams: Promise<{ created?: string; subdomain?: string; inviteDelivery?: string }>;
+  searchParams: Promise<{
+    created?: string;
+    subdomain?: string;
+    inviteDelivery?: string;
+    invite?: string;
+  }>;
 };
 
 type SetupInvitation = {
@@ -35,7 +40,7 @@ type School = SuperAdminSchoolSummary;
 
 export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
   const { supabase } = await requireSuperAdminAccess();
-  const { created, subdomain, inviteDelivery } = await searchParams;
+  const { created, subdomain, inviteDelivery, invite } = await searchParams;
   const schoolsHref = "/admin/dashboard/schools";
 
   const [{ data: schools }, { data: cleanupJobs }] = await Promise.all([
@@ -118,7 +123,22 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
                 ? "The school was retained, but its setup invitation record could not be created."
                 : "The school and invitation were retained, but the setup email was not delivered."}
           </p>
-          {subdomain && <div className="mt-2 space-y-1 font-mono text-xs"><p>{subdomain}.sundialk12.com</p><p>admin.sundialk12.com/{subdomain}</p></div>}
+          {subdomain && (
+            <div className="mt-2 space-y-1 font-mono text-xs">
+              <p>{subdomain}.sundialk12.com</p>
+              <p>admin.sundialk12.com/{subdomain}</p>
+            </div>
+          )}
+          {invite && (
+            <div className="mt-3 rounded-md border border-emerald-200 bg-white/80 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-950/70">
+              <p className="text-xs font-semibold uppercase tracking-wide">
+                Temporary password setup link
+              </p>
+              <p className="mt-1 break-all font-mono text-xs">
+                https://admin.sundialk12.com/invitations?token={invite}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

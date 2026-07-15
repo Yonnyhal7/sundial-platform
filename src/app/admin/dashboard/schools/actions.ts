@@ -191,12 +191,14 @@ export async function createSchoolAction(
   }
 
   let inviteDelivery = "record_failed";
+  let manualInviteToken: string | null = null;
   try {
     const invitation = await createPendingAdminInvite({
       schoolId: school.id,
       email: adminEmail,
       createdBy: profile.id,
     });
+    manualInviteToken = invitation.rawToken;
     const delivery = await deliverSchoolSetupInvitation({
       supabase,
       inviteId: invitation.inviteId,
@@ -219,6 +221,8 @@ export async function createSchoolAction(
   redirect(
     `/admin/dashboard/schools?created=${encodeURIComponent(name)}&subdomain=${encodeURIComponent(
       school.subdomain
-    )}&inviteDelivery=${encodeURIComponent(inviteDelivery)}`
+    )}&inviteDelivery=${encodeURIComponent(inviteDelivery)}${
+      manualInviteToken ? `&invite=${encodeURIComponent(manualInviteToken)}` : ""
+    }`
   );
 }
