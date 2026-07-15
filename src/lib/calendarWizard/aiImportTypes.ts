@@ -181,6 +181,7 @@ export type AnalyzeCalendarPdfResult =
         | "server_error";
       message: string;
       retryable?: boolean;
+      reasonCode?: string;
     };
 
 const confidenceValues = new Set<AiImportConfidence>(["high", "review", "uncertain"]);

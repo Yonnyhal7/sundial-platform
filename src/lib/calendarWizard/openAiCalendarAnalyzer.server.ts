@@ -8,11 +8,11 @@ import {
 import { buildCalendarImportResponsesRequest } from "./openAiCalendarRequest";
 import { createMockAiCalendarImportResult } from "./mockAiCalendarAnalyzer";
 import {
+  DEFAULT_OPENAI_CALENDAR_MODEL,
   OpenAiCalendarApplicationTimeoutError,
   OpenAiCalendarPdfPreparationError,
   createOpenAiCalendarTimeoutController,
-  getCalendarImportMode,
-  getOpenAiCalendarTimeoutMs,
+  getOpenAiCalendarConfiguration,
   logOpenAiCalendarDiagnostic,
   mapOpenAiError,
   openAiResponseHasRefusal,
@@ -23,16 +23,10 @@ import {
   type CalendarAnalyzerResult,
 } from "./openAiCalendarAnalyzerUtils";
 
-export const DEFAULT_OPENAI_CALENDAR_MODEL = "gpt-5";
+export { DEFAULT_OPENAI_CALENDAR_MODEL };
 
-function getOpenAiClient() {
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) return null;
+function getOpenAiClient(apiKey: string) {
   return new OpenAI({ apiKey });
-}
-
-function getCalendarModel() {
-  return process.env.OPENAI_CALENDAR_MODEL?.trim() || DEFAULT_OPENAI_CALENDAR_MODEL;
 }
 
 async function sleepForRetry() {
@@ -48,23 +42,26 @@ function parseStructuredOutput(outputText: string): RawAiCalendarExtraction | nu
 }
 
 export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerResult> {
-  if (getCalendarImportMode() === "mock") {
+  const configuration = getOpenAiCalendarConfiguration();
+
+  if (configuration.ok && configuration.mode === "mock") {
     return {
       status: "success",
       importResult: createMockAiCalendarImportResult(),
     };
   }
 
-  const client = getOpenAiClient();
-  if (!client) {
+  if (!configuration.ok) {
     return {
       status: "configuration_error",
-      message: "AI calendar import is not configured yet.",
+      message: configuration.message,
+      reasonCode: configuration.reasonCode,
     };
   }
 
-  const model = getCalendarModel();
-  const timeoutMs = getOpenAiCalendarTimeoutMs();
+  const client = getOpenAiClient(configuration.apiKey);
+  const model = configuration.model;
+  const timeoutMs = configuration.timeoutMs;
   const startedAt = Date.now();
   let stage: OpenAiCalendarAnalysisStage = "preparing_file";
   let fileUploadSucceeded = false;

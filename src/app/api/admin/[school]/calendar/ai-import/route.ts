@@ -23,6 +23,7 @@ function logAiImportRouteDiagnostic({
   school,
   durationMs,
   status,
+  reasonCode,
   fileSize,
   fileType,
 }: {
@@ -32,6 +33,7 @@ function logAiImportRouteDiagnostic({
   school: string;
   durationMs: number;
   status?: string;
+  reasonCode?: string;
   fileSize?: number;
   fileType?: string;
 }) {
@@ -41,6 +43,7 @@ function logAiImportRouteDiagnostic({
     school,
     durationMs,
     status,
+    reasonCode,
     fileSize,
     fileType,
   };
@@ -198,6 +201,7 @@ export async function POST(request: Request, context: RouteContext) {
       school,
       durationMs: Date.now() - startedAt,
       status: result.status,
+      reasonCode: result.status === "success" ? undefined : result.reasonCode,
       fileSize: upload.size,
       fileType: upload.type || "unknown",
     });

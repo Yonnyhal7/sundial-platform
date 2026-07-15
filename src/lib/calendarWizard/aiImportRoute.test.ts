@@ -63,16 +63,30 @@ describe("AI import API route", () => {
   });
 
   it("returns configuration errors distinctly for a missing OpenAI API key", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mocks.analyzeCalendarPdf.mockResolvedValue({
       status: "configuration_error",
-      message: "AI calendar import is not configured yet.",
+      message: "AI calendar import is not enabled in this environment. Ask an administrator to add the OpenAI API key and retry.",
+      reasonCode: "missing_openai_api_key",
     });
 
     const response = await post();
     const body = await response.json();
 
     expect(response.status).toBe(503);
-    expect(body).toMatchObject({ status: "configuration_error" });
+    expect(body).toMatchObject({
+      status: "configuration_error",
+      reasonCode: "missing_openai_api_key",
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      "AI calendar import route diagnostic",
+      expect.objectContaining({
+        event: "analysis_finished",
+        status: "configuration_error",
+        reasonCode: "missing_openai_api_key",
+      })
+    );
+    warnSpy.mockRestore();
   });
 
   it("returns timeout analysis failures distinctly", async () => {

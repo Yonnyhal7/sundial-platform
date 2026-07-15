@@ -17,6 +17,7 @@ export type CalendarAnalyzerResult =
         | "server_error";
       message: string;
       retryable?: boolean;
+      reasonCode?: OpenAiCalendarConfigurationReasonCode;
     };
 
 export type OpenAiCalendarAnalysisStage =
@@ -37,9 +38,39 @@ export type OpenAiErrorDiagnosticContext = {
 };
 
 const TRANSIENT_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+export const DEFAULT_OPENAI_CALENDAR_MODEL = "gpt-5";
 export const DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS = 180_000;
 export const MIN_OPENAI_CALENDAR_TIMEOUT_MS = 30_000;
 export const MAX_OPENAI_CALENDAR_TIMEOUT_MS = 300_000;
+
+export type OpenAiCalendarConfigurationReasonCode =
+  | "missing_openai_api_key"
+  | "missing_model"
+  | "import_mode_disabled"
+  | "invalid_timeout"
+  | "unsupported_model"
+  | "openai_authentication_failed";
+
+export type CalendarImportMode = "mock" | "openai" | "disabled";
+type CalendarImportEnv = Record<string, string | undefined>;
+
+type OpenAiCalendarConfiguration =
+  | {
+      ok: true;
+      mode: "mock";
+    }
+  | {
+      ok: true;
+      mode: "openai";
+      apiKey: string;
+      model: string;
+      timeoutMs: number;
+    }
+  | {
+      ok: false;
+      reasonCode: OpenAiCalendarConfigurationReasonCode;
+      message: string;
+    };
 
 export class OpenAiCalendarApplicationTimeoutError extends Error {
   timeoutMs: number;
@@ -95,9 +126,54 @@ export function createOpenAiCalendarTimeoutController(timeoutMs: number) {
   };
 }
 
-export function getCalendarImportMode() {
-  const mode = process.env.AI_CALENDAR_IMPORT_MODE?.trim().toLowerCase();
-  return mode === "mock" ? "mock" : "openai";
+export function getCalendarImportMode(env: CalendarImportEnv = process.env): CalendarImportMode {
+  const mode = env.AI_CALENDAR_IMPORT_MODE?.trim().toLowerCase();
+  if (mode === "mock") return "mock";
+  if (mode === "disabled" || mode === "off" || mode === "false") return "disabled";
+  return "openai";
+}
+
+export function getOpenAiCalendarConfiguration(
+  env: CalendarImportEnv = process.env
+): OpenAiCalendarConfiguration {
+  const mode = getCalendarImportMode(env);
+  if (mode === "mock") {
+    return { ok: true, mode: "mock" };
+  }
+
+  if (mode === "disabled") {
+    return {
+      ok: false,
+      reasonCode: "import_mode_disabled",
+      message: "AI calendar import is disabled in this environment.",
+    };
+  }
+
+  const apiKey = env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    return {
+      ok: false,
+      reasonCode: "missing_openai_api_key",
+      message: "AI calendar import is not enabled in this environment. Ask an administrator to add the OpenAI API key and retry.",
+    };
+  }
+
+  const model = env.OPENAI_CALENDAR_MODEL?.trim() || DEFAULT_OPENAI_CALENDAR_MODEL;
+  if (!model.trim()) {
+    return {
+      ok: false,
+      reasonCode: "missing_model",
+      message: "AI calendar import is missing a model configuration.",
+    };
+  }
+
+  return {
+    ok: true,
+    mode: "openai",
+    apiKey,
+    model,
+    timeoutMs: parseOpenAiCalendarTimeoutMs(env.OPENAI_CALENDAR_TIMEOUT_MS),
+  };
 }
 
 export function shouldRetryOpenAiError(error: unknown, attempt: number) {
@@ -130,7 +206,8 @@ export function mapOpenAiError(error: unknown): CalendarAnalyzerResult {
   if (error instanceof AuthenticationError) {
     return {
       status: "configuration_error",
-      message: "AI calendar import could not connect to the analysis service.",
+      message: "AI calendar import credentials could not be verified. Ask an administrator to check the OpenAI configuration.",
+      reasonCode: "openai_authentication_failed",
     };
   }
 

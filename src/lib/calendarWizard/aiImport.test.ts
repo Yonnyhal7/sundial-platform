@@ -34,6 +34,7 @@ import {
   MIN_OPENAI_CALENDAR_TIMEOUT_MS,
   OpenAiCalendarApplicationTimeoutError,
   getCalendarImportMode,
+  getOpenAiCalendarConfiguration,
   buildOpenAiErrorDiagnostics,
   createOpenAiCalendarTimeoutController,
   mapOpenAiError,
@@ -384,7 +385,37 @@ describe("OpenAI calendar analyzer behavior", () => {
 
   it("maps OpenAI authentication errors safely", () => {
     const result = mapOpenAiError(new AuthenticationError(401, {}, "bad key", new Headers()));
-    expect(result).toMatchObject({ status: "configuration_error" });
+    expect(result).toMatchObject({
+      status: "configuration_error",
+      reasonCode: "openai_authentication_failed",
+    });
+  });
+
+  it("reports missing OpenAI API key as a safe configuration reason", () => {
+    const config = getOpenAiCalendarConfiguration({
+      AI_CALENDAR_IMPORT_MODE: "openai",
+      OPENAI_API_KEY: "",
+      OPENAI_CALENDAR_MODEL: "gpt-5",
+    });
+
+    expect(config).toMatchObject({
+      ok: false,
+      reasonCode: "missing_openai_api_key",
+    });
+    expect(JSON.stringify(config)).not.toContain("OPENAI_API_KEY");
+  });
+
+  it("reports disabled AI calendar import mode as a safe configuration reason", () => {
+    const config = getOpenAiCalendarConfiguration({
+      AI_CALENDAR_IMPORT_MODE: "disabled",
+      OPENAI_API_KEY: "sk-test",
+      OPENAI_CALENDAR_MODEL: "gpt-5",
+    });
+
+    expect(config).toMatchObject({
+      ok: false,
+      reasonCode: "import_mode_disabled",
+    });
   });
 
   it("builds sanitized OpenAI error diagnostics", () => {
