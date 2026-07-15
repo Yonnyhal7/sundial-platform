@@ -4,10 +4,10 @@ import { normalizeScheduleSetupStatus } from "@/lib/scheduleStatus";
 import { updateSchoolSetupStep } from "@/lib/schools";
 
 export type CompleteSetupCalendarStepResult =
-  | { status: "success"; schedulesNeedingTimes: [] }
+  | { status: "success"; schedulesNeedingTimes: ScheduleNeedingTimes[] }
   | {
       status: "validation_error";
-      reason: "missing_calendar" | "schedules_need_times";
+      reason: "missing_calendar";
       message: string;
       schedulesNeedingTimes?: ScheduleNeedingTimes[];
     };
@@ -175,7 +175,7 @@ export async function getScheduleSetupReadiness(
     }));
 
   return {
-    complete: schedulesNeedingTimes.length === 0,
+    complete: true,
     hasInstructionalCalendarDays: true,
     schedulesNeedingTimes,
   };
@@ -201,19 +201,11 @@ export async function completeSetupCalendarStep({
     };
   }
 
-  if (readiness.schedulesNeedingTimes.length > 0) {
-    revalidateSetupCalendarRoutes(school);
-    return {
-      status: "validation_error",
-      reason: "schedules_need_times",
-      message:
-        "Calendar created. Add bell times to the listed schedules before launching your school.",
-      schedulesNeedingTimes: readiness.schedulesNeedingTimes,
-    };
-  }
-
   await updateSchoolSetupStep(supabase, schoolId, "complete");
   revalidateSetupCalendarRoutes(school);
 
-  return { status: "success", schedulesNeedingTimes: [] };
+  return {
+    status: "success",
+    schedulesNeedingTimes: readiness.schedulesNeedingTimes,
+  };
 }

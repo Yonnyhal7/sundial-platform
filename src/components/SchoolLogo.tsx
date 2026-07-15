@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 type SchoolLogoSize = "sm" | "md" | "lg" | "xl";
 
 type SchoolLogoProps = {
@@ -50,7 +52,14 @@ export default function SchoolLogo({
           className="h-full w-full object-contain"
         />
       ) : (
-        getSchoolInitials(schoolName)
+        <Image
+          src="/sundial-icon.png"
+          alt=""
+          aria-hidden="true"
+          width={640}
+          height={696}
+          className="h-full w-full object-contain"
+        />
       )}
     </span>
   );

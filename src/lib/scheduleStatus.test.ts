@@ -65,4 +65,27 @@ describe("schedule setup status", () => {
       ])
     ).toBe("needs_times");
   });
+
+  it("keeps the Schedules dashboard explicit for templates needing bell times", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/app/[school]/admin/schedules/page.tsx"),
+      "utf8"
+    );
+
+    expect(source).toContain("Bell times needed");
+    expect(source).toContain('"Add Bell Times"');
+  });
+
+  it("marks schedules ready after bell times are added later", () => {
+    const source = readFileSync(
+      join(
+        process.cwd(),
+        "src/app/[school]/admin/schedules/[scheduleId]/edit/actions.ts"
+      ),
+      "utf8"
+    );
+
+    expect(source).toContain('setup_status: hasValidPeriods ? "ready" : "needs_times"');
+    expect(source).toContain("completeSetupCalendarStep");
+  });
 });

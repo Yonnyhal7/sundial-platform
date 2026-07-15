@@ -1323,7 +1323,7 @@ export default function ScheduleWizardClient({
     if (!result || result.status === "success") {
       window.alert(
         setupContextActive
-          ? "Your calendar setup has been saved. Finish it before launching the school."
+          ? "Your calendar setup has been saved. Create the calendar to unlock Launch."
           : "Your calendar setup has been saved. You can continue from any device."
       );
       allowIntentionalNavigation();
@@ -4589,14 +4589,14 @@ function CompletionScreen({
           </div>
           <h1 className="mt-6 text-3xl font-bold tracking-tight">
             {needsBellTimes
-              ? "Calendar created - Bell times still needed"
+              ? "Calendar created - Continue to Launch"
               : "Calendar created - Continue to Launch"}
           </h1>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
             Sundial saved calendar rows for {formatDateForDisplay(summary.startDate)} through{" "}
             {formatDateForDisplay(summary.endDate)}.{" "}
             {needsBellTimes
-              ? "Add bell times to the listed schedules before launching your school."
+              ? "Some schedule templates still need bell times, and you can add them later from Dashboard → Schedules."
               : "Your calendar setup is complete and the Launch step is unlocked."}
           </p>
 
@@ -4633,7 +4633,8 @@ function CompletionScreen({
                 Add bell times when you are ready
               </h2>
               <p className="mt-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
-                You can add bell times later from Schedules.
+                Your school can launch now. These schedule templates can be completed later
+                from Dashboard → Schedules.
               </p>
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 {schedulesNeedingTimes.map((schedule) => (
@@ -4663,16 +4664,15 @@ function CompletionScreen({
           )}
 
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            {needsBellTimes ? (
+            <Link href={`${adminBasePath}/setup/launch`} className={sundialPrimaryButtonClass()}>
+              Continue to Launch
+            </Link>
+            {needsBellTimes && (
               <Link
                 href={`${adminBasePath}/schedules/${schedulesNeedingTimes[0].id}/edit`}
-                className={sundialPrimaryButtonClass()}
+                className={secondaryButtonClass}
               >
                 Add Bell Times
-              </Link>
-            ) : (
-              <Link href={`${adminBasePath}/setup/launch`} className={sundialPrimaryButtonClass()}>
-                Continue to Launch
               </Link>
             )}
             <Link href={`${adminBasePath}/calendar`} className={secondaryButtonClass}>

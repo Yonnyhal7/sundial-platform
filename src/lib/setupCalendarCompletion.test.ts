@@ -145,7 +145,7 @@ describe("setup calendar completion", () => {
     );
   });
 
-  it("keeps Launch locked when a referenced schedule needs bell times", async () => {
+  it("marks Schedule setup complete when a referenced schedule needs bell times", async () => {
     const supabase = createReadinessSupabaseStub({
       dayRefs: [{ schedule_id: "schedule-1", base_schedule_id: "schedule-1" }],
       schedules: [
@@ -164,14 +164,39 @@ describe("setup calendar completion", () => {
       school: "deloro",
     });
 
-    expect(result.status).toBe("validation_error");
-    if (result.status === "validation_error") {
-      expect(result.reason).toBe("schedules_need_times");
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
       expect(result.schedulesNeedingTimes).toEqual([
         { id: "schedule-1", name: "Finals" },
       ]);
     }
-    expect(updateSchoolSetupStep).not.toHaveBeenCalled();
+    expect(updateSchoolSetupStep).toHaveBeenCalledWith(
+      supabase,
+      "school-1",
+      "complete"
+    );
+  });
+
+  it("reports schedules needing bell times without blocking Launch readiness", async () => {
+    const supabase = createReadinessSupabaseStub({
+      dayRefs: [{ schedule_id: "schedule-1", base_schedule_id: "schedule-1" }],
+      schedules: [
+        {
+          id: "schedule-1",
+          schedule_name: "Finals",
+          setup_status: "needs_times",
+          active: true,
+        },
+      ],
+    });
+
+    await expect(
+      getScheduleSetupReadiness(supabase as never, "school-1")
+    ).resolves.toMatchObject({
+      complete: true,
+      hasInstructionalCalendarDays: true,
+      schedulesNeedingTimes: [{ id: "schedule-1", name: "Finals" }],
+    });
   });
 
   it("reports schedule readiness complete after remaining bell times are added", async () => {

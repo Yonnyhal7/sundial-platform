@@ -147,6 +147,41 @@ describe("offline school snapshots", () => {
     expect(today.periods[0].name).toBe("Period 1");
   });
 
+  it("keeps calendar assignments usable when a schedule still needs bell times", () => {
+    const snapshot = createSnapshot({
+      data: {
+        ...createSnapshot().data,
+        schedules: [
+          {
+            id: "schedule-finals",
+            school_id: "school-deloro",
+            schedule_name: "Finals",
+            schedule_type: "Special",
+            calendar_color: "#D4A017",
+            setup_status: "needs_times",
+            active: true,
+          },
+        ],
+        periods: [],
+        calendarDays: [
+          {
+            id: "day-finals",
+            school_id: "school-deloro",
+            date: getLocalTodayISO(),
+            label: null,
+            is_school_day: true,
+            schedule_id: "schedule-finals",
+          },
+        ],
+      },
+    });
+    const today = getTodaySchedule(snapshot);
+
+    expect(today.todayScheduleLabel).toBe("Finals (Special)");
+    expect(today.scheduleNeedsTimes).toBe(true);
+    expect(today.periods).toEqual([]);
+  });
+
   it("builds calendar days from cached snapshot data", () => {
     const snapshot = createSnapshot();
     const month = getMonthKey();

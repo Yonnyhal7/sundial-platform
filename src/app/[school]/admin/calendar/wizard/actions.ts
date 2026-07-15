@@ -710,24 +710,15 @@ async function getSetupCalendarCompletionRedirect({
   schoolId: string;
   school: string;
 }): Promise<
-  | { status: "success"; redirectTo: string }
   | {
-      status: "blocked";
-      message: string;
+      status: "success";
+      redirectTo: string;
       schedulesNeedingTimes: Array<{ id: string; name: string }>;
     }
   | { status: "validation_error"; result: GenerateCalendarActionResult }
 > {
   const result = await completeSetupCalendarStep({ supabase, schoolId, school });
   if (result.status !== "success") {
-    if (result.reason === "schedules_need_times") {
-      return {
-        status: "blocked",
-        message: result.message,
-        schedulesNeedingTimes: result.schedulesNeedingTimes || [],
-      };
-    }
-
     return {
       status: "validation_error",
       result: validationError(result.message, {
@@ -739,6 +730,7 @@ async function getSetupCalendarCompletionRedirect({
   return {
     status: "success" as const,
     redirectTo: await getSchoolSetupStepPath(school, "complete"),
+    schedulesNeedingTimes: result.schedulesNeedingTimes,
   };
 }
 
@@ -1004,7 +996,7 @@ export async function createAiCalendarFromDraftAction(
         })),
         matchedScheduleCount: plan.matchedScheduleIds.length,
         schedulesNeedingTimes:
-          setupCompletion?.status === "blocked"
+          setupCompletion?.status === "success"
             ? setupCompletion.schedulesNeedingTimes
             : plan.schedulesNeedingTimes,
         warningsRemaining:
@@ -1186,7 +1178,7 @@ export async function generateCalendarAction(
         warningCount: generated.summary.warningCount,
         warnings: generated.warnings,
         schedulesNeedingTimes:
-          setupCompletion?.status === "blocked"
+          setupCompletion?.status === "success"
             ? setupCompletion.schedulesNeedingTimes
             : undefined,
       },

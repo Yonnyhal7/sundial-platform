@@ -75,7 +75,8 @@ export default async function OnboardingSchedulePage({
 
         {saved === "1" && (
           <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-            Your calendar setup has been saved. Finish it before launching the school.
+            Your calendar setup has been saved. Create the school-year calendar
+            to unlock Launch.
           </div>
         )}
 
@@ -86,7 +87,8 @@ export default async function OnboardingSchedulePage({
                 Calendar created - Bell times still needed
               </h3>
               <p className="mt-2">
-                Add bell times to these schedules before launching your school.
+                Your calendar is ready. Bell times can be added later from
+                Dashboard → Schedules.
               </p>
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 {scheduleReadiness.schedulesNeedingTimes.map((schedule) => (
