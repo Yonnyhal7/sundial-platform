@@ -173,9 +173,9 @@ describe("AI import client response handling", () => {
     vi.useRealTimers();
   });
 
-  it("uses a 210-second default client timeout", () => {
-    expect(DEFAULT_AI_IMPORT_CLIENT_TIMEOUT_MS).toBe(210_000);
-    expect(AI_IMPORT_CLIENT_TIMEOUT_MS).toBe(210_000);
+  it("uses a 270-second default client timeout", () => {
+    expect(DEFAULT_AI_IMPORT_CLIENT_TIMEOUT_MS).toBe(270_000);
+    expect(AI_IMPORT_CLIENT_TIMEOUT_MS).toBe(270_000);
   });
 
   it("keeps the client timeout longer than the analyzer timeout", () => {
@@ -183,7 +183,7 @@ describe("AI import client response handling", () => {
     expect(AI_IMPORT_CLIENT_TIMEOUT_MS).toBeGreaterThan(
       DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS
     );
-    expect(getAiImportClientTimeoutMs(180_000)).toBe(210_000);
+    expect(getAiImportClientTimeoutMs(180_000)).toBe(270_000);
     expect(getAiImportClientTimeoutMs(240_000)).toBe(270_000);
   });
 
@@ -198,11 +198,11 @@ describe("AI import client response handling", () => {
     vi.useRealTimers();
   });
 
-  it("aborts a genuinely stuck browser request at the 210-second client timeout", () => {
+  it("aborts a genuinely stuck browser request at the 270-second client timeout", () => {
     vi.useFakeTimers();
     const timeout = createAiImportClientTimeoutController();
 
-    vi.advanceTimersByTime(209_999);
+    vi.advanceTimersByTime(269_999);
     expect(timeout.controller.signal.aborted).toBe(false);
     vi.advanceTimersByTime(1);
 
@@ -216,6 +216,9 @@ describe("AI import client response handling", () => {
 
   it("uses terminal timeout copy for confirmed OpenAI and stale-job failures", () => {
     expect(getAiImportTerminalFailureMessage("openai_timeout")).toBe(
+      "The calendar analysis took too long to complete. Retry, or continue manually."
+    );
+    expect(getAiImportTerminalFailureMessage("pdf_analysis_timeout")).toBe(
       "The calendar analysis took too long to complete. Retry, or continue manually."
     );
     expect(getAiImportTerminalFailureMessage("analysis_job_stale")).toBe(
@@ -258,7 +261,7 @@ describe("AI import client response handling", () => {
     vi.stubEnv("OPENAI_CALENDAR_TIMEOUT_MS", "240000");
     vi.stubEnv("NEXT_PUBLIC_OPENAI_CALENDAR_TIMEOUT_MS", undefined);
 
-    expect(getConfiguredAiImportClientTimeoutMs()).toBe(210_000);
+    expect(getConfiguredAiImportClientTimeoutMs()).toBe(270_000);
 
     vi.unstubAllEnvs();
   });

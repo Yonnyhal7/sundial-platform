@@ -34,6 +34,7 @@ import {
   buildAiPreviewConfig,
   getBrownGoldVerificationConflicts,
   getBrownGoldVerificationRows,
+  getDeterministicAssignmentConflicts,
   hasBrownGoldVerificationScheduleSet,
   updateAiImportPreviewDay,
 } from "@/lib/calendarWizard/aiImportPreview";
@@ -3136,12 +3137,18 @@ function AiImportReview({
     previewResult,
     previewScheduleMap
   );
+  const deterministicConflicts = getDeterministicAssignmentConflicts(
+    importResult,
+    previewResult,
+    previewScheduleMap
+  );
   const unresolvedPreviewDays = previewResult.days.filter((day) =>
     day.warningCodes.includes("instructional_day_missing_schedule")
   );
   const canCreateCalendar =
     warningReadiness.canCreateCalendar &&
     brownGoldConflicts.length === 0 &&
+    deterministicConflicts.length === 0 &&
     unresolvedPreviewDays.length === 0;
   const matchedCount = resolutions.filter((resolution) => resolution.matchedExistingScheduleId).length;
   const newScheduleCount = schedulesNeedingTimes.length;
@@ -3764,6 +3771,11 @@ function AiImportedCalendarPreview({
   const brownGoldRows = showBrownGoldVerification
     ? getBrownGoldVerificationRows(result, scheduleMap)
     : [];
+  const deterministicConflicts = getDeterministicAssignmentConflicts(
+    importResult,
+    result,
+    scheduleMap
+  );
   const lowConfidenceCount = [
     importResult.schoolYear,
     importResult.pattern,
@@ -3804,13 +3816,18 @@ function AiImportedCalendarPreview({
         <MetricCard label="Low confidence" value={String(lowConfidenceCount)} />
       </div>
 
-      {(brownGoldConflicts.length > 0 || unresolvedDays.length > 0) && (
+      {(brownGoldConflicts.length > 0 || deterministicConflicts.length > 0 || unresolvedDays.length > 0) && (
         <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
           <p className="font-bold">Fix these preview issues before creating the calendar:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
             {brownGoldConflicts.map((conflict) => (
               <li key={conflict.date}>
                 {formatDateForDisplay(conflict.date)} should be {conflict.expected}, but preview shows {conflict.actual}.
+              </li>
+            ))}
+            {deterministicConflicts.map((conflict) => (
+              <li key={`vector-${conflict.date}`}>
+                {formatDateForDisplay(conflict.date)} should be {conflict.expected} from the PDF color, but preview shows {conflict.actual}.
               </li>
             ))}
             {unresolvedDays.slice(0, 8).map((day) => (
@@ -3884,6 +3901,13 @@ function AiImportedCalendarPreview({
                       : "Pattern-generated assignment")
                 }
               />
+              <SummaryRow
+                label="Confidence"
+                value={selectedSpecialDay?.assignmentConfidence !== undefined
+                  ? `${Math.round(selectedSpecialDay.assignmentConfidence * 100)}%`
+                  : confidenceLabel(selectedSpecialDay?.confidence || "review")}
+              />
+              <SummaryRow label="Rotation behavior" value={selectedSpecialDay?.rotationBehavior || "advance"} />
               {selectedDay.scheduleId &&
                 scheduleMap.get(selectedDay.scheduleId)?.setupStatus === "needs_times" && (
                   <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">

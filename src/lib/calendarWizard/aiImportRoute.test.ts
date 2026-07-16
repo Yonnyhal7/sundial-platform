@@ -442,7 +442,7 @@ describe("AI import API route", () => {
 
   it("treats missing active state beyond the server deadline as stale", async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-16T00:04:00.000Z"));
+    vi.setSystemTime(new Date("2026-07-16T00:05:00.000Z"));
 
     const response = await GET_STATUS(
       new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&startedAt=1784160000000"),

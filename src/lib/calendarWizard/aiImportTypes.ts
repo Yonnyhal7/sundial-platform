@@ -80,6 +80,8 @@ export type AiDetectedSpecialDay = {
   rotationBehavior?: RotationBehavior;
   confidence: AiImportConfidence;
   evidence?: AiImportEvidence;
+  assignmentSource?: "pdf_vector_fill" | "explicit_text" | "administrator" | "ai_inference";
+  assignmentConfidence?: number;
 };
 
 export type AiDetectedInformationalDate = {
@@ -143,6 +145,19 @@ export type AiCalendarImportResult = {
   informationalDates: AiDetectedInformationalDate[];
   warnings: AiImportWarning[];
   automaticResolutions?: AiImportAutomaticResolution[];
+  deterministicAssignments?: Array<{
+    date: string;
+    scheduleName: string;
+    source: "pdf_vector_fill";
+    confidence: number;
+    color?: string;
+  }>;
+  firstInstructionalAssignment?: {
+    date: string;
+    scheduleName: string | null;
+    source: "pdf_vector_fill" | "explicit_text" | "administrator" | "unresolved";
+    confidence: number;
+  };
 };
 
 export type DetectedScheduleResolutionStatus =

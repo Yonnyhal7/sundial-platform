@@ -8,11 +8,19 @@ import {
 import type { AiCalendarImportResult } from "./aiImportTypes";
 export {
   DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS,
+  DEFAULT_OPENAI_CALENDAR_TEXT_TIMEOUT_MS,
+  DEFAULT_OPENAI_CALENDAR_PDF_TIMEOUT_MS,
   MAX_OPENAI_CALENDAR_TIMEOUT_MS,
   MIN_OPENAI_CALENDAR_TIMEOUT_MS,
   parseOpenAiCalendarTimeoutMs,
+  parseOpenAiCalendarTextTimeoutMs,
+  parseOpenAiCalendarPdfTimeoutMs,
 } from "./aiImportTimeouts";
-import { parseOpenAiCalendarTimeoutMs } from "./aiImportTimeouts";
+import {
+  parseOpenAiCalendarTimeoutMs,
+  parseOpenAiCalendarPdfTimeoutMs,
+  parseOpenAiCalendarTextTimeoutMs,
+} from "./aiImportTimeouts";
 
 export type CalendarAnalyzerResult =
   | {
@@ -72,6 +80,7 @@ export type AiCalendarImportProcessingPhase =
 export type AiCalendarImportFailureReasonCode =
   | OpenAiCalendarConfigurationReasonCode
   | "openai_timeout"
+  | "pdf_analysis_timeout"
   | "analysis_job_stale"
   | "ai_schema_validation_failed"
   | "schema_validation_failed"
@@ -80,6 +89,7 @@ export type AiCalendarImportFailureReasonCode =
   | "review_generation_failed"
   | "calendar_validation_failed"
   | "visual_information_required"
+  | "metadata_analysis_failed"
   | "missing_required_schedule"
   | "invalid_date_range"
   | "invalid_schedule_reference"
@@ -109,11 +119,13 @@ type OpenAiCalendarConfiguration =
 
 export class OpenAiCalendarApplicationTimeoutError extends Error {
   timeoutMs: number;
+  reasonCode: AiCalendarImportFailureReasonCode;
 
-  constructor(timeoutMs: number) {
+  constructor(timeoutMs: number, reasonCode: AiCalendarImportFailureReasonCode = "openai_timeout") {
     super("Calendar analysis aborted after configured application timeout.");
     this.name = "OpenAiCalendarApplicationTimeoutError";
     this.timeoutMs = timeoutMs;
+    this.reasonCode = reasonCode;
   }
 }
 
@@ -160,6 +172,10 @@ export function buildOpenAiCalendarEnvironmentDiagnostics() {
     pdfModel: process.env.OPENAI_CALENDAR_PDF_MODEL,
     hasAnalyzerTimeout: Boolean(process.env.OPENAI_CALENDAR_TIMEOUT_MS),
     analyzerTimeout: process.env.OPENAI_CALENDAR_TIMEOUT_MS,
+    hasTextAnalyzerTimeout: Boolean(process.env.OPENAI_CALENDAR_TEXT_TIMEOUT_MS),
+    textAnalyzerTimeout: process.env.OPENAI_CALENDAR_TEXT_TIMEOUT_MS,
+    hasPdfAnalyzerTimeout: Boolean(process.env.OPENAI_CALENDAR_PDF_TIMEOUT_MS),
+    pdfAnalyzerTimeout: process.env.OPENAI_CALENDAR_PDF_TIMEOUT_MS,
     hasClientTimeout: Boolean(process.env.NEXT_PUBLIC_OPENAI_CALENDAR_TIMEOUT_MS),
     clientTimeout: process.env.NEXT_PUBLIC_OPENAI_CALENDAR_TIMEOUT_MS,
     importMode: process.env.AI_CALENDAR_IMPORT_MODE,
@@ -176,10 +192,21 @@ export function logOpenAiCalendarEnvironmentDiagnostic(event: string) {
 }
 
 export function getOpenAiCalendarTimeoutMs() {
-  return parseOpenAiCalendarTimeoutMs(process.env.OPENAI_CALENDAR_TIMEOUT_MS);
+  return Math.max(getOpenAiCalendarTextTimeoutMs(), getOpenAiCalendarPdfTimeoutMs());
 }
 
-export function createOpenAiCalendarTimeoutController(timeoutMs: number) {
+export function getOpenAiCalendarTextTimeoutMs() {
+  return parseOpenAiCalendarTextTimeoutMs(process.env.OPENAI_CALENDAR_TEXT_TIMEOUT_MS);
+}
+
+export function getOpenAiCalendarPdfTimeoutMs() {
+  return parseOpenAiCalendarPdfTimeoutMs(process.env.OPENAI_CALENDAR_PDF_TIMEOUT_MS);
+}
+
+export function createOpenAiCalendarTimeoutController(
+  timeoutMs: number,
+  reasonCode: AiCalendarImportFailureReasonCode = "openai_timeout"
+) {
   const controller = new AbortController();
   let timedOut = false;
   const timeout = setTimeout(() => {
@@ -188,7 +215,7 @@ export function createOpenAiCalendarTimeoutController(timeoutMs: number) {
       event: "analyzer_abort_requested",
       timeoutMs,
     });
-    controller.abort(new OpenAiCalendarApplicationTimeoutError(timeoutMs));
+    controller.abort(new OpenAiCalendarApplicationTimeoutError(timeoutMs, reasonCode));
     console.warn("AI calendar import diagnostic", {
       event: "analyzer_abort_confirmed",
       timeoutMs,
@@ -309,7 +336,7 @@ export function mapOpenAiError(error: unknown): CalendarAnalyzerResult {
       status: "analysis_failed",
       message: "The calendar analysis took too long to complete. Retry, or continue manually.",
       retryable: true,
-      reasonCode: "openai_timeout",
+      reasonCode: error.reasonCode,
     };
   }
 

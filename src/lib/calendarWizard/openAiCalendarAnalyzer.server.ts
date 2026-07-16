@@ -14,6 +14,8 @@ import {
   extractCalendarPdfText,
   type ExtractedCalendarText,
 } from "./pdfTextExtraction.server";
+import { extractPdfVectorCalendar, type PdfVectorCalendarResult } from "./pdfVectorCalendarExtraction.server";
+import { ensureFirstInstructionalAnchor, mergeVectorCalendarAssignments } from "./mergeVectorCalendarAssignments";
 import {
   evaluateCalendarTextQuality,
   type CalendarTextQuality,
@@ -32,7 +34,9 @@ import {
   buildAiCalendarProcessingDiagnostics,
   createOpenAiCalendarTimeoutController,
   getOpenAiCalendarConfiguration,
+  getOpenAiCalendarPdfTimeoutMs,
   getOpenAiCalendarPdfModel,
+  getOpenAiCalendarTextTimeoutMs,
   getOpenAiCalendarTextModel,
   logOpenAiCalendarEnvironmentDiagnostic,
   logOpenAiCalendarDiagnostic,
@@ -48,6 +52,7 @@ import type { AiImportServerStage } from "./aiImportProgress";
 import {
   AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS,
   AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS,
+  hasAiImportRepairBudget,
   hasAiImportPdfFallbackBudget,
 } from "./aiImportTimeouts";
 
@@ -294,6 +299,10 @@ async function normalizeValidateAndRepair({
       };
     }
 
+    if (!hasEnoughBudgetForRepair(startedAt)) {
+      return insufficientRepairBudgetResult(startedAt);
+    }
+
     await onStageChange?.(
       strategy === "text-gpt5-mini" ? "repairing_text_result" : "repairing_pdf_result",
       strategy
@@ -394,6 +403,10 @@ async function normalizeValidateAndRepair({
   );
   if (blockingWarnings.length > 0) {
     const repairIssues = blockingWarningsToRepairIssues(blockingWarnings);
+    if (!hasEnoughBudgetForRepair(startedAt)) {
+      return insufficientRepairBudgetResult(startedAt);
+    }
+
     await onStageChange?.(
       strategy === "text-gpt5-mini" ? "repairing_text_result" : "repairing_pdf_result",
       strategy
@@ -870,6 +883,25 @@ function hasEnoughBudgetForPdfFallback(startedAt: number) {
   return hasAiImportPdfFallbackBudget(Date.now() - startedAt);
 }
 
+function hasEnoughBudgetForRepair(startedAt: number) {
+  return hasAiImportRepairBudget(Date.now() - startedAt);
+}
+
+function insufficientRepairBudgetResult(startedAt: number): CalendarAnalyzerResult {
+  logPipelineDiagnostic("repair_skipped_insufficient_budget", {
+    elapsedMs: Date.now() - startedAt,
+    routeBudgetMs: AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS,
+    reasonCode: "openai_timeout",
+  });
+
+  return {
+    status: "analysis_failed",
+    message: "The calendar analysis took too long to complete. Retry, or continue manually.",
+    retryable: true,
+    reasonCode: "openai_timeout",
+  };
+}
+
 function insufficientFallbackBudgetResult(startedAt: number): CalendarAnalyzerResult {
   logPipelineDiagnostic("pdf_fallback_skipped_insufficient_budget", {
     elapsedMs: Date.now() - startedAt,
@@ -908,22 +940,43 @@ export async function analyzeCalendarPdf(
   }
 
   const client = getOpenAiClient(configuration.apiKey);
-  const timeoutMs = configuration.timeoutMs;
   const startedAt = Date.now();
-  const deadline = createOpenAiCalendarTimeoutController(timeoutMs);
   const textModel = getOpenAiCalendarTextModel();
   const pdfModel = getOpenAiCalendarPdfModel();
+  const textTimeoutMs = getOpenAiCalendarTextTimeoutMs();
+  const pdfTimeoutMs = getOpenAiCalendarPdfTimeoutMs();
   let extracted: ExtractedCalendarText | null = null;
   let quality: CalendarTextQuality | null = null;
+  let vectorResult: PdfVectorCalendarResult | null = null;
 
-  try {
   try {
     await options.onStageChange?.("extracting_text", "text-gpt5-mini");
     logPipelineDiagnostic("pdf_text_extraction_started", {
       fileSize: file.size,
       durationMs: Date.now() - startedAt,
     });
-    extracted = await extractCalendarPdfText(file);
+    const [textExtraction, vectorExtraction] = await Promise.allSettled([
+      extractCalendarPdfText(file),
+      extractPdfVectorCalendar(file),
+    ]);
+    if (textExtraction.status === "rejected") throw textExtraction.reason;
+    extracted = textExtraction.value;
+    if (vectorExtraction.status === "fulfilled") {
+      vectorResult = vectorExtraction.value;
+      logPipelineDiagnostic("pdf_vector_extraction_finished", {
+        supported: vectorResult.supported,
+        confidence: vectorResult.confidence,
+        assignmentCount: vectorResult.assignments.length,
+        legendCount: vectorResult.legend.length,
+        reasonCodes: vectorResult.reasonCodes,
+        durationMs: vectorResult.durationMs,
+      });
+    } else {
+      logPipelineDiagnostic("pdf_vector_extraction_failed", {
+        category: vectorExtraction.reason instanceof Error ? vectorExtraction.reason.name : "unknown",
+        durationMs: Date.now() - startedAt,
+      });
+    }
     await options.onStageChange?.("evaluating_text_quality", "text-gpt5-mini");
     quality = evaluateCalendarTextQuality({
       text: extracted.text,
@@ -947,20 +1000,41 @@ export async function analyzeCalendarPdf(
     });
   }
 
-	  const directVisualStrategy = Boolean(extracted && quality?.likelyVisualLayoutDependency);
-	  await options.onStageChange?.("selecting_strategy", "text-gpt5-mini");
+  const directVisualStrategy = Boolean(extracted && quality?.likelyVisualLayoutDependency);
+  await options.onStageChange?.("selecting_strategy", "text-gpt5-mini");
 
-  if (extracted && quality?.usable) {
-    const textResult = await analyzeCalendarText({
-      client,
-      extracted,
-      model: textModel,
-      deadline,
-      startedAt,
-      onStageChange: options.onStageChange,
-    });
+  if (extracted && (quality?.usable || vectorResult?.supported)) {
+    const textDeadline = createOpenAiCalendarTimeoutController(
+      textTimeoutMs,
+      "openai_timeout"
+    );
+    let textResult: CalendarAnalyzerResult;
+    try {
+      textResult = await analyzeCalendarText({
+        client,
+        extracted,
+        model: textModel,
+        deadline: textDeadline,
+        startedAt,
+        onStageChange: options.onStageChange,
+      });
+    } finally {
+      textDeadline.clear();
+    }
 
     if (textResult.status === "success" || !shouldFallbackAfterTextResult(textResult)) {
+      if (textResult.status === "success" && vectorResult?.supported) {
+        textResult = {
+          ...textResult,
+          importResult: mergeVectorCalendarAssignments(textResult.importResult, vectorResult),
+        };
+      }
+      if (textResult.status === "success") {
+        textResult = {
+          ...textResult,
+          importResult: ensureFirstInstructionalAnchor(textResult.importResult),
+        };
+      }
       logPipelineDiagnostic(
         textResult.status === "success" ? "import_ready" : "import_confirmed_failed",
         {
@@ -972,6 +1046,23 @@ export async function analyzeCalendarPdf(
         }
       );
       return textResult;
+    }
+
+    // A high-confidence vector result already contains the visual schedule truth.
+    // Never replace it with a slower full-PDF inference merely because metadata analysis failed.
+    if (vectorResult?.supported) {
+      logPipelineDiagnostic("pdf_fallback_suppressed_by_vector_result", {
+        vectorConfidence: vectorResult.confidence,
+        assignmentCount: vectorResult.assignments.length,
+        textReasonCode: textResult.reasonCode,
+        durationMs: Date.now() - startedAt,
+      });
+      return {
+        status: "analysis_failed",
+        message: "Sundial read the calendar colors reliably, but could not finish the calendar metadata. Retry the import; the full-PDF model was not used.",
+        retryable: true,
+        reasonCode: textResult.reasonCode || "metadata_analysis_failed",
+      };
     }
 
     if (!hasEnoughBudgetForPdfFallback(startedAt)) {
@@ -987,10 +1078,10 @@ export async function analyzeCalendarPdf(
           : textResult.reasonCode,
       durationMs: Date.now() - startedAt,
     });
-	  } else if (directVisualStrategy) {
-	    if (!hasEnoughBudgetForPdfFallback(startedAt)) {
-	      return insufficientFallbackBudgetResult(startedAt);
-	    }
+  } else if (directVisualStrategy) {
+    if (!hasEnoughBudgetForPdfFallback(startedAt)) {
+      return insufficientFallbackBudgetResult(startedAt);
+    }
 
     logPipelineDiagnostic("pdf_visual_analysis_selected", {
       strategy: "pdf-gpt5",
@@ -1015,18 +1106,31 @@ export async function analyzeCalendarPdf(
       fallbackReasonCode: quality?.reasonCodes.join(",") || "text_extraction_failed",
       durationMs: Date.now() - startedAt,
     });
-	  }
+  }
 
 	  await options.onStageChange?.("preparing_visual_analysis", "pdf-gpt5");
-	  const pdfResult = await analyzeCalendarPdfFallback({
-    client,
-    file,
-    model: pdfModel,
-    deadline,
-    startedAt,
-    onStageChange: options.onStageChange,
-    directVisualStrategy,
+  logPipelineDiagnostic("pdf_fallback_explanation", {
+    message: "This calendar’s visual layout could not be read reliably, so Sundial is performing a deeper review.",
+    durationMs: Date.now() - startedAt,
   });
+  const pdfDeadline = createOpenAiCalendarTimeoutController(
+    pdfTimeoutMs,
+    "pdf_analysis_timeout"
+  );
+  let pdfResult: CalendarAnalyzerResult;
+  try {
+    pdfResult = await analyzeCalendarPdfFallback({
+      client,
+      file,
+      model: pdfModel,
+      deadline: pdfDeadline,
+      startedAt,
+      onStageChange: options.onStageChange,
+      directVisualStrategy,
+    });
+  } finally {
+    pdfDeadline.clear();
+  }
   logPipelineDiagnostic(
     pdfResult.status === "success" ? "import_ready" : "import_confirmed_failed",
     {
@@ -1038,7 +1142,4 @@ export async function analyzeCalendarPdf(
     }
   );
   return pdfResult;
-  } finally {
-    deadline.clear();
-  }
 }

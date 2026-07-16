@@ -165,6 +165,7 @@ export function isRecoverableAiImportInterruption(
 export function getAiImportTerminalFailureMessage(reasonCode?: string) {
   if (
     reasonCode === "openai_timeout" ||
+    reasonCode === "pdf_analysis_timeout" ||
     reasonCode === "analysis_job_stale" ||
     reasonCode === "client_timeout"
   ) {

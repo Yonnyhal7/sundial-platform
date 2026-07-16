@@ -40,6 +40,28 @@ const currentStages = new Map<
 const keyString = (key: CalendarAnalysisCacheKey) =>
   `${key.schoolId}:${key.pdfHash}:${key.strategy}:${key.model}:${key.version}`;
 
+function safePostgrestDiagnostic(error: unknown) {
+  const record =
+    error && typeof error === "object"
+      ? (error as {
+          code?: unknown;
+          message?: unknown;
+          details?: unknown;
+          hint?: unknown;
+        })
+      : {};
+  const message = typeof record.message === "string" ? record.message : undefined;
+  const missingColumn = message?.match(/'([^']+)' column/)?.[1];
+
+  return {
+    reasonCode: typeof record.code === "string" ? record.code : undefined,
+    message,
+    details: typeof record.details === "string" ? record.details : undefined,
+    hint: typeof record.hint === "string" ? record.hint : undefined,
+    missingColumn,
+  };
+}
+
 export type CalendarAnalysisCacheEntry = {
   result: AiCalendarImportResult;
   createdAt: string;
@@ -297,26 +319,30 @@ export async function setCalendarAnalysisStage(
       }, { onConflict: "school_id,pdf_sha256,analysis_strategy,model,prompt_schema_version" });
 
     if (insertError) {
+      const diagnostic = safePostgrestDiagnostic(insertError);
       console.warn("AI calendar import diagnostic", {
         event: "stage_persist_failed",
+        operation: "insert_stage",
         currentStage: stage,
         strategy: context.strategy || key.strategy,
         requestId: context.requestId,
         cacheKey: `${key.schoolId}:${key.pdfHash}:${key.strategy}:${key.version}`,
-        reasonCode: insertError.code,
+        ...diagnostic,
       });
     }
     return;
   }
 
   if (error) {
+    const diagnostic = safePostgrestDiagnostic(error);
     console.warn("AI calendar import diagnostic", {
       event: "stage_persist_failed",
+      operation: "update_stage",
       currentStage: stage,
       strategy: context.strategy || key.strategy,
       requestId: context.requestId,
       cacheKey: `${key.schoolId}:${key.pdfHash}:${key.strategy}:${key.version}`,
-      reasonCode: error.code,
+      ...diagnostic,
     });
   }
 }

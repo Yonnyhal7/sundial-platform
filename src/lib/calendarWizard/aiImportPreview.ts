@@ -181,3 +181,27 @@ export function getBrownGoldVerificationConflicts(
     (row) => !row.matches
   );
 }
+
+export function getDeterministicAssignmentConflicts(
+  importResult: AiCalendarImportResult,
+  result: CalendarGenerationResult,
+  scheduleMap: Map<string, AiPreviewScheduleSummary>,
+  instructionalDayLimit = 10
+) {
+  const firstInstructionalDates = new Set(
+    result.days.filter((day) => day.isSchoolDay).slice(0, instructionalDayLimit).map((day) => day.date)
+  );
+  return (importResult.deterministicAssignments || [])
+    .filter((assignment) => firstInstructionalDates.has(assignment.date))
+    .flatMap((assignment) => {
+      const day = result.days.find((candidate) => candidate.date === assignment.date);
+      const actual = getScheduleName(scheduleMap, day?.scheduleId || null);
+      return actual.toLowerCase() === assignment.scheduleName.toLowerCase() ? [] : [{
+        date: assignment.date,
+        expected: assignment.scheduleName,
+        actual,
+        source: assignment.source,
+        confidence: assignment.confidence,
+      }];
+    });
+}

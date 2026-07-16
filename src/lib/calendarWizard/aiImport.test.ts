@@ -30,13 +30,17 @@ import {
 } from "./aiImportTypes";
 import {
   DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS,
+  DEFAULT_OPENAI_CALENDAR_TEXT_TIMEOUT_MS,
+  DEFAULT_OPENAI_CALENDAR_PDF_TIMEOUT_MS,
   AiCalendarImportProcessingError,
   MAX_OPENAI_CALENDAR_TIMEOUT_MS,
   MIN_OPENAI_CALENDAR_TIMEOUT_MS,
   OpenAiCalendarApplicationTimeoutError,
   getCalendarImportMode,
   getOpenAiCalendarConfiguration,
+  getOpenAiCalendarPdfTimeoutMs,
   getOpenAiCalendarPdfModel,
+  getOpenAiCalendarTextTimeoutMs,
   getOpenAiCalendarTextModel,
   buildOpenAiErrorDiagnostics,
   createOpenAiCalendarTimeoutController,
@@ -44,6 +48,8 @@ import {
   openAiResponseHasRefusal,
   openAiResponseIncomplete,
   parseOpenAiCalendarTimeoutMs,
+  parseOpenAiCalendarPdfTimeoutMs,
+  parseOpenAiCalendarTextTimeoutMs,
   shouldRetryOpenAiError,
 } from "./openAiCalendarAnalyzerUtils";
 import { hasPdfSignature } from "./aiPdfValidation";
@@ -55,6 +61,7 @@ import {
   AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS,
   AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS,
   AI_IMPORT_ROUTE_RESPONSE_RESERVE_MS,
+  hasAiImportRepairBudget,
   hasAiImportPdfFallbackBudget,
 } from "./aiImportTimeouts";
 
@@ -855,8 +862,15 @@ describe("OpenAI calendar analyzer behavior", () => {
     expect(result.message).toContain("read this PDF");
   });
 
-  it("uses a 3-minute default application timeout", () => {
+  it("keeps the legacy analyzer timeout default for stale-job compatibility", () => {
     expect(parseOpenAiCalendarTimeoutMs(undefined)).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
+  });
+
+  it("uses separate defaults for text and PDF OpenAI calls", () => {
+    expect(DEFAULT_OPENAI_CALENDAR_TEXT_TIMEOUT_MS).toBe(120_000);
+    expect(DEFAULT_OPENAI_CALENDAR_PDF_TIMEOUT_MS).toBe(240_000);
+    expect(parseOpenAiCalendarTextTimeoutMs(undefined)).toBe(120_000);
+    expect(parseOpenAiCalendarPdfTimeoutMs(undefined)).toBe(240_000);
   });
 
   it("keeps the route import budget below Vercel max duration", () => {
@@ -879,6 +893,8 @@ describe("OpenAI calendar analyzer behavior", () => {
     expect(parseOpenAiCalendarTimeoutMs("not-a-number")).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
     expect(parseOpenAiCalendarTimeoutMs("-1")).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
     expect(parseOpenAiCalendarTimeoutMs("Infinity")).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
+    expect(parseOpenAiCalendarTextTimeoutMs("not-a-number")).toBe(DEFAULT_OPENAI_CALENDAR_TEXT_TIMEOUT_MS);
+    expect(parseOpenAiCalendarPdfTimeoutMs("not-a-number")).toBe(DEFAULT_OPENAI_CALENDAR_PDF_TIMEOUT_MS);
   });
 
   it("clamps application timeout overrides to the supported range", () => {
@@ -899,6 +915,45 @@ describe("OpenAI calendar analyzer behavior", () => {
     expect(timeout.timedOut).toBe(true);
     expect(timeout.controller.signal.reason).toBeInstanceOf(OpenAiCalendarApplicationTimeoutError);
     timeout.clear();
+  });
+
+  it("maps PDF model timeout to a distinct safe reason code", () => {
+    const result = mapOpenAiError(
+      new OpenAiCalendarApplicationTimeoutError(240_000, "pdf_analysis_timeout")
+    );
+
+    expect(result).toMatchObject({
+      status: "analysis_failed",
+      reasonCode: "pdf_analysis_timeout",
+      retryable: true,
+    });
+  });
+
+  it("reads separate text and PDF timeout environment variables", () => {
+    vi.stubEnv("OPENAI_CALENDAR_TEXT_TIMEOUT_MS", "90000");
+    vi.stubEnv("OPENAI_CALENDAR_PDF_TIMEOUT_MS", "240000");
+    vi.stubEnv("OPENAI_CALENDAR_TIMEOUT_MS", "180000");
+
+    expect(getOpenAiCalendarTextTimeoutMs()).toBe(90_000);
+    expect(getOpenAiCalendarPdfTimeoutMs()).toBe(240_000);
+
+    vi.unstubAllEnvs();
+  });
+
+  it("does not let the legacy shared timeout shorten direct PDF analysis", () => {
+    vi.stubEnv("OPENAI_CALENDAR_TEXT_TIMEOUT_MS", undefined);
+    vi.stubEnv("OPENAI_CALENDAR_PDF_TIMEOUT_MS", undefined);
+    vi.stubEnv("OPENAI_CALENDAR_TIMEOUT_MS", "180000");
+
+    expect(getOpenAiCalendarTextTimeoutMs()).toBe(120_000);
+    expect(getOpenAiCalendarPdfTimeoutMs()).toBe(240_000);
+
+    vi.unstubAllEnvs();
+  });
+
+  it("does not start a repair when route response reserve would be consumed", () => {
+    expect(hasAiImportRepairBudget(194_999)).toBe(true);
+    expect(hasAiImportRepairBudget(195_001)).toBe(false);
   });
 
   it("maps application timeout errors to the safe client message", () => {
