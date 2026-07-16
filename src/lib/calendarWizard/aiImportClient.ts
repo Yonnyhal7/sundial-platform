@@ -20,6 +20,12 @@ export type AnalyzeCalendarPdfFailureResult = Exclude<
   { status: "success" }
 >;
 
+export type AiImportStatusResponse =
+  | { status: "pending" }
+  | { status: "ready"; resultId: string }
+  | { status: "failed"; reasonCode?: string }
+  | { status: "expired"; reasonCode?: string };
+
 export class AiImportClientTimeoutError extends Error {
   constructor() {
     super("AI calendar import request timed out in the browser.");
@@ -98,14 +104,28 @@ export async function parseAiImportResponse(
 
   if (!response.ok) {
     return safeResult(
-      "server_error",
-      "Sundial could not analyze this PDF yet. Please continue manually."
+      "analysis_failed",
+      "Sundial is still finishing the calendar analysis. You can keep this page open or return shortly.",
+      true,
+      "client_connection_ended"
     );
   }
 
   return safeResult(
-    "server_error",
-    "Sundial could not read the analysis response. Please try again."
+    "analysis_failed",
+    "Sundial is still finishing the calendar analysis. You can keep this page open or return shortly.",
+    true,
+    "client_connection_ended"
+  );
+}
+
+export function isRecoverableAiImportInterruption(
+  result: AnalyzeCalendarPdfResult
+) {
+  return (
+    result.status !== "success" &&
+    (result.reasonCode === "client_timeout" ||
+      result.reasonCode === "client_connection_ended")
   );
 }
 
@@ -132,8 +152,63 @@ export function mapAiImportClientError(error: unknown): AnalyzeCalendarPdfFailur
   }
 
   return {
-    status: "server_error",
-    message: "Sundial could not analyze this PDF yet. Please continue manually.",
+    status: "analysis_failed",
+    message:
+      "Sundial is still finishing the calendar analysis. You can keep this page open or return shortly.",
     retryable: true,
+    reasonCode: "client_connection_ended",
   };
+}
+
+export async function calculatePdfSha256(file: File) {
+  const bytes = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function parseAiImportStatusResponse(
+  response: Pick<Response, "ok" | "status" | "text">
+): Promise<AiImportStatusResponse> {
+  const body = await response.text();
+
+  try {
+    const parsed = body.trim() ? (JSON.parse(body) as unknown) : null;
+
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "status" in parsed &&
+      typeof (parsed as { status?: unknown }).status === "string"
+    ) {
+      const record = parsed as {
+        status: string;
+        resultId?: unknown;
+        reasonCode?: unknown;
+      };
+      const status = record.status;
+
+      if (status === "pending") return { status };
+      if (status === "ready" && typeof record.resultId === "string") {
+        return { status, resultId: record.resultId };
+      }
+      if (status === "failed" || status === "expired") {
+        return {
+          status,
+          reasonCode:
+            typeof record.reasonCode === "string"
+              ? record.reasonCode
+              : undefined,
+        };
+      }
+    }
+  } catch {
+    // Treat malformed platform responses as still pending so the client can keep polling.
+  }
+
+  return response.status === 403 || response.status === 404
+    ? { status: "failed", reasonCode: "permission_or_school_unavailable" }
+    : { status: "pending" };
 }

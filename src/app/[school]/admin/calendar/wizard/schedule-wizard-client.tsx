@@ -12,9 +12,12 @@ import {
   getEstimatedAiImportProgress,
 } from "@/lib/calendarWizard/aiImportProgress";
 import {
+  calculatePdfSha256,
   createAiImportClientTimeoutController,
+  isRecoverableAiImportInterruption,
   mapAiImportClientError,
   parseAiImportResponse,
+  parseAiImportStatusResponse,
 } from "@/lib/calendarWizard/aiImportClient";
 import {
   clearAiImportMetadata,
@@ -174,6 +177,13 @@ type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict";
 type LocalStoredDraft = {
   data: CalendarWizardStoredData;
   updatedAt: string;
+};
+type PendingAiImport = {
+  school: string;
+  pdfHash: string;
+  fileName?: string;
+  startedAt: number;
+  requestId?: string;
 };
 
 const WIZARD_STEPS: Array<{ id: WizardStep; label: string }> = [
@@ -482,6 +492,39 @@ function saveLocalStoredDraft(
       updatedAt,
     } satisfies LocalStoredDraft)
   );
+}
+
+function getPendingAiImportStorageKey(school: string) {
+  return `sundial:ai-calendar-import:pending:${school}`;
+}
+
+function parsePendingAiImport(value: string | null): PendingAiImport | null {
+  if (!value) return null;
+
+  try {
+    const parsed = JSON.parse(value) as Partial<PendingAiImport>;
+
+    if (
+      typeof parsed.school !== "string" ||
+      typeof parsed.pdfHash !== "string" ||
+      !/^[0-9a-f]{64}$/i.test(parsed.pdfHash) ||
+      typeof parsed.startedAt !== "number" ||
+      !Number.isFinite(parsed.startedAt)
+    ) {
+      return null;
+    }
+
+    return {
+      school: parsed.school,
+      pdfHash: parsed.pdfHash.toLowerCase(),
+      fileName: typeof parsed.fileName === "string" ? parsed.fileName : undefined,
+      startedAt: parsed.startedAt,
+      requestId:
+        typeof parsed.requestId === "string" ? parsed.requestId : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function hasMeaningfulManualProgress(draft: WizardDraft) {
@@ -1773,7 +1816,17 @@ function AiCalendarImportCard({
     useState<AnalyzeCalendarPdfResult | null>(null);
   const [progress, setProgress] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const isWorking = status === "uploading" || status === "analyzing";
+  const [pollingFileName, setPollingFileName] = useState<string | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const resumedPendingImportRef = useRef(false);
+  const pollForImportResultRef = useRef<
+    ((pending: PendingAiImport) => Promise<void>) | null
+  >(null);
+  const pendingImportStorageKey = useMemo(
+    () => getPendingAiImportStorageKey(schoolSlug),
+    [schoolSlug]
+  );
+  const isWorking = status === "uploading" || status === "analyzing" || isPolling;
   const importResult = draft.aiImport?.result;
   const resolutions = draft.aiImport?.resolutions || [];
   const failureMessage =
@@ -1783,7 +1836,7 @@ function AiCalendarImportCard({
         ? message
         : "";
   const failureRetryable =
-    Boolean(selectedFile) &&
+    (Boolean(selectedFile) || Boolean(pollingFileName)) &&
     (!actionResult ||
       (actionResult.status !== "success" &&
         actionResult.status !== "permission_error" &&
@@ -1805,11 +1858,29 @@ function AiCalendarImportCard({
     return () => window.clearInterval(interval);
   }, [isWorking]);
 
+  useEffect(() => {
+    pollForImportResultRef.current = pollForImportResult;
+  });
+
+  useEffect(() => {
+    if (resumedPendingImportRef.current) return;
+    resumedPendingImportRef.current = true;
+
+    const pending = parsePendingAiImport(
+      window.sessionStorage.getItem(pendingImportStorageKey)
+    );
+
+    if (!pending || pending.school !== schoolSlug) return;
+
+    void pollForImportResultRef.current?.(pending);
+  }, [pendingImportStorageKey, schoolSlug]);
+
   function selectFile(file: File | null) {
     setActionResult(null);
     setMessage("");
     setProgress(getAiImportProgressAfterRetry());
     setElapsedSeconds(0);
+    setPollingFileName(null);
 
     if (!file) {
       setSelectedFile(null);
@@ -1830,10 +1901,269 @@ function AiCalendarImportCard({
     setMessage(`${file.name} selected.`);
   }
 
+  function clearPendingAiImport() {
+    window.sessionStorage.removeItem(pendingImportStorageKey);
+    setPollingFileName(null);
+    setIsPolling(false);
+  }
+
+  function persistPendingAiImport(pending: PendingAiImport) {
+    window.sessionStorage.setItem(pendingImportStorageKey, JSON.stringify(pending));
+  }
+
+  async function handleSuccessfulAiImportResult({
+    result,
+    requestId,
+    fileName,
+  }: {
+    result: Extract<AnalyzeCalendarPdfResult, { status: "success" }>;
+    requestId: string | null;
+    fileName?: string;
+  }) {
+    const schemaValidation = validateAiCalendarImportResult(result.importResult);
+    if (!schemaValidation.success) {
+      const reasonCode = getAiImportValidationReasonCode(
+        schemaValidation.validationErrors
+      );
+      const failure = buildAiImportProcessingFailure(
+        "schema_validation",
+        new Error(
+          JSON.stringify(
+            summarizeAiImportValidationErrors(schemaValidation.validationErrors)
+          )
+        ),
+        requestId
+      );
+      failure.reasonCode = reasonCode;
+      failure.message =
+        "Sundial read the PDF, but one part of the calendar could not be validated. Retry, or continue manually.";
+      setActionResult(failure);
+      setStatus("failed");
+      setMessage(failure.message);
+      return;
+    }
+
+    setProgress(getAiImportProgressAfterSuccess());
+    setStatus("complete");
+    setMessage(
+      result.outcome === "repaired"
+        ? "Sundial corrected a formatting issue and completed the analysis."
+        : result.outcome === "reviewable"
+          ? "Sundial read the calendar, but one item needs your review."
+          : "Calendar analysis complete."
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+
+    let matchedResolutions: DetectedScheduleResolution[];
+    let warningResolutions: AiImportWarningResolution[];
+    let nextState: "complete" | "complete_with_warnings";
+    try {
+      matchedResolutions = matchDetectedSchedules(
+        result.importResult.detectedSchedules,
+        schedules
+      );
+      warningResolutions = createDefaultWarningResolutions(result.importResult.warnings);
+      nextState =
+        result.importResult.warnings.length > 0 ? "complete_with_warnings" : "complete";
+    } catch (error) {
+      const failure = buildAiImportProcessingFailure(
+        "review_generation",
+        error,
+        requestId
+      );
+      setActionResult(failure);
+      setStatus("failed");
+      setMessage(failure.message);
+      return;
+    }
+
+    try {
+      getDetectedScheduleUsageCounts(result.importResult);
+    } catch (error) {
+      const failure = buildAiImportProcessingFailure(
+        "consistency_checks",
+        error,
+        requestId
+      );
+      setActionResult(failure);
+      setStatus("failed");
+      setMessage(failure.message);
+      return;
+    }
+
+    setStatus("review");
+    setMessage(
+      nextState === "complete_with_warnings"
+        ? "Analysis completed with warnings. Review before creating your calendar."
+        : "Analysis complete. Review before creating your calendar."
+    );
+    try {
+      updateDraft((previousDraft) => ({
+        ...previousDraft,
+        aiImport: {
+          state: "review",
+          fileName,
+          result: result.importResult,
+          resolutions: matchedResolutions,
+          warnings: result.importResult.warnings,
+          warningResolutions,
+          banner:
+            result.outcome === "repaired"
+              ? "Sundial corrected a formatting issue and completed the analysis."
+              : result.outcome === "reviewable"
+                ? "Sundial read the calendar, but one item needs your review."
+                : "Calendar analysis complete.",
+        },
+      }));
+      clearPendingAiImport();
+    } catch (error) {
+      const failure = buildAiImportProcessingFailure(
+        "draft_persistence",
+        error,
+        requestId
+      );
+      setActionResult(failure);
+      setStatus("failed");
+      setMessage(failure.message);
+    }
+  }
+
+  async function fetchCachedImportResult(pending: PendingAiImport) {
+    const query = new URLSearchParams({
+      pdfHash: pending.pdfHash,
+      startedAt: String(pending.startedAt),
+    });
+    const response = await fetch(
+      `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/result?${query.toString()}`
+    );
+
+    return parseAiImportResponse(response);
+  }
+
+  async function pollForImportResult(pending: PendingAiImport) {
+    const pollingStartedAt = Date.now();
+    const pollingExpiresAt = pollingStartedAt + 90_000;
+
+    console.info("AI calendar import diagnostic", {
+      event: "status_poll_started",
+      school: schoolSlug,
+    });
+    setIsPolling(true);
+    setPollingFileName(pending.fileName || null);
+    setStatus("analyzing");
+    setActionResult(null);
+    setProgress((previousProgress) => Math.max(previousProgress, 94));
+    setMessage(
+      "Sundial is still finishing the calendar analysis. You can keep this page open or return shortly."
+    );
+
+    while (Date.now() < pollingExpiresAt) {
+      try {
+        const query = new URLSearchParams({
+          pdfHash: pending.pdfHash,
+          startedAt: String(pending.startedAt),
+        });
+        const response = await fetch(
+          `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/status?${query.toString()}`
+        );
+        const statusResult = await parseAiImportStatusResponse(response);
+
+        if (statusResult.status === "ready") {
+          console.info("AI calendar import diagnostic", {
+            event: "cached_result_found",
+            school: schoolSlug,
+          });
+          const result = await fetchCachedImportResult(pending);
+          setActionResult(result);
+
+          if (result.status === "success") {
+            await handleSuccessfulAiImportResult({
+              result,
+              requestId: pending.requestId || null,
+              fileName: pending.fileName,
+            });
+            return;
+          }
+
+          setStatus("failed");
+          setMessage(result.message);
+          setIsPolling(false);
+          return;
+        }
+
+        if (statusResult.status === "failed") {
+          console.info("AI calendar import diagnostic", {
+            event: "confirmed_analysis_failed",
+            school: schoolSlug,
+            reasonCode: statusResult.reasonCode,
+          });
+          const failure: AnalyzeCalendarPdfResult = {
+            status: "analysis_failed",
+            message:
+              "Sundial could not analyze this PDF yet. Please retry, or continue manually.",
+            retryable: true,
+            reasonCode: statusResult.reasonCode || "confirmed_analysis_failed",
+          };
+          setActionResult(failure);
+          setStatus("failed");
+          setMessage(failure.message);
+          clearPendingAiImport();
+          return;
+        }
+
+        if (statusResult.status === "expired") {
+          const failure: AnalyzeCalendarPdfResult = {
+            status: "analysis_failed",
+            message:
+              "Sundial could not find an active calendar analysis for this PDF. Please upload it again or continue manually.",
+            retryable: true,
+            reasonCode: statusResult.reasonCode || "expired",
+          };
+          setActionResult(failure);
+          setStatus("failed");
+          setMessage(failure.message);
+          clearPendingAiImport();
+          return;
+        }
+
+        console.info("AI calendar import diagnostic", {
+          event: "analysis_still_pending",
+          school: schoolSlug,
+        });
+      } catch {
+        console.info("AI calendar import diagnostic", {
+          event: "analysis_still_pending",
+          school: schoolSlug,
+        });
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+    }
+
+    console.info("AI calendar import diagnostic", {
+      event: "polling_expired",
+      school: schoolSlug,
+    });
+    const failure: AnalyzeCalendarPdfResult = {
+      status: "analysis_failed",
+      message:
+        "Sundial is still finishing the calendar analysis. Keep this page open a little longer or refresh shortly to check again.",
+      retryable: true,
+      reasonCode: "polling_expired",
+    };
+    setActionResult(failure);
+    setStatus("failed");
+    setMessage(failure.message);
+    setIsPolling(false);
+  }
+
   async function analyzeSelectedFile(analyzeAgain = false) {
     if (!selectedFile || isWorking) return;
 
     const timeoutController = createAiImportClientTimeoutController();
+    const startedAt = Date.now();
+    let pendingImport: PendingAiImport | null = null;
+
     setStatus("uploading");
     setMessage("Reading your calendar...");
     setActionResult(null);
@@ -1845,6 +2175,14 @@ function AiCalendarImportCard({
     if (analyzeAgain) formData.append("analyzeAgain", "true");
 
     try {
+      const pdfHash = await calculatePdfSha256(selectedFile);
+      pendingImport = {
+        school: schoolSlug,
+        pdfHash,
+        fileName: selectedFile.name,
+        startedAt,
+      };
+      persistPendingAiImport(pendingImport);
       setStatus("analyzing");
       setMessage("Finding school dates and checking schedule patterns...");
       const response = await fetch(
@@ -1857,124 +2195,39 @@ function AiCalendarImportCard({
       );
       const result = await parseAiImportResponse(response);
       const requestId = response.headers.get("x-sundial-ai-import-request-id");
+      if (pendingImport) {
+        pendingImport = { ...pendingImport, requestId: requestId || undefined };
+        persistPendingAiImport(pendingImport);
+      }
       setActionResult(result);
 
       if (result.status !== "success") {
+        if (pendingImport && isRecoverableAiImportInterruption(result)) {
+          await pollForImportResult(pendingImport);
+          return;
+        }
         setStatus(result.status === "validation_error" ? "failed" : "failed");
         setMessage(result.message);
+        clearPendingAiImport();
         return;
       }
 
-      const schemaValidation = validateAiCalendarImportResult(result.importResult);
-      if (!schemaValidation.success) {
-        const reasonCode = getAiImportValidationReasonCode(
-          schemaValidation.validationErrors
-        );
-        const failure = buildAiImportProcessingFailure(
-          "schema_validation",
-          new Error(
-            JSON.stringify(
-              summarizeAiImportValidationErrors(schemaValidation.validationErrors)
-            )
-          ),
-          requestId
-        );
-        failure.reasonCode = reasonCode;
-        failure.message =
-          "Sundial read the PDF, but one part of the calendar could not be validated. Retry, or continue manually.";
-        setActionResult(failure);
-        setStatus("failed");
-        setMessage(failure.message);
-        return;
-      }
-
-      setProgress(getAiImportProgressAfterSuccess());
-      setStatus("complete");
-      setMessage(
-        result.outcome === "repaired"
-          ? "Sundial corrected a formatting issue and completed the analysis."
-          : result.outcome === "reviewable"
-            ? "Sundial read the calendar, but one item needs your review."
-            : "Calendar analysis complete."
-      );
-      await new Promise((resolve) => window.setTimeout(resolve, 400));
-
-      let matchedResolutions: DetectedScheduleResolution[];
-      let warningResolutions: AiImportWarningResolution[];
-      let nextState: "complete" | "complete_with_warnings";
-      try {
-        matchedResolutions = matchDetectedSchedules(
-          result.importResult.detectedSchedules,
-          schedules
-        );
-        warningResolutions = createDefaultWarningResolutions(result.importResult.warnings);
-        nextState =
-          result.importResult.warnings.length > 0 ? "complete_with_warnings" : "complete";
-      } catch (error) {
-        const failure = buildAiImportProcessingFailure(
-          "review_generation",
-          error,
-          requestId
-        );
-        setActionResult(failure);
-        setStatus("failed");
-        setMessage(failure.message);
-        return;
-      }
-
-      try {
-        getDetectedScheduleUsageCounts(result.importResult);
-      } catch (error) {
-        const failure = buildAiImportProcessingFailure(
-          "consistency_checks",
-          error,
-          requestId
-        );
-        setActionResult(failure);
-        setStatus("failed");
-        setMessage(failure.message);
-        return;
-      }
-
-      setStatus("review");
-      setMessage(
-        nextState === "complete_with_warnings"
-          ? "Analysis completed with warnings. Review before creating your calendar."
-          : "Analysis complete. Review before creating your calendar."
-      );
-      try {
-        updateDraft((previousDraft) => ({
-          ...previousDraft,
-          aiImport: {
-            state: "review",
-            fileName: selectedFile.name,
-            result: result.importResult,
-            resolutions: matchedResolutions,
-            warnings: result.importResult.warnings,
-            warningResolutions,
-            banner:
-              result.outcome === "repaired"
-                ? "Sundial corrected a formatting issue and completed the analysis."
-                : result.outcome === "reviewable"
-                  ? "Sundial read the calendar, but one item needs your review."
-                  : "Calendar analysis complete.",
-          },
-        }));
-      } catch (error) {
-        const failure = buildAiImportProcessingFailure(
-          "draft_persistence",
-          error,
-          requestId
-        );
-        setActionResult(failure);
-        setStatus("failed");
-        setMessage(failure.message);
-      }
+      await handleSuccessfulAiImportResult({
+        result,
+        requestId,
+        fileName: selectedFile.name,
+      });
     } catch (error) {
       const result = mapAiImportClientError(error);
+      if (pendingImport && isRecoverableAiImportInterruption(result)) {
+        setActionResult(result);
+        await pollForImportResult(pendingImport);
+        return;
+      }
       setActionResult(result);
       setStatus("failed");
       setMessage(result.message);
+      clearPendingAiImport();
     } finally {
       timeoutController.clear();
     }
@@ -2258,7 +2511,7 @@ function AiCalendarImportCard({
       {failureMessage && (
         <AiCalendarImportProgress
           state="failed"
-          filename={selectedFile?.name}
+          filename={selectedFile?.name || pollingFileName || undefined}
           elapsedSeconds={elapsedSeconds}
           progress={progress}
           error={failureMessage}
@@ -2276,7 +2529,7 @@ function AiCalendarImportCard({
       {(isWorking || status === "complete") && (
         <AiCalendarImportProgress
           state={status === "complete" ? "complete" : "working"}
-          filename={selectedFile?.name}
+          filename={selectedFile?.name || pollingFileName || undefined}
           elapsedSeconds={elapsedSeconds}
           progress={progress}
         />
@@ -2927,6 +3180,10 @@ function AiCalendarImportProgress({
     state === "complete"
       ? "Sundial found calendar details and is opening the review screen."
       : stage.description;
+  const failedTitle =
+    error?.includes("still finishing")
+      ? "Calendar analysis still finishing"
+      : "Calendar analysis stopped";
   const reassurance = getAiImportLongRunningMessage(elapsedSeconds);
 
   return (
@@ -2943,7 +3200,7 @@ function AiCalendarImportProgress({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-base font-bold">
-            {state === "failed" ? "Calendar analysis stopped" : "Reading your calendar"}
+            {state === "failed" ? failedTitle : "Reading your calendar"}
           </p>
           {filename && (
             <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">

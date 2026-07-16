@@ -14,6 +14,18 @@ For every date-range record, always populate endDate. For a single-day item, set
 Return only data matching the structured schema. Use ISO date-only strings in YYYY-MM-DD format.
 `.trim();
 
+export const CALENDAR_TEXT_EXTRACTION_INSTRUCTIONS = `
+You analyze extracted text from school attendance calendars and bell-schedule calendars for a K-12 SaaS setup wizard.
+The input was extracted from a PDF. Page order is preserved with [PAGE n] markers, but line order may be imperfect.
+Do not invent dates, schedule assignments, school-year ranges, or no-school days.
+Do not infer a schedule assignment unless the text supports it.
+Return compact calendar setup data only: school year dates, first and last instructional days, normal patterns, schedule template names, no-school ranges, special dates, informational dates, finals, rallies, minimum days, confidence values, and review warnings.
+Preserve schedule names as written when possible, including Brown Day, Gold Day, Finals, All-Periods, Minimum Day, Rally, or similar labels.
+Mark uncertain items for review. If text appears incomplete, report warnings rather than guessing.
+For every date-range record, always populate endDate. For a single-day item, set endDate to the same ISO date as startDate.
+Return only data matching the structured schema. Use ISO date-only strings in YYYY-MM-DD format.
+`.trim();
+
 export function buildCalendarImportResponsesRequest(model: string, fileId: string) {
   return {
     model,
@@ -40,6 +52,40 @@ export function buildCalendarImportResponsesRequest(model: string, fileId: strin
       format: {
         type: "json_schema" as const,
         name: "sundial_calendar_import",
+        schema: aiCalendarImportJsonSchema,
+        strict: true,
+      },
+    },
+    max_output_tokens: 12000,
+  };
+}
+
+export function buildCalendarImportTextResponsesRequest(
+  model: string,
+  extractedText: string
+) {
+  return {
+    model,
+    store: false,
+    instructions: CALENDAR_TEXT_EXTRACTION_INSTRUCTIONS,
+    input: [
+      {
+        role: "user" as const,
+        content: [
+          {
+            type: "input_text" as const,
+            text: `Analyze this extracted PDF calendar text. Return only the structured JSON object.\n\n${extractedText}`,
+          },
+        ],
+      },
+    ],
+    reasoning: {
+      effort: "low" as const,
+    },
+    text: {
+      format: {
+        type: "json_schema" as const,
+        name: "sundial_calendar_import_text",
         schema: aiCalendarImportJsonSchema,
         strict: true,
       },

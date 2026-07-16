@@ -4,8 +4,10 @@ import {
   AiImportClientTimeoutError,
   createAiImportClientTimeoutController,
   getConfiguredAiImportClientTimeoutMs,
+  isRecoverableAiImportInterruption,
   mapAiImportClientError,
   parseAiImportResponse,
+  parseAiImportStatusResponse,
 } from "./aiImportClient";
 import { getAiImportProgressAfterRetry } from "./aiImportProgress";
 import {
@@ -62,15 +64,16 @@ describe("AI import client response handling", () => {
     expect(result.message).toContain("longer than expected");
   });
 
-  it("maps malformed non-JSON success bodies to a retryable response-read error", async () => {
+  it("maps malformed non-JSON success bodies to a recoverable interruption", async () => {
     const result = await parseAiImportResponse(response({ body: "not json" }));
 
     expect(result).toMatchObject({
-      status: "server_error",
+      status: "analysis_failed",
       retryable: true,
+      reasonCode: "client_connection_ended",
     });
     if (result.status === "success") throw new Error("Expected failure result");
-    expect(result.message).toContain("analysis response");
+    expect(isRecoverableAiImportInterruption(result)).toBe(true);
   });
 
   it("maps browser aborts to the timeout message", () => {
@@ -81,6 +84,38 @@ describe("AI import client response handling", () => {
       retryable: true,
       reasonCode: "client_timeout",
     });
+    expect(isRecoverableAiImportInterruption(result)).toBe(true);
+  });
+
+  it("maps platform HTML errors to a recoverable polling state", async () => {
+    const result = await parseAiImportResponse(
+      response({ ok: false, status: 500, body: "<html>FUNCTION_INVOCATION_TIMEOUT</html>" })
+    );
+
+    expect(result).toMatchObject({
+      status: "analysis_failed",
+      reasonCode: "client_connection_ended",
+    });
+    expect(isRecoverableAiImportInterruption(result)).toBe(true);
+  });
+
+  it("parses pending, ready, failed, and malformed status responses safely", async () => {
+    await expect(
+      parseAiImportStatusResponse(response({ body: JSON.stringify({ status: "pending" }) }))
+    ).resolves.toEqual({ status: "pending" });
+    await expect(
+      parseAiImportStatusResponse(
+        response({ body: JSON.stringify({ status: "ready", resultId: "hash" }) })
+      )
+    ).resolves.toEqual({ status: "ready", resultId: "hash" });
+    await expect(
+      parseAiImportStatusResponse(
+        response({ body: JSON.stringify({ status: "failed", reasonCode: "bad" }) })
+      )
+    ).resolves.toEqual({ status: "failed", reasonCode: "bad" });
+    await expect(
+      parseAiImportStatusResponse(response({ ok: false, status: 502, body: "<html />" }))
+    ).resolves.toEqual({ status: "pending" });
   });
 
   it("allows retry after failure to reset progress", () => {

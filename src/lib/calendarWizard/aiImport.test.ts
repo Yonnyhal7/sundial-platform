@@ -36,6 +36,8 @@ import {
   OpenAiCalendarApplicationTimeoutError,
   getCalendarImportMode,
   getOpenAiCalendarConfiguration,
+  getOpenAiCalendarPdfModel,
+  getOpenAiCalendarTextModel,
   buildOpenAiErrorDiagnostics,
   createOpenAiCalendarTimeoutController,
   mapOpenAiError,
@@ -45,7 +47,10 @@ import {
   shouldRetryOpenAiError,
 } from "./openAiCalendarAnalyzerUtils";
 import { hasPdfSignature } from "./aiPdfValidation";
-import { buildCalendarImportResponsesRequest } from "./openAiCalendarRequest";
+import {
+  buildCalendarImportResponsesRequest,
+  buildCalendarImportTextResponsesRequest,
+} from "./openAiCalendarRequest";
 
 function detected(tempId: string, name: string): AiDetectedSchedule {
   return {
@@ -438,6 +443,27 @@ describe("OpenAI calendar analyzer behavior", () => {
     expect("temperature" in request).toBe(false);
   });
 
+  it("builds a gpt-5 mini text request with low reasoning and strict JSON schema", () => {
+    const request = buildCalendarImportTextResponsesRequest(
+      "gpt-5-mini",
+      "[PAGE 1]\nAugust 12 Instruction Begins"
+    );
+
+    expect(request).toMatchObject({
+      model: "gpt-5-mini",
+      store: false,
+      reasoning: { effort: "low" },
+      text: {
+        format: {
+          type: "json_schema",
+          strict: true,
+        },
+      },
+    });
+    expect(JSON.stringify(request)).toContain("[PAGE 1]");
+    expect("temperature" in request).toBe(false);
+  });
+
   it("detects refusal responses", () => {
     expect(
       openAiResponseHasRefusal({
@@ -508,6 +534,19 @@ describe("OpenAI calendar analyzer behavior", () => {
       ok: false,
       reasonCode: "import_mode_disabled",
     });
+  });
+
+  it("uses separate text and PDF model environment precedence", () => {
+    expect(getOpenAiCalendarTextModel({})).toBe("gpt-5-mini");
+    expect(getOpenAiCalendarTextModel({ OPENAI_CALENDAR_TEXT_MODEL: "custom-mini" })).toBe("custom-mini");
+    expect(getOpenAiCalendarPdfModel({})).toBe("gpt-5");
+    expect(getOpenAiCalendarPdfModel({ OPENAI_CALENDAR_MODEL: "legacy-pdf" })).toBe("legacy-pdf");
+    expect(
+      getOpenAiCalendarPdfModel({
+        OPENAI_CALENDAR_MODEL: "legacy-pdf",
+        OPENAI_CALENDAR_PDF_MODEL: "custom-pdf",
+      })
+    ).toBe("custom-pdf");
   });
 
   it("builds sanitized OpenAI error diagnostics", () => {

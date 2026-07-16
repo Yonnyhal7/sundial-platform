@@ -15,7 +15,12 @@ export {
 import { parseOpenAiCalendarTimeoutMs } from "./aiImportTimeouts";
 
 export type CalendarAnalyzerResult =
-  | { status: "success"; importResult: AiCalendarImportResult; outcome?: "successful" | "repaired" | "reviewable" }
+  | {
+      status: "success";
+      importResult: AiCalendarImportResult;
+      outcome?: "successful" | "repaired" | "reviewable";
+      analysisStrategy?: "text-gpt5-mini" | "pdf-gpt5";
+    }
   | {
       status:
         | "configuration_error"
@@ -46,6 +51,8 @@ export type OpenAiErrorDiagnosticContext = {
 
 const TRANSIENT_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
 export const DEFAULT_OPENAI_CALENDAR_MODEL = "gpt-5";
+export const DEFAULT_OPENAI_CALENDAR_TEXT_MODEL = "gpt-5-mini";
+export const DEFAULT_OPENAI_CALENDAR_PDF_MODEL = DEFAULT_OPENAI_CALENDAR_MODEL;
 
 export type OpenAiCalendarConfigurationReasonCode =
   | "missing_openai_api_key"
@@ -144,6 +151,10 @@ export function buildOpenAiCalendarEnvironmentDiagnostics() {
     openAiKeyLength: process.env.OPENAI_API_KEY?.length ?? 0,
     hasModel: Boolean(process.env.OPENAI_CALENDAR_MODEL),
     model: process.env.OPENAI_CALENDAR_MODEL,
+    hasTextModel: Boolean(process.env.OPENAI_CALENDAR_TEXT_MODEL),
+    textModel: process.env.OPENAI_CALENDAR_TEXT_MODEL,
+    hasPdfModel: Boolean(process.env.OPENAI_CALENDAR_PDF_MODEL),
+    pdfModel: process.env.OPENAI_CALENDAR_PDF_MODEL,
     hasAnalyzerTimeout: Boolean(process.env.OPENAI_CALENDAR_TIMEOUT_MS),
     analyzerTimeout: process.env.OPENAI_CALENDAR_TIMEOUT_MS,
     hasClientTimeout: Boolean(process.env.NEXT_PUBLIC_OPENAI_CALENDAR_TIMEOUT_MS),
@@ -232,6 +243,18 @@ export function getOpenAiCalendarConfiguration(
     model,
     timeoutMs: parseOpenAiCalendarTimeoutMs(env.OPENAI_CALENDAR_TIMEOUT_MS),
   };
+}
+
+export function getOpenAiCalendarTextModel(env: CalendarImportEnv = process.env) {
+  return env.OPENAI_CALENDAR_TEXT_MODEL?.trim() || DEFAULT_OPENAI_CALENDAR_TEXT_MODEL;
+}
+
+export function getOpenAiCalendarPdfModel(env: CalendarImportEnv = process.env) {
+  return (
+    env.OPENAI_CALENDAR_PDF_MODEL?.trim() ||
+    env.OPENAI_CALENDAR_MODEL?.trim() ||
+    DEFAULT_OPENAI_CALENDAR_PDF_MODEL
+  );
 }
 
 export function shouldRetryOpenAiError(error: unknown, attempt: number) {

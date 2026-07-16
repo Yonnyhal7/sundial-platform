@@ -1,0 +1,145 @@
+import "server-only";
+
+import { PDFParse } from "pdf-parse";
+import { MAX_CALENDAR_IMPORT_PAGES } from "./aiPdfValidation";
+
+export const MAX_EXTRACTED_CALENDAR_TEXT_CHARS = 55_000;
+
+export type ExtractedCalendarText = {
+  text: string;
+  pageCount: number;
+  extractedCharacterCount: number;
+  extractedLineCount: number;
+  truncated: boolean;
+};
+
+const CALENDAR_RELEVANT_LINE_PATTERN =
+  /\b(january|february|march|april|may|june|july|august|september|october|november|december|mon|tue|wed|thu|fri|sat|sun|holiday|no school|minimum|rally|finals?|semester|instruction|begins?|brown|gold|day|schedule|break|teacher|work|inservice|testing|early release|\d{1,2}[/-]\d{1,2}|\d{4})\b/i;
+
+function cleanPageText(text: string) {
+  return text
+    .replace(/\r/g, "\n")
+    .replace(/[\t\f\v]+/g, " ")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .trim();
+}
+
+function removeSafeRepeatedHeadersAndFooters(pages: string[]) {
+  if (pages.length < 3) return pages;
+
+  const firstLines = new Map<string, number>();
+  const lastLines = new Map<string, number>();
+
+  for (const page of pages) {
+    const lines = page.split("\n").filter(Boolean);
+    const first = lines[0];
+    const last = lines[lines.length - 1];
+
+    if (first && first.length < 90 && !CALENDAR_RELEVANT_LINE_PATTERN.test(first)) {
+      firstLines.set(first, (firstLines.get(first) || 0) + 1);
+    }
+    if (last && last.length < 90 && !CALENDAR_RELEVANT_LINE_PATTERN.test(last)) {
+      lastLines.set(last, (lastLines.get(last) || 0) + 1);
+    }
+  }
+
+  const repeatedFirst = new Set(
+    [...firstLines.entries()]
+      .filter(([, count]) => count >= Math.max(3, Math.ceil(pages.length * 0.6)))
+      .map(([line]) => line)
+  );
+  const repeatedLast = new Set(
+    [...lastLines.entries()]
+      .filter(([, count]) => count >= Math.max(3, Math.ceil(pages.length * 0.6)))
+      .map(([line]) => line)
+  );
+
+  return pages.map((page) => {
+    const lines = page.split("\n");
+    if (repeatedFirst.has(lines[0])) lines.shift();
+    if (repeatedLast.has(lines[lines.length - 1])) lines.pop();
+    return lines.join("\n").trim();
+  });
+}
+
+function limitExtractedText(text: string) {
+  if (text.length <= MAX_EXTRACTED_CALENDAR_TEXT_CHARS) {
+    return { text, truncated: false };
+  }
+
+  const retainedLines: string[] = [];
+  for (const line of text.split("\n")) {
+    if (line.startsWith("[PAGE ") || CALENDAR_RELEVANT_LINE_PATTERN.test(line)) {
+      retainedLines.push(line);
+    }
+  }
+
+  const retainedText = retainedLines.join("\n");
+  if (retainedText.length <= MAX_EXTRACTED_CALENDAR_TEXT_CHARS) {
+    return { text: retainedText, truncated: true };
+  }
+
+  const chunks = retainedText.split(/\n(?=\[PAGE \d+\])/g);
+  let next = "";
+  for (const chunk of chunks) {
+    if (next.length + chunk.length + 1 > MAX_EXTRACTED_CALENDAR_TEXT_CHARS) {
+      break;
+    }
+    next += `${next ? "\n" : ""}${chunk}`;
+  }
+
+  return {
+    text: next || retainedText.slice(0, MAX_EXTRACTED_CALENDAR_TEXT_CHARS),
+    truncated: true,
+  };
+}
+
+export async function extractCalendarPdfText(file: File): Promise<ExtractedCalendarText> {
+  const startedAt = Date.now();
+  const data = new Uint8Array(await file.arrayBuffer());
+  const parser = new PDFParse({ data });
+
+  try {
+    const [info, result] = await Promise.all([
+      parser.getInfo().catch(() => null),
+      parser.getText(),
+    ]);
+    const totalPages = info?.total || result.total || result.pages.length;
+
+    if (totalPages > MAX_CALENDAR_IMPORT_PAGES) {
+      throw new Error(`Calendar PDFs must be ${MAX_CALENDAR_IMPORT_PAGES} pages or fewer.`);
+    }
+
+    const cleanedPages = removeSafeRepeatedHeadersAndFooters(
+      result.pages.map((page) => cleanPageText(page.text || ""))
+    );
+    const withMarkers = cleanedPages
+      .map((page, index) => `[PAGE ${index + 1}]\n${page}`.trim())
+      .join("\n\n");
+    const limited = limitExtractedText(withMarkers);
+    const lineCount = limited.text.split("\n").filter((line) => line.trim()).length;
+
+    console.info("AI calendar import diagnostic", {
+      event: "pdf_text_extraction_finished",
+      pageCount: totalPages,
+      extractedCharacterCount: limited.text.length,
+      extractedLineCount: lineCount,
+      truncated: limited.truncated,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return {
+      text: limited.text,
+      pageCount: totalPages,
+      extractedCharacterCount: limited.text.length,
+      extractedLineCount: lineCount,
+      truncated: limited.truncated,
+    };
+  } finally {
+    await parser.destroy();
+  }
+}

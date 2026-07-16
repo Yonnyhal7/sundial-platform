@@ -3,8 +3,8 @@ import { canAccessAdminSection } from "@/lib/auth/adminPermissions";
 import type { AnalyzeCalendarPdfResult } from "@/lib/calendarWizard/aiImportTypes";
 import { validateCalendarPdfFile } from "@/lib/calendarWizard/aiPdfValidation";
 import { analyzeCalendarPdf } from "@/lib/calendarWizard/openAiCalendarAnalyzer.server";
-import { DEFAULT_OPENAI_CALENDAR_MODEL, getOpenAiCalendarConfiguration, logOpenAiCalendarEnvironmentDiagnostic } from "@/lib/calendarWizard/openAiCalendarAnalyzerUtils";
-import { AI_CALENDAR_PROMPT_SCHEMA_VERSION, dedupeCalendarAnalysis, readCalendarAnalysisCache, writeCalendarAnalysisCache } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
+import { getOpenAiCalendarPdfModel, getOpenAiCalendarTextModel, logOpenAiCalendarEnvironmentDiagnostic } from "@/lib/calendarWizard/openAiCalendarAnalyzerUtils";
+import { AI_CALENDAR_PDF_STRATEGY, AI_CALENDAR_PROMPT_SCHEMA_VERSION, AI_CALENDAR_TEXT_STRATEGY, dedupeCalendarAnalysis, readCalendarAnalysisCache, recordCalendarAnalysisFailure, writeCalendarAnalysisCache, type CalendarAnalysisCacheKey } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
 import { getSchoolForSetup } from "@/lib/schools";
 
 export const runtime = "nodejs";
@@ -56,6 +56,31 @@ function logAiImportRouteDiagnostic({
   }
 
   console.info("AI calendar import route diagnostic", payload);
+}
+
+function getCacheKeys({
+  schoolId,
+  pdfHash,
+}: {
+  schoolId: string;
+  pdfHash: string;
+}) {
+  const pdfKey: CalendarAnalysisCacheKey = {
+    schoolId,
+    pdfHash,
+    strategy: AI_CALENDAR_PDF_STRATEGY,
+    model: getOpenAiCalendarPdfModel(),
+    version: AI_CALENDAR_PROMPT_SCHEMA_VERSION,
+  };
+  const textKey: CalendarAnalysisCacheKey = {
+    schoolId,
+    pdfHash,
+    strategy: AI_CALENDAR_TEXT_STRATEGY,
+    model: getOpenAiCalendarTextModel(),
+    version: AI_CALENDAR_PROMPT_SCHEMA_VERSION,
+  };
+
+  return { preferred: [pdfKey, textKey], byStrategy: { [AI_CALENDAR_PDF_STRATEGY]: pdfKey, [AI_CALENDAR_TEXT_STRATEGY]: textKey } };
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -200,13 +225,22 @@ export async function POST(request: Request, context: RouteContext) {
 
     const pdfHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await upload.arrayBuffer())))
       .map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    const configured = getOpenAiCalendarConfiguration();
-    const model = configured.ok && configured.mode === "openai" ? configured.model : DEFAULT_OPENAI_CALENDAR_MODEL;
-    const cacheKey = { schoolId: schoolData.id, pdfHash, model, version: AI_CALENDAR_PROMPT_SCHEMA_VERSION };
+    const cacheKeys = getCacheKeys({ schoolId: schoolData.id, pdfHash });
     const analyzeAgain = formData.get("analyzeAgain") === "true";
     if (!analyzeAgain) {
-      const cached = await readCalendarAnalysisCache(cacheKey);
-      if (cached) return respond({ status: "success", importResult: cached, outcome: "successful" });
+      for (const cacheKey of cacheKeys.preferred) {
+        const cached = await readCalendarAnalysisCache(cacheKey);
+        if (cached) {
+          logAiImportRouteDiagnostic({
+            event: "cache_hit",
+            requestId,
+            school,
+            durationMs: Date.now() - startedAt,
+            status: "success",
+          });
+          return respond({ status: "success", importResult: cached, outcome: "successful" });
+        }
+      }
     }
 
     logAiImportRouteDiagnostic({
@@ -217,8 +251,18 @@ export async function POST(request: Request, context: RouteContext) {
       fileSize: upload.size,
       fileType: upload.type || "unknown",
     });
-    const result = await dedupeCalendarAnalysis(cacheKey, () => analyzeCalendarPdf(upload));
-    if (result.status === "success") await writeCalendarAnalysisCache(cacheKey, result.importResult);
+    const pipelineKey = cacheKeys.byStrategy[AI_CALENDAR_PDF_STRATEGY];
+    const result = await dedupeCalendarAnalysis(pipelineKey, () => analyzeCalendarPdf(upload));
+    const resultCacheKey =
+      result.status === "success" && result.analysisStrategy === AI_CALENDAR_TEXT_STRATEGY
+        ? cacheKeys.byStrategy[AI_CALENDAR_TEXT_STRATEGY]
+        : cacheKeys.byStrategy[AI_CALENDAR_PDF_STRATEGY];
+    if (result.status === "success") await writeCalendarAnalysisCache(resultCacheKey, result.importResult);
+    if (result.status !== "success") {
+      for (const cacheKey of cacheKeys.preferred) {
+        recordCalendarAnalysisFailure(cacheKey, result.reasonCode || result.status);
+      }
+    }
     logAiImportRouteDiagnostic({
       level: result.status === "success" ? "info" : "warn",
       event: "analysis_finished",

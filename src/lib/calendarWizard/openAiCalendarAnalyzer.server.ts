@@ -9,7 +9,19 @@ import {
   getAiImportValidationReasonCode,
   summarizeAiImportValidationErrors,
 } from "./aiImportTypes";
-import { buildCalendarImportRepairRequest, buildCalendarImportResponsesRequest } from "./openAiCalendarRequest";
+import {
+  extractCalendarPdfText,
+  type ExtractedCalendarText,
+} from "./pdfTextExtraction.server";
+import {
+  evaluateCalendarTextQuality,
+  type CalendarTextQuality,
+} from "./pdfTextQuality";
+import {
+  buildCalendarImportRepairRequest,
+  buildCalendarImportResponsesRequest,
+  buildCalendarImportTextResponsesRequest,
+} from "./openAiCalendarRequest";
 import { createMockAiCalendarImportResult } from "./mockAiCalendarAnalyzer";
 import {
   AiCalendarImportProcessingError,
@@ -19,6 +31,8 @@ import {
   buildAiCalendarProcessingDiagnostics,
   createOpenAiCalendarTimeoutController,
   getOpenAiCalendarConfiguration,
+  getOpenAiCalendarPdfModel,
+  getOpenAiCalendarTextModel,
   logOpenAiCalendarEnvironmentDiagnostic,
   logOpenAiCalendarDiagnostic,
   mapOpenAiError,
@@ -31,6 +45,14 @@ import {
 } from "./openAiCalendarAnalyzerUtils";
 
 export { DEFAULT_OPENAI_CALENDAR_MODEL };
+
+type OpenAiResponseUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+};
+
+type AnalysisStrategy = "text-gpt5-mini" | "pdf-gpt5";
 
 function getOpenAiClient(apiKey: string) {
   logOpenAiCalendarEnvironmentDiagnostic("before_openai_client_create");
@@ -75,32 +97,323 @@ function applyTargetedRepairs(
   ) as RawAiCalendarExtraction;
 }
 
-export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerResult> {
-  const configuration = getOpenAiCalendarConfiguration();
+function logPipelineDiagnostic(
+  event: string,
+  payload: Record<string, unknown> = {}
+) {
+  console.info("AI calendar import diagnostic", {
+    event,
+    ...payload,
+  });
+}
 
-  if (configuration.ok && configuration.mode === "mock") {
+async function normalizeValidateAndRepair({
+  client,
+  model,
+  raw,
+  usage,
+  requestId,
+  startedAt,
+  signal,
+  strategy,
+  fileUploadSucceeded,
+  responsesApiCallBegan,
+}: {
+  client: OpenAI;
+  model: string;
+  raw: RawAiCalendarExtraction;
+  usage?: OpenAiResponseUsage;
+  requestId?: string | null;
+  startedAt: number;
+  signal: AbortSignal;
+  strategy: AnalysisStrategy;
+  fileUploadSucceeded: boolean;
+  responsesApiCallBegan: boolean;
+}): Promise<CalendarAnalyzerResult> {
+  let normalized: ReturnType<typeof normalizeAiCalendarExtraction>;
+
+  try {
+    normalized = normalizeAiCalendarExtraction(raw, {
+      source: "openai",
+      usage: {
+        model,
+        requestId: requestId || undefined,
+        inputTokens: usage?.input_tokens,
+        outputTokens: usage?.output_tokens,
+        totalTokens: usage?.total_tokens,
+        durationMs: Date.now() - startedAt,
+      },
+    });
+  } catch (error) {
+    const processingError = new AiCalendarImportProcessingError({
+      phase: "review_generation",
+      reasonCode: "review_generation_failed",
+      message: "AI calendar import review generation failed.",
+      cause: error,
+    });
+    console.error(
+      "AI calendar import processing error",
+      buildAiCalendarProcessingDiagnostics({
+        error,
+        phase: processingError.phase,
+        reasonCode: processingError.reasonCode,
+        requestId,
+        durationMs: Date.now() - startedAt,
+      })
+    );
+    return mapOpenAiError(processingError);
+  }
+
+  let repaired = false;
+  if (!normalized.success) {
+    const repairIssues = summarizeAiImportValidationErrors(normalized.validationErrors);
+    logOpenAiCalendarDiagnostic("info", "repair_started", {
+      model,
+      requestId,
+      stage: "normalizing_response",
+      fileUploadSucceeded,
+      responsesApiCallBegan,
+      durationMs: Date.now() - startedAt,
+    });
+    logPipelineDiagnostic("repair_started", {
+      model,
+      strategy,
+      requestId,
+      validationIssueCount: repairIssues.length,
+      durationMs: Date.now() - startedAt,
+    });
+    const { data: repairResponse, request_id: repairRequestId } = await client.responses
+      .create(buildCalendarImportRepairRequest(model, raw, repairIssues), {
+        signal,
+      })
+      .withResponse();
+    const repairedRaw = parseStructuredOutput(repairResponse.output_text);
+    if (repairedRaw) {
+      const targetedRepair = applyTargetedRepairs(
+        raw,
+        repairedRaw,
+        repairIssues.map((issue) => issue.path)
+      );
+      normalized = normalizeAiCalendarExtraction(targetedRepair, {
+        source: "openai",
+        usage: {
+          model,
+          requestId: repairRequestId || requestId || undefined,
+          durationMs: Date.now() - startedAt,
+        },
+      });
+      repaired = normalized.success;
+    }
+    logOpenAiCalendarDiagnostic("info", "repair_finished", {
+      model,
+      requestId,
+      stage: "normalizing_response",
+      fileUploadSucceeded,
+      responsesApiCallBegan,
+      durationMs: Date.now() - startedAt,
+      repairedIssueCount: repaired ? repairIssues.length : 0,
+      remainingIssueCount: normalized.success ? 0 : normalized.validationErrors.length,
+    });
+    logPipelineDiagnostic("repair_finished", {
+      model,
+      strategy,
+      requestId,
+      repairedIssueCount: repaired ? repairIssues.length : 0,
+      remainingIssueCount: normalized.success ? 0 : normalized.validationErrors.length,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  if (!normalized.success) {
+    const reasonCode = getAiImportValidationReasonCode(normalized.validationErrors);
+    const validationErrors = summarizeAiImportValidationErrors(
+      normalized.validationErrors
+    );
+    console.warn("AI calendar import validation failed", {
+      model,
+      requestId,
+      strategy,
+      durationMs: Date.now() - startedAt,
+      errorCount: normalized.errors.length,
+      phase: "schema_validation",
+      reasonCode,
+      validationErrors,
+    });
     return {
-      status: "success",
-      importResult: createMockAiCalendarImportResult(),
+      status: "analysis_failed",
+      message: "Sundial read the PDF, but one part of the calendar could not be validated. Retry, or continue manually.",
+      retryable: true,
+      reasonCode,
     };
   }
 
-  if (!configuration.ok) {
+  if (normalized.importResult.warnings.some((warning) => warning.severity === "blocking")) {
     return {
-      status: "configuration_error",
-      message: configuration.message,
-      reasonCode: configuration.reasonCode,
+      status: "analysis_failed",
+      message: "Sundial could not safely determine the school-year calendar from this PDF.",
+      retryable: false,
+      reasonCode: "calendar_validation_failed",
     };
   }
 
-  const client = getOpenAiClient(configuration.apiKey);
-  const model = configuration.model;
-  const timeoutMs = configuration.timeoutMs;
-  const startedAt = Date.now();
+  return {
+    status: "success",
+    importResult: normalized.importResult,
+    analysisStrategy: strategy,
+    outcome: repaired
+      ? "repaired"
+      : normalized.importResult.warnings.some((warning) => warning.severity === "review")
+        ? "reviewable"
+        : "successful",
+  };
+}
+
+async function analyzeCalendarText({
+  client,
+  extracted,
+  model,
+  timeoutMs,
+  startedAt,
+}: {
+  client: OpenAI;
+  extracted: ExtractedCalendarText;
+  model: string;
+  timeoutMs: number;
+  startedAt: number;
+}): Promise<CalendarAnalyzerResult> {
+  let responsesApiCallBegan = false;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const timeoutController = createOpenAiCalendarTimeoutController(timeoutMs);
+
+    try {
+      logPipelineDiagnostic("text_analysis_started", {
+        model,
+        strategy: "text-gpt5-mini",
+        pageCount: extracted.pageCount,
+        extractedCharacterCount: extracted.extractedCharacterCount,
+        extractedLineCount: extracted.extractedLineCount,
+        durationMs: Date.now() - startedAt,
+      });
+      responsesApiCallBegan = true;
+      logOpenAiCalendarEnvironmentDiagnostic("before_responses_api_call");
+      const { data: response, request_id: requestId } = await client.responses
+        .create(buildCalendarImportTextResponsesRequest(model, extracted.text), {
+          signal: timeoutController.controller.signal,
+        })
+        .withResponse();
+
+      if (openAiResponseIncomplete(response) || openAiResponseHasRefusal(response)) {
+        return {
+          status: "analysis_failed",
+          message: "Sundial read the PDF text but could not build a reliable calendar draft.",
+          retryable: true,
+          reasonCode: "malformed_calendar_structure",
+        };
+      }
+
+      const raw = parseStructuredOutput(response.output_text);
+      if (!raw) {
+        logPipelineDiagnostic("text_validation_failed", {
+          model,
+          strategy: "text-gpt5-mini",
+          requestId,
+          validationIssueCount: 1,
+          fallbackReasonCode: "malformed_calendar_structure",
+          durationMs: Date.now() - startedAt,
+        });
+        return {
+          status: "analysis_failed",
+          message: "Sundial read the PDF text, but the AI response did not match the calendar format we need.",
+          retryable: true,
+          reasonCode: "ai_schema_validation_failed",
+        };
+      }
+
+      const result = await normalizeValidateAndRepair({
+        client,
+        model,
+        raw,
+        usage: response.usage,
+        requestId,
+        startedAt,
+        signal: timeoutController.controller.signal,
+        strategy: "text-gpt5-mini",
+        fileUploadSucceeded: false,
+        responsesApiCallBegan,
+      });
+
+      logPipelineDiagnostic("text_analysis_finished", {
+        model,
+        strategy: "text-gpt5-mini",
+        requestId,
+        status: result.status,
+        reasonCode: result.status === "success" ? undefined : result.reasonCode,
+        inputTokens: response.usage?.input_tokens,
+        outputTokens: response.usage?.output_tokens,
+        totalTokens: response.usage?.total_tokens,
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    } catch (error) {
+      const handledError = timeoutController.timedOut
+        ? new OpenAiCalendarApplicationTimeoutError(timeoutMs)
+        : error;
+
+      if (!timeoutController.timedOut && shouldRetryOpenAiError(error, attempt)) {
+        console.warn(
+          "AI calendar import text-path transient error; retrying",
+          buildOpenAiErrorDiagnostics(handledError, {
+            model,
+            stage: "creating_response",
+            fileUploadSucceeded: false,
+            responsesApiCallBegan,
+            durationMs: Date.now() - startedAt,
+          })
+        );
+        await sleepForRetry();
+        continue;
+      }
+
+      console.warn(
+        "AI calendar import text-path OpenAI error",
+        buildOpenAiErrorDiagnostics(handledError, {
+          model,
+          stage: "creating_response",
+          fileUploadSucceeded: false,
+          responsesApiCallBegan,
+          durationMs: Date.now() - startedAt,
+        })
+      );
+      return mapOpenAiError(handledError);
+    } finally {
+      timeoutController.clear();
+    }
+  }
+
+  return {
+    status: "analysis_failed",
+    message: "AI calendar import is temporarily unavailable. Please try again shortly.",
+    retryable: true,
+  };
+}
+
+async function analyzeCalendarPdfFallback({
+  client,
+  file,
+  model,
+  timeoutMs,
+  startedAt,
+}: {
+  client: OpenAI;
+  file: File;
+  model: string;
+  timeoutMs: number;
+  startedAt: number;
+}): Promise<CalendarAnalyzerResult> {
   let stage: OpenAiCalendarAnalysisStage = "preparing_file";
   let fileUploadSucceeded = false;
   let responsesApiCallBegan = false;
-  let repairAttempted = false;
   let uploadableFile: Awaited<ReturnType<typeof toFile>>;
   try {
     uploadableFile = await toFile(file, file.name || "calendar.pdf", {
@@ -115,6 +428,11 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
     const timeoutController = createOpenAiCalendarTimeoutController(timeoutMs);
 
     try {
+      logPipelineDiagnostic("pdf_fallback_started", {
+        model,
+        strategy: "pdf-gpt5",
+        durationMs: Date.now() - startedAt,
+      });
       logOpenAiCalendarDiagnostic("info", "openai_attempt_started", {
         model,
         stage,
@@ -153,15 +471,7 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
         .withResponse();
 
       stage = "reading_response";
-      if (openAiResponseIncomplete(response)) {
-        return {
-          status: "analysis_failed",
-          message: "Sundial read the PDF but could not build a reliable calendar draft. You can try another PDF or continue manually.",
-          retryable: true,
-        };
-      }
-
-      if (openAiResponseHasRefusal(response)) {
+      if (openAiResponseIncomplete(response) || openAiResponseHasRefusal(response)) {
         return {
           status: "analysis_failed",
           message: "Sundial read the PDF but could not build a reliable calendar draft. You can try another PDF or continue manually.",
@@ -187,128 +497,38 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
         };
       }
 
-      stage = "normalizing_response";
-      let normalized: ReturnType<typeof normalizeAiCalendarExtraction>;
-      try {
-        normalized = normalizeAiCalendarExtraction(raw, {
-          source: "openai",
-          usage: {
-            model,
-            requestId: requestId || undefined,
-            inputTokens: response.usage?.input_tokens,
-            outputTokens: response.usage?.output_tokens,
-            totalTokens: response.usage?.total_tokens,
-            durationMs: Date.now() - startedAt,
-          },
-        });
-      } catch (error) {
-        const processingError = new AiCalendarImportProcessingError({
-          phase: "review_generation",
-          reasonCode: "review_generation_failed",
-          message: "AI calendar import review generation failed.",
-          cause: error,
-        });
-        console.error(
-          "AI calendar import processing error",
-          buildAiCalendarProcessingDiagnostics({
-            error,
-            phase: processingError.phase,
-            reasonCode: processingError.reasonCode,
-            requestId,
-            durationMs: Date.now() - startedAt,
-          })
-        );
-        return mapOpenAiError(processingError);
-      }
-
-      let repaired = false;
-      if (!normalized.success) {
-        repairAttempted = true;
-        const repairIssues = summarizeAiImportValidationErrors(normalized.validationErrors);
-        logOpenAiCalendarDiagnostic("info", "repair_started", {
-          model, requestId, stage, fileUploadSucceeded, responsesApiCallBegan,
-          durationMs: Date.now() - startedAt,
-        });
-        const { data: repairResponse, request_id: repairRequestId } = await client.responses
-          .create(buildCalendarImportRepairRequest(model, raw, repairIssues), {
-            signal: timeoutController.controller.signal,
-          })
-          .withResponse();
-        const repairedRaw = parseStructuredOutput(repairResponse.output_text);
-        if (repairedRaw) {
-          const targetedRepair = applyTargetedRepairs(
-            raw,
-            repairedRaw,
-            repairIssues.map((issue) => issue.path)
-          );
-          normalized = normalizeAiCalendarExtraction(targetedRepair, {
-            source: "openai",
-            usage: { model, requestId: repairRequestId || requestId || undefined, durationMs: Date.now() - startedAt },
-          });
-          repaired = normalized.success;
-        }
-        logOpenAiCalendarDiagnostic("info", "repair_finished", {
-          model, requestId, stage, fileUploadSucceeded, responsesApiCallBegan,
-          durationMs: Date.now() - startedAt,
-          repairedIssueCount: repaired ? repairIssues.length : 0,
-          remainingIssueCount: normalized.success ? 0 : normalized.validationErrors.length,
-        });
-      }
-
-      if (!normalized.success) {
-        const reasonCode = getAiImportValidationReasonCode(normalized.validationErrors);
-        const validationErrors = summarizeAiImportValidationErrors(
-          normalized.validationErrors
-        );
-        console.warn("AI calendar import validation failed", {
-          model,
-          requestId,
-          durationMs: Date.now() - startedAt,
-          errorCount: normalized.errors.length,
-          phase: "schema_validation",
-          reasonCode,
-          validationErrors,
-        });
-        return {
-          status: "analysis_failed",
-          message: "Sundial read the PDF, but one part of the calendar could not be validated. Retry, or continue manually.",
-          retryable: true,
-          reasonCode,
-        };
-      }
-
-      if (normalized.importResult.warnings.some((warning) => warning.severity === "blocking")) {
-        return {
-          status: "analysis_failed",
-          message: "Sundial could not safely determine the school-year calendar from this PDF.",
-          retryable: false,
-          reasonCode: "calendar_validation_failed",
-        };
-      }
-
-      logOpenAiCalendarDiagnostic("info", "openai_analysis_completed", {
+      const result = await normalizeValidateAndRepair({
+        client,
         model,
+        raw,
+        usage: response.usage,
         requestId,
-        stage: "complete",
+        startedAt,
+        signal: timeoutController.controller.signal,
+        strategy: "pdf-gpt5",
         fileUploadSucceeded,
         responsesApiCallBegan,
-        durationMs: Date.now() - startedAt,
+      });
+
+      logPipelineDiagnostic("pdf_fallback_finished", {
+        model,
+        strategy: "pdf-gpt5",
+        requestId,
+        status: result.status,
+        reasonCode: result.status === "success" ? undefined : result.reasonCode,
         inputTokens: response.usage?.input_tokens,
         outputTokens: response.usage?.output_tokens,
         totalTokens: response.usage?.total_tokens,
+        durationMs: Date.now() - startedAt,
       });
 
-      return {
-        status: "success",
-        importResult: normalized.importResult,
-        outcome: repaired ? "repaired" : normalized.importResult.warnings.some((warning) => warning.severity === "review") ? "reviewable" : "successful",
-      };
+      return result;
     } catch (error) {
       const handledError = timeoutController.timedOut
         ? new OpenAiCalendarApplicationTimeoutError(timeoutMs)
         : error;
 
-      if (!repairAttempted && !timeoutController.timedOut && shouldRetryOpenAiError(error, attempt)) {
+      if (!timeoutController.timedOut && shouldRetryOpenAiError(error, attempt)) {
         console.warn(
           "AI calendar import OpenAI transient error; retrying",
           buildOpenAiErrorDiagnostics(handledError, {
@@ -355,4 +575,132 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
     message: "AI calendar import is temporarily unavailable. Please try again shortly.",
     retryable: true,
   };
+}
+
+function shouldFallbackAfterTextResult(result: CalendarAnalyzerResult) {
+  return (
+    result.status === "analysis_failed" &&
+    result.reasonCode !== undefined &&
+    [
+      "ai_schema_validation_failed",
+      "schema_validation_failed",
+      "calendar_validation_failed",
+      "missing_required_schedule",
+      "invalid_date_range",
+      "invalid_schedule_reference",
+      "malformed_calendar_structure",
+    ].includes(result.reasonCode)
+  );
+}
+
+export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerResult> {
+  const configuration = getOpenAiCalendarConfiguration();
+
+  if (configuration.ok && configuration.mode === "mock") {
+    return {
+      status: "success",
+      importResult: createMockAiCalendarImportResult(),
+    };
+  }
+
+  if (!configuration.ok) {
+    return {
+      status: "configuration_error",
+      message: configuration.message,
+      reasonCode: configuration.reasonCode,
+    };
+  }
+
+  const client = getOpenAiClient(configuration.apiKey);
+  const timeoutMs = configuration.timeoutMs;
+  const startedAt = Date.now();
+  const textModel = getOpenAiCalendarTextModel();
+  const pdfModel = getOpenAiCalendarPdfModel();
+  let extracted: ExtractedCalendarText | null = null;
+  let quality: CalendarTextQuality | null = null;
+
+  try {
+    logPipelineDiagnostic("pdf_text_extraction_started", {
+      fileSize: file.size,
+      durationMs: Date.now() - startedAt,
+    });
+    extracted = await extractCalendarPdfText(file);
+    quality = evaluateCalendarTextQuality({
+      text: extracted.text,
+      pageCount: extracted.pageCount,
+    });
+    logPipelineDiagnostic("text_quality_evaluated", {
+      pageCount: extracted.pageCount,
+      extractedCharacterCount: extracted.extractedCharacterCount,
+      extractedLineCount: extracted.extractedLineCount,
+      textQualityScore: quality.score,
+      textQualityReasonCodes: quality.reasonCodes,
+      likelyVisualLayoutDependency: quality.likelyVisualLayoutDependency,
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (error) {
+    logPipelineDiagnostic("text_quality_evaluated", {
+      textQualityScore: 0,
+      textQualityReasonCodes: ["no_text_layer"],
+      fallbackReasonCode: error instanceof Error ? error.message : "text_extraction_failed",
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  if (extracted && quality?.usable) {
+    const textResult = await analyzeCalendarText({
+      client,
+      extracted,
+      model: textModel,
+      timeoutMs,
+      startedAt,
+    });
+
+    if (textResult.status === "success" || !shouldFallbackAfterTextResult(textResult)) {
+      logPipelineDiagnostic(
+        textResult.status === "success" ? "import_ready" : "import_confirmed_failed",
+        {
+          strategy: "text-gpt5-mini",
+          model: textModel,
+          status: textResult.status,
+          reasonCode: textResult.status === "success" ? undefined : textResult.reasonCode,
+          durationMs: Date.now() - startedAt,
+        }
+      );
+      return textResult;
+    }
+
+    logPipelineDiagnostic("pdf_fallback_started", {
+      strategy: "pdf-gpt5",
+      model: pdfModel,
+      fallbackReasonCode: textResult.reasonCode,
+      durationMs: Date.now() - startedAt,
+    });
+  } else {
+    logPipelineDiagnostic("pdf_fallback_started", {
+      strategy: "pdf-gpt5",
+      model: pdfModel,
+      fallbackReasonCode: quality?.reasonCodes.join(",") || "text_extraction_failed",
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  const pdfResult = await analyzeCalendarPdfFallback({
+    client,
+    file,
+    model: pdfModel,
+    timeoutMs,
+    startedAt,
+  });
+  logPipelineDiagnostic(
+    pdfResult.status === "success" ? "import_ready" : "import_confirmed_failed",
+    {
+      strategy: "pdf-gpt5",
+      model: pdfModel,
+      status: pdfResult.status,
+      reasonCode: pdfResult.status === "success" ? undefined : pdfResult.reasonCode,
+      durationMs: Date.now() - startedAt,
+    }
+  );
+  return pdfResult;
 }

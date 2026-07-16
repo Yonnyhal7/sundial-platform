@@ -1,4 +1,7 @@
+import { PDFParse } from "pdf-parse";
+
 export const MAX_CALENDAR_PDF_BYTES = 20 * 1024 * 1024;
+export const MAX_CALENDAR_IMPORT_PAGES = 36;
 
 export type PdfValidationResult =
   | { valid: true }
@@ -41,6 +44,25 @@ export async function validateCalendarPdfFile(file: File): Promise<PdfValidation
       valid: false,
       message: "This file does not appear to be a valid PDF.",
     };
+  }
+
+  const parser = new PDFParse({ data: new Uint8Array(await file.arrayBuffer()) });
+
+  try {
+    const info = await parser.getInfo();
+    if (info.total > MAX_CALENDAR_IMPORT_PAGES) {
+      return {
+        valid: false,
+        message: `Please upload a PDF calendar with ${MAX_CALENDAR_IMPORT_PAGES} pages or fewer.`,
+      };
+    }
+  } catch {
+    return {
+      valid: false,
+      message: "This file does not appear to be a valid PDF.",
+    };
+  } finally {
+    await parser.destroy();
   }
 
   return { valid: true };
