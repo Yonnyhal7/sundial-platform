@@ -4,15 +4,9 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyClientMaxBodySize: "25mb",
   },
-  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
   outputFileTracingIncludes: {
     "/api/admin/[school]/calendar/ai-import": [
-      "./node_modules/@napi-rs/canvas/**/*",
-      "./node_modules/@napi-rs/canvas-linux-*/**/*",
-      "./node_modules/pdf-parse/node_modules/@napi-rs/canvas/**/*",
-      "./node_modules/pdf-parse/node_modules/@napi-rs/canvas-linux-*/**/*",
-      "./node_modules/pdfjs-dist/node_modules/@napi-rs/canvas/**/*",
-      "./node_modules/pdfjs-dist/node_modules/@napi-rs/canvas-linux-*/**/*",
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
     ],
   },
   images: {

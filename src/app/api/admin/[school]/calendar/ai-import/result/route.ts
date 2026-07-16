@@ -24,6 +24,7 @@ export async function GET(request: Request, context: RouteContext) {
     school,
     pdfHash: url.searchParams.get("pdfHash"),
     startedAt: url.searchParams.get("startedAt"),
+    analysisAttemptId: url.searchParams.get("attemptId"),
   });
 
   if (!access.ok) {
@@ -34,6 +35,7 @@ export async function GET(request: Request, context: RouteContext) {
   for (const cacheKey of access.cacheKeys) {
     result = await readCalendarAnalysisCacheEntry(cacheKey, {
       minCreatedAt: access.startedAt || undefined,
+      analysisAttemptId: access.analysisAttemptId,
     });
     if (result) break;
   }
@@ -55,6 +57,7 @@ export async function GET(request: Request, context: RouteContext) {
   });
   return NextResponse.json({
     status: "success",
+    analysisAttemptId: access.analysisAttemptId,
     importResult: result.result,
     outcome: "successful",
     analysisStrategy:

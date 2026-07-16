@@ -7,6 +7,7 @@ import {
   AI_CALENDAR_PDF_STRATEGY,
   AI_CALENDAR_PROMPT_SCHEMA_VERSION,
   AI_CALENDAR_TEXT_STRATEGY,
+  claimCalendarAnalysisAttempt,
   dedupeCalendarAnalysis,
   invalidateCalendarAnalysisCache,
   recordCalendarAnalysisFailure,
@@ -62,6 +63,7 @@ function logAiImportRouteDiagnostic({
   level = "info",
   event,
   requestId,
+  analysisAttemptId,
   school,
   durationMs,
   status,
@@ -72,6 +74,7 @@ function logAiImportRouteDiagnostic({
   level?: "info" | "warn";
   event: string;
   requestId: string;
+  analysisAttemptId?: string;
   school: string;
   durationMs: number;
   status?: string;
@@ -82,6 +85,7 @@ function logAiImportRouteDiagnostic({
   const payload = {
     event,
     requestId,
+    analysisAttemptId,
     school,
     durationMs,
     status,
@@ -144,7 +148,8 @@ function parseCacheMode(formData: FormData): AiImportCacheMode {
 
 export async function POST(request: Request, context: RouteContext) {
   const { school } = await context.params;
-  let requestId = crypto.randomUUID();
+  const requestId = crypto.randomUUID();
+  let analysisAttemptId = crypto.randomUUID();
   const startedAt = Date.now();
   const respond = (result: AnalyzeCalendarPdfResult, init?: ResponseInit) =>
     json(result, {
@@ -154,6 +159,7 @@ export async function POST(request: Request, context: RouteContext) {
           ? Object.fromEntries(init.headers.entries())
           : init?.headers),
         "x-sundial-ai-import-request-id": requestId,
+        "x-sundial-ai-import-attempt-id": analysisAttemptId,
       },
     });
 
@@ -223,7 +229,7 @@ export async function POST(request: Request, context: RouteContext) {
     const upload = formData.get("calendarPdf");
     const submittedAttemptId = formData.get("analysisAttemptId");
     if (typeof submittedAttemptId === "string" && UUID_PATTERN.test(submittedAttemptId)) {
-      requestId = submittedAttemptId;
+      analysisAttemptId = submittedAttemptId;
     }
 
     if (!(upload instanceof File)) {
@@ -246,6 +252,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     let earlyPdfHash: string | null = null;
     let uploadBytes: ArrayBuffer | null = null;
+    let attemptClaimRejected = false;
     try {
       uploadBytes = await upload.arrayBuffer();
       earlyPdfHash = Array.from(
@@ -257,10 +264,16 @@ export async function POST(request: Request, context: RouteContext) {
         schoolId: schoolData.id,
         pdfHash: earlyPdfHash,
       });
+      const claims = await Promise.all(earlyCacheKeys.preferred.map((cacheKey) =>
+        claimCalendarAnalysisAttempt(cacheKey, analysisAttemptId, requestId, startedAt)
+      ));
+      attemptClaimRejected = claims.some((claimed) => !claimed);
+      if (attemptClaimRejected) throw new Error("analysis_attempt_superseded");
       await Promise.all(
         earlyCacheKeys.preferred.map((cacheKey) =>
           setCalendarAnalysisStage(cacheKey, "upload_received", {
-            requestId,
+            routeRequestId: requestId,
+            analysisAttemptId,
             elapsedMs: Date.now() - startedAt,
           })
         )
@@ -268,13 +281,27 @@ export async function POST(request: Request, context: RouteContext) {
       await Promise.all(
         earlyCacheKeys.preferred.map((cacheKey) =>
           setCalendarAnalysisStage(cacheKey, "validating_pdf", {
-            requestId,
+            routeRequestId: requestId,
+            analysisAttemptId,
             elapsedMs: Date.now() - startedAt,
           })
         )
       );
     } catch {
       // Validation below will produce the safe client-facing error.
+    }
+    if (attemptClaimRejected) {
+      logAiImportRouteDiagnostic({
+        level: "warn", event: "attempt_claim_rejected", requestId,
+        analysisAttemptId, school, durationMs: Date.now() - startedAt,
+        reasonCode: "analysis_attempt_superseded",
+      });
+      return respond({
+        status: "analysis_failed",
+        message: "A newer calendar analysis has already started.",
+        retryable: false,
+        reasonCode: "analysis_attempt_superseded",
+      }, { status: 409 });
     }
 
     let validation;
@@ -284,7 +311,7 @@ export async function POST(request: Request, context: RouteContext) {
       if (earlyPdfHash) {
         await Promise.all(
           getCacheKeys({ schoolId: schoolData.id, pdfHash: earlyPdfHash }).preferred.map(
-            (cacheKey) => recordCalendarAnalysisFailure(cacheKey, "pdf_validation_failed")
+            (cacheKey) => recordCalendarAnalysisFailure(cacheKey, "pdf_validation_failed", analysisAttemptId)
           )
         );
       }
@@ -310,7 +337,7 @@ export async function POST(request: Request, context: RouteContext) {
       if (earlyPdfHash) {
         await Promise.all(
           getCacheKeys({ schoolId: schoolData.id, pdfHash: earlyPdfHash }).preferred.map(
-            (cacheKey) => recordCalendarAnalysisFailure(cacheKey, "pdf_validation_failed")
+            (cacheKey) => recordCalendarAnalysisFailure(cacheKey, "pdf_validation_failed", analysisAttemptId)
           )
         );
       }
@@ -318,6 +345,7 @@ export async function POST(request: Request, context: RouteContext) {
         level: "warn",
         event: "upload_rejected",
         requestId,
+        analysisAttemptId,
         school,
         durationMs: Date.now() - startedAt,
         status: "validation_error",
@@ -349,7 +377,8 @@ export async function POST(request: Request, context: RouteContext) {
     const cacheMode = parseCacheMode(formData);
     for (const cacheKey of cacheKeys.preferred) {
       await setCalendarAnalysisStage(cacheKey, "hashing_pdf", {
-        requestId,
+        routeRequestId: requestId,
+        analysisAttemptId,
         elapsedMs: Date.now() - startedAt,
       });
     }
@@ -391,7 +420,8 @@ export async function POST(request: Request, context: RouteContext) {
           ? cacheKeys.byStrategy[AI_CALENDAR_TEXT_STRATEGY]
           : cacheKeys.byStrategy[AI_CALENDAR_PDF_STRATEGY];
       await setCalendarAnalysisStage(cacheKey, stage, {
-        requestId,
+        routeRequestId: requestId,
+        analysisAttemptId,
         strategy,
         elapsedMs: Date.now() - startedAt,
       });
@@ -400,15 +430,17 @@ export async function POST(request: Request, context: RouteContext) {
     let result: AnalyzeCalendarPdfResult;
     try {
       result = await Promise.race([
-        dedupeCalendarAnalysis(pipelineKey, () =>
-          analyzeCalendarPdf(upload, { onStageChange: setStage, requestId })
+        dedupeCalendarAnalysis(
+          pipelineKey,
+          () => analyzeCalendarPdf(upload, { onStageChange: setStage, requestId }),
+          analysisAttemptId
         ),
         routeDeadline.promise,
       ]);
     } catch (error) {
       if (error instanceof AiImportRouteDeadlineError) {
         for (const cacheKey of cacheKeys.preferred) {
-          await recordCalendarAnalysisFailure(cacheKey, "openai_timeout");
+          await recordCalendarAnalysisFailure(cacheKey, "openai_timeout", analysisAttemptId);
         }
         logAiImportRouteDiagnostic({
           level: "warn",
@@ -441,25 +473,28 @@ export async function POST(request: Request, context: RouteContext) {
         : cacheKeys.byStrategy[AI_CALENDAR_PDF_STRATEGY];
     if (result.status === "success") {
       await setCalendarAnalysisStage(resultCacheKey, "generating_calendar_preview", {
-        requestId,
+        routeRequestId: requestId,
+        analysisAttemptId,
         strategy: resultCacheKey.strategy,
         elapsedMs: Date.now() - startedAt,
       });
       await setCalendarAnalysisStage(resultCacheKey, "saving_result", {
-        requestId,
+        routeRequestId: requestId,
+        analysisAttemptId,
         strategy: resultCacheKey.strategy,
         elapsedMs: Date.now() - startedAt,
       });
-      await writeCalendarAnalysisCache(resultCacheKey, result.importResult);
+      await writeCalendarAnalysisCache(resultCacheKey, result.importResult, analysisAttemptId);
       await setCalendarAnalysisStage(resultCacheKey, "ready", {
-        requestId,
+        routeRequestId: requestId,
+        analysisAttemptId,
         strategy: resultCacheKey.strategy,
         elapsedMs: Date.now() - startedAt,
       });
     }
     if (result.status !== "success") {
       for (const cacheKey of cacheKeys.preferred) {
-        await recordCalendarAnalysisFailure(cacheKey, result.reasonCode || result.status);
+        await recordCalendarAnalysisFailure(cacheKey, result.reasonCode || result.status, analysisAttemptId);
       }
     }
     logAiImportRouteDiagnostic({

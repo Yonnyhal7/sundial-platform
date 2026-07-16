@@ -1,6 +1,19 @@
 import "server-only";
 
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { MAX_CALENDAR_IMPORT_PAGES } from "./aiPdfValidation";
+
+const require = createRequire(import.meta.url);
+let workerDataUrl: string | null = null;
+
+async function getPdfjsWorkerDataUrl() {
+  if (workerDataUrl) return workerDataUrl;
+  const workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  const source = await readFile(workerPath);
+  workerDataUrl = `data:text/javascript;base64,${source.toString("base64")}`;
+  return workerDataUrl;
+}
 
 export type PdfVectorAssignment = {
   date: string;
@@ -170,34 +183,47 @@ export function matchVectorCalendarStructure(texts: PositionedText[], rectangles
     ? Math.min(...dayCandidates.map((cell) => cell.dateText.x))
     : Infinity;
 
-  // Group into visual rows (same page + y) so a header naming two months ("SEPTEMBER -
-  // OCTOBER") can be split correctly: advance to its next month only where the day number
-  // actually rolls over within that row, rather than per-cell in isolation.
-  const rows = new Map<string, typeof dayCandidates>();
+  // Group into visual rows (same page + y), then retain rollover state across every row under
+  // a two-month header. Some PDFs omit an uncolored boundary date from the detected cells, so
+  // the visible rollover may occur between rows rather than inside one row.
+  const rows: Array<typeof dayCandidates> = [];
   for (const cell of dayCandidates) {
-    const rowKey = `${cell.rect.page}:${Math.round(cell.dateText.y)}`;
-    rows.set(rowKey, [...(rows.get(rowKey) || []), cell]);
+    // Text baselines can differ by more than a point inside the same visual row (parentheses,
+    // font fallback, and digit glyph metrics all affect PDF text transforms). The cell
+    // rectangles themselves share a stable row origin, which preserves month rollover such as
+    // AUGUST-SEPTEMBER's `31, 1, 2, 3, 4` row.
+    const row = rows.find((candidate) =>
+      candidate[0]?.rect.page === cell.rect.page &&
+      Math.abs(candidate[0].rect.y - cell.rect.y) <= Math.max(2, typicalHeight * 0.2)
+    );
+    if (row) row.push(cell);
+    else rows.push([cell]);
   }
 
-  const dateCells = [...rows.values()].flatMap((row) => {
-    const sorted = [...row].sort((a, b) => a.dateText.x - b.dateText.x);
-    let monthIndex = 0;
-    let previousDay = -Infinity;
-    return sorted.flatMap((cell) => {
-      const header = nearestMonthHeader(cell.dateText, texts, headerColumnMaxX);
-      if (!header) return [];
-      if (cell.day < previousDay && monthIndex < header.months.length - 1) monthIndex += 1;
-      previousDay = cell.day;
-      const monthNumber = header.months[Math.min(monthIndex, header.months.length - 1)];
-      const year = inferYear(monthNumber, header.year, allText);
-      if (monthNumber === undefined || !year) return [];
-      return [{
-        rect: cell.rect,
-        dateText: cell.dateText,
-        date: `${year}-${String(monthNumber + 1).padStart(2, "0")}-${String(cell.day).padStart(2, "0")}`,
-      }];
+  const monthBlockStates = new Map<PositionedText, { monthIndex: number; previousDay: number }>();
+  const dateCells = rows
+    .sort((a, b) => a[0].rect.page - b[0].rect.page || b[0].rect.y - a[0].rect.y)
+    .flatMap((row) => {
+      const sorted = [...row].sort((a, b) => a.dateText.x - b.dateText.x);
+      return sorted.flatMap((cell) => {
+        const header = nearestMonthHeader(cell.dateText, texts, headerColumnMaxX);
+        if (!header) return [];
+        const state = monthBlockStates.get(header.item) || { monthIndex: 0, previousDay: -Infinity };
+        if (cell.day < state.previousDay && state.monthIndex < header.months.length - 1) {
+          state.monthIndex += 1;
+        }
+        state.previousDay = cell.day;
+        monthBlockStates.set(header.item, state);
+        const monthNumber = header.months[Math.min(state.monthIndex, header.months.length - 1)];
+        const year = inferYear(monthNumber, header.year, allText);
+        if (monthNumber === undefined || !year) return [];
+        return [{
+          rect: cell.rect,
+          dateText: cell.dateText,
+          date: `${year}-${String(monthNumber + 1).padStart(2, "0")}-${String(cell.day).padStart(2, "0")}`,
+        }];
+      });
     });
-  });
 
   // Legend swatches in real calendar exports are usually small colored pills that the label
   // text is drawn on top of (contained within), not a swatch beside separately-flowed text.
@@ -310,7 +336,11 @@ export function ensurePdfjsNodeCanvasPolyfills() {
 export async function extractPdfVectorCalendar(file: File): Promise<PdfVectorCalendarResult> {
   const startedAt = Date.now();
   ensurePdfjsNodeCanvasPolyfills();
-  const { getDocument, OPS } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  // pdf.js creates a "fake worker" in Node, but still resolves GlobalWorkerOptions.workerSrc.
+  // Read the traced package worker and convert it to an in-memory URL: fake-worker startup no
+  // longer depends on a generated `.next/server/chunks/pdf.worker.mjs` path.
+  const { getDocument, OPS, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  GlobalWorkerOptions.workerSrc = await getPdfjsWorkerDataUrl();
   const loadingTask = getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, useSystemFonts: true });
   const document = await loadingTask.promise;
   const texts: PositionedText[] = [];

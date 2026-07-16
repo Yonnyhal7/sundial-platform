@@ -39,6 +39,29 @@ describe("vector calendar extraction", () => {
     expect(result.assignments.some((item) => item.date === "2026-08-11")).toBe(false);
   });
 
+  it("uses cell rows for two-month rollover when digit text baselines have jitter", () => {
+    const rolloverTexts = [
+      { text: "August - September 2026", x: 0, y: 130, width: 120, height: 10, page: 1 },
+      { text: "Brown Day", x: 225, y: 82, width: 55, height: 10, page: 1 },
+      ...[31, 1, 2, 3, 4].map((day, index) => ({
+        text: String(day), x: index * 30 + 2, y: 92 + index * 0.7,
+        width: 8, height: 8, page: 1,
+      })),
+    ];
+    const rolloverRects = [
+      ...[31, 1, 2, 3, 4].map((_, index) => ({
+        x: index * 30, y: 90, width: 28, height: 28,
+        color: "#a56a32", page: 1,
+      })),
+      { x: 210, y: 80, width: 10, height: 10, color: "#a56a32", page: 1 },
+    ];
+
+    const result = matchVectorCalendarStructure(rolloverTexts, rolloverRects);
+    expect(result.assignments.map((assignment) => assignment.date)).toEqual([
+      "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04",
+    ]);
+  });
+
   it("makes the explicit first day pause before the alternating rotation", () => {
     const vector = { ...matchVectorCalendarStructure(texts, rectangles), durationMs: 5 };
     const base: AiCalendarImportResult = {

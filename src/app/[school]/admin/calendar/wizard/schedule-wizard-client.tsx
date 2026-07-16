@@ -2093,6 +2093,10 @@ function AiCalendarImportCard({
   }, [pendingImportStorageKey, schoolSlug]);
 
   function selectFile(file: File | null) {
+    // Choosing a file is the start of a genuinely fresh lifecycle. Invalidate any restored
+    // poll immediately and remove its recovery token before a new attempt ID is generated.
+    activeAttemptIdRef.current = `replaced-${crypto.randomUUID()}`;
+    window.sessionStorage.removeItem(pendingImportStorageKey);
     setActionResult(null);
     setMessage("");
     setProgress(getAiImportProgressAfterRetry());
@@ -2102,7 +2106,6 @@ function AiCalendarImportCard({
     setServerStageStartedAt(null);
     setElapsedSeconds(0);
     setPollingFileName(null);
-    activeAttemptIdRef.current = null;
     completedAttemptIdRef.current = null;
     latestStatusUpdatedAtRef.current = 0;
     latestStageSequenceRef.current = getAiImportStageSequence("upload_received");

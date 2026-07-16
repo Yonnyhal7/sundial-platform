@@ -26,7 +26,9 @@ function statusMetadata(stage: CalendarAnalysisStageSnapshot | null | undefined)
   return {
     stage: stage.stage,
     strategy: stage.strategy,
-    attemptId: stage.requestId,
+    analysisAttemptId: stage.analysisAttemptId,
+    attemptId: stage.analysisAttemptId,
+    routeRequestId: stage.requestId,
     stageStartedAt: stage.updatedAt,
     jobStartedAt: stage.createdAt,
     updatedAt: stage.updatedAt,
@@ -48,6 +50,7 @@ export async function GET(request: Request, context: RouteContext) {
     school,
     pdfHash: url.searchParams.get("pdfHash"),
     startedAt: url.searchParams.get("startedAt"),
+    analysisAttemptId: url.searchParams.get("attemptId"),
   });
 
   if (!access.ok) {
@@ -64,6 +67,7 @@ export async function GET(request: Request, context: RouteContext) {
   for (const cacheKey of access.cacheKeys) {
     const cached = await readCalendarAnalysisCacheEntry(cacheKey, {
       minCreatedAt: access.startedAt || undefined,
+      analysisAttemptId: access.analysisAttemptId,
     });
     if (cached) {
       readyKey = cacheKey;
@@ -73,9 +77,10 @@ export async function GET(request: Request, context: RouteContext) {
 
   if (readyKey) {
     const readyStage =
-      getCalendarAnalysisStage(readyKey) ||
+      getCalendarAnalysisStage(readyKey, access.analysisAttemptId) ||
       (await readCalendarAnalysisStage(readyKey, {
         minUpdatedAt: access.startedAt || undefined,
+        analysisAttemptId: access.analysisAttemptId,
       }));
     logAiImportStatusDiagnostic({
       event: "cached_result_found",
@@ -92,7 +97,7 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   const failure = access.cacheKeys
-    .map((cacheKey) => getCalendarAnalysisFailure(cacheKey))
+    .map((cacheKey) => getCalendarAnalysisFailure(cacheKey, access.analysisAttemptId))
     .find(Boolean);
 
   if (failure) {
@@ -111,7 +116,7 @@ export async function GET(request: Request, context: RouteContext) {
 
   const staleStage = (
     await Promise.all(
-      access.cacheKeys.map((cacheKey) => markStaleCalendarAnalysisIfNeeded(cacheKey))
+      access.cacheKeys.map((cacheKey) => markStaleCalendarAnalysisIfNeeded(cacheKey, { analysisAttemptId: access.analysisAttemptId }))
     )
   ).find(Boolean);
 
@@ -132,7 +137,7 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   const memoryStages = access.cacheKeys.flatMap((cacheKey) => {
-    const stage = getCalendarAnalysisStage(cacheKey);
+    const stage = getCalendarAnalysisStage(cacheKey, access.analysisAttemptId);
     return stage ? [stage] : [];
   });
   const persistedStages = (
@@ -140,6 +145,7 @@ export async function GET(request: Request, context: RouteContext) {
       access.cacheKeys.map((cacheKey) =>
         readCalendarAnalysisStage(cacheKey, {
           minUpdatedAt: access.startedAt || undefined,
+          analysisAttemptId: access.analysisAttemptId,
         })
       )
     )
@@ -195,6 +201,23 @@ export async function GET(request: Request, context: RouteContext) {
       status: "failed",
       reasonCode: "analysis_job_stale",
       stage: "confirmed_failed",
+    });
+  }
+
+  // A freshly submitted POST may still be hashing before its claimed row is visible. After a
+  // short grace period, absence of this exact owner means the recovery token was superseded;
+  // it must not attach to whichever newer attempt currently owns the PDF row.
+  if (access.startedAt && Date.now() - access.startedAt > 10_000) {
+    logAiImportStatusDiagnostic({
+      event: "stale_status_update_rejected",
+      school,
+      durationMs: Date.now() - startedAt,
+      reasonCode: "analysis_attempt_superseded",
+    });
+    return NextResponse.json({
+      status: "expired",
+      reasonCode: "analysis_attempt_superseded",
+      analysisAttemptId: access.analysisAttemptId,
     });
   }
 

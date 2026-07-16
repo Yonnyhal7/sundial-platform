@@ -19,6 +19,7 @@ export type AiImportStatusAccess =
       schoolId: string;
       cacheKeys: CalendarAnalysisCacheKey[];
       startedAt: number | null;
+      analysisAttemptId: string;
     }
   | {
       ok: false;
@@ -30,15 +31,18 @@ export type AiImportStatusAccess =
     };
 
 const PDF_HASH_PATTERN = /^[0-9a-f]{64}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function resolveAiImportStatusAccess({
   school,
   pdfHash,
   startedAt,
+  analysisAttemptId,
 }: {
   school: string;
   pdfHash: string | null;
   startedAt: string | null;
+  analysisAttemptId?: string | null;
 }): Promise<AiImportStatusAccess> {
   const normalizedHash = pdfHash?.trim().toLowerCase() || "";
 
@@ -48,6 +52,9 @@ export async function resolveAiImportStatusAccess({
       status: 400,
       body: { status: "failed", reasonCode: "invalid_pdf_hash" },
     };
+  }
+  if (analysisAttemptId !== undefined && (!analysisAttemptId || !UUID_PATTERN.test(analysisAttemptId))) {
+    return { ok: false, status: 400, body: { status: "expired", reasonCode: "invalid_analysis_attempt_id" } };
   }
 
   const schoolData = await getSchoolForSetup(school);
@@ -94,6 +101,7 @@ export async function resolveAiImportStatusAccess({
       Number.isFinite(parsedStartedAt) && parsedStartedAt > 0
         ? parsedStartedAt
         : null,
+    analysisAttemptId: analysisAttemptId || "",
   };
 }
 

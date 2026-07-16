@@ -236,6 +236,7 @@ export async function parseAiImportStatusResponse(
         stage?: unknown;
         strategy?: unknown;
         attemptId?: unknown;
+        analysisAttemptId?: unknown;
         requestId?: unknown;
         stageStartedAt?: unknown;
         jobStartedAt?: unknown;
@@ -247,11 +248,11 @@ export async function parseAiImportStatusResponse(
         stage: isAiImportServerStage(record.stage) ? record.stage : undefined,
         strategy: typeof record.strategy === "string" ? record.strategy : undefined,
         attemptId:
-          typeof record.attemptId === "string"
+          typeof record.analysisAttemptId === "string"
+            ? record.analysisAttemptId
+            : typeof record.attemptId === "string"
             ? record.attemptId
-            : typeof record.requestId === "string"
-              ? record.requestId
-              : undefined,
+            : undefined,
         stageStartedAt:
           typeof record.stageStartedAt === "number" &&
           Number.isFinite(record.stageStartedAt)

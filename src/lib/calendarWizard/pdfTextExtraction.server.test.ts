@@ -54,97 +54,12 @@ describe("calendar PDF text extraction", () => {
     vi.clearAllMocks();
   });
 
-  it("loads the worker path before PDFParse and destroys the parser after success", async () => {
-    const importOrder: string[] = [];
-    const destroy = vi.fn().mockResolvedValue(undefined);
-    let parserOptions: unknown;
-    const setWorker = vi.fn();
-
-    class PDFParse {
-      static setWorker = setWorker;
-
-      constructor(options: unknown) {
-        parserOptions = options;
-      }
-
-      async getInfo() {
-        return { total: 1 };
-      }
-
-      async getText() {
-        return {
-          total: 1,
-          pages: [{ text: "August 12 Instruction Begins Brown Day" }],
-        };
-      }
-
-      destroy = destroy;
-    }
-
-    vi.doMock("pdf-parse/worker", () => {
-      importOrder.push("worker");
-      return { getPath: () => "/tmp/pdf.worker.mjs" };
-    });
-    vi.doMock("pdf-parse", () => {
-      importOrder.push("pdf-parse");
-      return { PDFParse };
-    });
-
+  it("rejects malformed PDFs through actual pdf.js without requiring browser globals", async () => {
     const { extractCalendarPdfText } = await import("./pdfTextExtraction.server");
-    const result = await extractCalendarPdfText(pdfFile());
-
-    expect(importOrder).toEqual(["worker", "pdf-parse"]);
-    expect(setWorker).toHaveBeenCalledWith("/tmp/pdf.worker.mjs");
-    expect(parserOptions).toEqual({
-      data: expect.any(Uint8Array),
-    });
-    expect(result.text).toContain("Brown Day");
-    expect(destroy).toHaveBeenCalledOnce();
-  });
-
-  it("keeps parser initialization errors inside the extraction call", async () => {
-    vi.doMock("pdf-parse/worker", () => {
-      throw new Error("canvas unavailable");
-    });
-    vi.doMock("pdf-parse", () => {
-      throw new Error("PDFParse should not load after worker failure");
-    });
-
-    const { extractCalendarPdfText } = await import("./pdfTextExtraction.server");
-
     await expect(extractCalendarPdfText(pdfFile())).rejects.toThrow();
   });
 
-  it("destroys the parser after extraction failure", async () => {
-    const destroy = vi.fn().mockResolvedValue(undefined);
-
-    const setWorker = vi.fn();
-    class PDFParse {
-      static setWorker = setWorker;
-
-      async getInfo() {
-        return { total: 1 };
-      }
-
-      async getText() {
-        throw new Error("parser failed");
-      }
-
-      destroy = destroy;
-    }
-
-    vi.doMock("pdf-parse/worker", () => ({ getPath: () => "/tmp/pdf.worker.mjs" }));
-    vi.doMock("pdf-parse", () => ({ PDFParse }));
-
-    const { extractCalendarPdfText } = await import("./pdfTextExtraction.server");
-
-    await expect(extractCalendarPdfText(pdfFile())).rejects.toThrow("parser failed");
-    expect(destroy).toHaveBeenCalledOnce();
-  });
-
   it("extracts text from a real small PDF fixture without browser globals", async () => {
-    vi.doUnmock("pdf-parse/worker");
-    vi.doUnmock("pdf-parse");
     const { extractCalendarPdfText } = await import("./pdfTextExtraction.server");
 
     await expect(extractCalendarPdfText(realTextPdfFile())).resolves.toMatchObject({

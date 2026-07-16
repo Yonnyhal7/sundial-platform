@@ -1,6 +1,9 @@
 import "server-only";
 
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { MAX_CALENDAR_IMPORT_PAGES } from "./aiPdfValidation";
+import { ensurePdfjsNodeCanvasPolyfills } from "./pdfVectorCalendarExtraction.server";
 
 export const MAX_EXTRACTED_CALENDAR_TEXT_CHARS = 55_000;
 
@@ -12,47 +15,7 @@ export type ExtractedCalendarText = {
   truncated: boolean;
 };
 
-type PdfParseInstance = {
-  getInfo: () => Promise<{ total?: number }>;
-  getText: () => Promise<{
-    total?: number;
-    pages: Array<{ text?: string }>;
-  }>;
-  destroy: () => Promise<void>;
-};
-type PDFParseConstructor = {
-  new (options: { data: Uint8Array }): PdfParseInstance;
-  setWorker: (workerSrc?: string) => string;
-};
-
-async function loadPdfParser() {
-  try {
-    const { getPath } = await import("pdf-parse/worker");
-    const { PDFParse } = await import("pdf-parse");
-    const workerPath = getPath();
-    (PDFParse as unknown as PDFParseConstructor).setWorker(workerPath);
-
-    console.info("AI calendar import diagnostic", {
-      event: "pdf_parser_startup",
-      pdfParserAvailable: Boolean(PDFParse),
-      canvasFactoryAvailable: Boolean(getPath),
-      runtime: "nodejs",
-    });
-
-    return {
-      PDFParse: PDFParse as unknown as PDFParseConstructor,
-    };
-  } catch (error) {
-    console.warn("AI calendar import diagnostic", {
-      event: "pdf_parser_startup",
-      pdfParserAvailable: false,
-      canvasFactoryAvailable: false,
-      runtime: "nodejs",
-      category: error instanceof Error ? error.name : "unknown",
-    });
-    throw error;
-  }
-}
+const require = createRequire(import.meta.url);
 
 const CALENDAR_RELEVANT_LINE_PATTERN =
   /\b(january|february|march|april|may|june|july|august|september|october|november|december|mon|tue|wed|thu|fri|sat|sun|holiday|no school|minimum|rally|finals?|semester|instruction|begins?|brown|gold|day|schedule|break|teacher|work|inservice|testing|early release|\d{1,2}[/-]\d{1,2}|\d{4})\b/i;
@@ -142,22 +105,27 @@ function limitExtractedText(text: string) {
 export async function extractCalendarPdfText(file: File): Promise<ExtractedCalendarText> {
   const startedAt = Date.now();
   const data = new Uint8Array(await file.arrayBuffer());
-  let parser: PdfParseInstance | null = null;
+  let document: Awaited<ReturnType<typeof import("pdfjs-dist/legacy/build/pdf.mjs")["getDocument"]>["promise"]> | null = null;
 
   try {
-    const { PDFParse } = await loadPdfParser();
-    parser = new PDFParse({ data });
-    const info = await parser.getInfo().catch(() => null);
-    const result = await parser.getText();
-    const totalPages = info?.total || result.total || result.pages.length;
+    ensurePdfjsNodeCanvasPolyfills();
+    const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const worker = await readFile(require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"));
+    GlobalWorkerOptions.workerSrc = `data:text/javascript;base64,${worker.toString("base64")}`;
+    document = await getDocument({ data, isEvalSupported: false, useSystemFonts: true }).promise;
+    const totalPages = document.numPages;
 
     if (totalPages > MAX_CALENDAR_IMPORT_PAGES) {
       throw new Error(`Calendar PDFs must be ${MAX_CALENDAR_IMPORT_PAGES} pages or fewer.`);
     }
 
-    const cleanedPages = removeSafeRepeatedHeadersAndFooters(
-      result.pages.map((page) => cleanPageText(page.text || ""))
-    );
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push(content.items.flatMap((item) => "str" in item ? [item.str] : []).join("\n"));
+    }
+    const cleanedPages = removeSafeRepeatedHeadersAndFooters(pages.map(cleanPageText));
     const withMarkers = cleanedPages
       .map((page, index) => `[PAGE ${index + 1}]\n${page}`.trim())
       .join("\n\n");
@@ -189,6 +157,6 @@ export async function extractCalendarPdfText(file: File): Promise<ExtractedCalen
     });
     throw error;
   } finally {
-    await parser?.destroy();
+    await document?.destroy();
   }
 }

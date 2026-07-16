@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   markStaleCalendarAnalysisIfNeeded: vi.fn(),
   recordCalendarAnalysisFailure: vi.fn(),
   setCalendarAnalysisStage: vi.fn(),
+  claimCalendarAnalysisAttempt: vi.fn(),
   validateCalendarPdfFile: vi.fn(),
 }));
 
@@ -53,6 +54,7 @@ vi.mock("@/lib/calendarWizard/aiCalendarAnalysisCache.server", () => ({
   markStaleCalendarAnalysisIfNeeded: mocks.markStaleCalendarAnalysisIfNeeded,
   recordCalendarAnalysisFailure: mocks.recordCalendarAnalysisFailure,
   setCalendarAnalysisStage: mocks.setCalendarAnalysisStage,
+  claimCalendarAnalysisAttempt: mocks.claimCalendarAnalysisAttempt,
   dedupeCalendarAnalysis: (_key: unknown, analyze: () => Promise<unknown>) => analyze(),
 }));
 
@@ -112,6 +114,7 @@ describe("AI import API route", () => {
     mocks.getCalendarAnalysisFailure.mockReturnValue(null);
     mocks.getCalendarAnalysisStage.mockReturnValue(null);
     mocks.markStaleCalendarAnalysisIfNeeded.mockResolvedValue(null);
+    mocks.claimCalendarAnalysisAttempt.mockResolvedValue(true);
     mocks.validateCalendarPdfFile.mockResolvedValue({ valid: true });
     mocks.analyzeCalendarPdf.mockResolvedValue({
       status: "success",
@@ -140,16 +143,17 @@ describe("AI import API route", () => {
       { params: Promise.resolve({ school: "test" }) }
     );
 
-    expect(response.headers.get("x-sundial-ai-import-request-id")).toBe(attemptId);
+    expect(response.headers.get("x-sundial-ai-import-request-id")).not.toBe(attemptId);
+    expect(response.headers.get("x-sundial-ai-import-attempt-id")).toBe(attemptId);
     expect(mocks.setCalendarAnalysisStage).toHaveBeenCalledWith(
       expect.objectContaining({ schoolId: "school-1" }),
       "upload_received",
-      expect.objectContaining({ requestId: attemptId })
+      expect.objectContaining({ analysisAttemptId: attemptId })
     );
     expect(mocks.setCalendarAnalysisStage).toHaveBeenCalledWith(
       expect.objectContaining({ schoolId: "school-1" }),
       "validating_pdf",
-      expect.objectContaining({ requestId: attemptId })
+      expect.objectContaining({ analysisAttemptId: attemptId })
     );
   });
 
@@ -225,7 +229,8 @@ describe("AI import API route", () => {
     expect(response.status).toBe(200);
     expect(mocks.writeCalendarAnalysisCache).toHaveBeenCalledWith(
       expect.objectContaining({ strategy: "text-gpt5-mini" }),
-      expect.any(Object)
+      expect.any(Object),
+      expect.any(String)
     );
   });
 
@@ -274,7 +279,8 @@ describe("AI import API route", () => {
     });
     expect(mocks.recordCalendarAnalysisFailure).toHaveBeenCalledWith(
       expect.objectContaining({ schoolId: "school-1" }),
-      "openai_timeout"
+      "openai_timeout",
+      expect.any(String)
     );
   });
 
@@ -343,7 +349,7 @@ describe("AI import API route", () => {
     });
 
     const response = await GET_STATUS(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&attemptId=11111111-1111-4111-8111-111111111111"),
       { params: Promise.resolve({ school: "test" }) }
     );
     const body = await response.json();
@@ -366,7 +372,7 @@ describe("AI import API route", () => {
     });
 
     const response = await GET_STATUS(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&attemptId=11111111-1111-4111-8111-111111111111"),
       { params: Promise.resolve({ school: "test" }) }
     );
     const body = await response.json();
@@ -387,7 +393,7 @@ describe("AI import API route", () => {
     });
 
     const response = await GET_STATUS(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&attemptId=11111111-1111-4111-8111-111111111111"),
       { params: Promise.resolve({ school: "test" }) }
     );
     const body = await response.json();
@@ -409,7 +415,7 @@ describe("AI import API route", () => {
     });
 
     const response = await GET_STATUS(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&attemptId=11111111-1111-4111-8111-111111111111"),
       { params: Promise.resolve({ school: "test" }) }
     );
     const body = await response.json();
@@ -427,7 +433,7 @@ describe("AI import API route", () => {
     vi.setSystemTime(new Date("2026-07-16T00:05:00.000Z"));
 
     const response = await GET_STATUS(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&startedAt=1784160000000"),
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&startedAt=1784160000000&attemptId=11111111-1111-4111-8111-111111111111"),
       { params: Promise.resolve({ school: "test" }) }
     );
     const body = await response.json();
@@ -447,7 +453,7 @@ describe("AI import API route", () => {
     });
 
     const response = await GET_STATUS(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"),
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc&attemptId=11111111-1111-4111-8111-111111111111"),
       { params: Promise.resolve({ school: "test" }) }
     );
     const body = await response.json();
@@ -470,7 +476,7 @@ describe("AI import API route", () => {
     });
 
     const response = await GET_RESULT(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/result?pdfHash=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"),
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/result?pdfHash=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd&attemptId=11111111-1111-4111-8111-111111111111"),
       { params: Promise.resolve({ school: "test" }) }
     );
     const body = await response.json();
@@ -492,7 +498,7 @@ describe("AI import API route", () => {
     mocks.canAccessAdminSection.mockResolvedValue(false);
 
     const response = await GET_STATUS(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&attemptId=11111111-1111-4111-8111-111111111111"),
       { params: Promise.resolve({ school: "test" }) }
     );
     const body = await response.json();
