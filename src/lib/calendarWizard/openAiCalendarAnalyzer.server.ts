@@ -52,6 +52,7 @@ import {
 import type { AiImportServerStage } from "./aiImportProgress";
 import { buildAiPreviewConfig } from "./aiImportPreview";
 import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
+import { computeDatedScheduleAssignmentDigest } from "./assignmentDigest";
 import {
   AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS,
   AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS,
@@ -1090,9 +1091,17 @@ export async function analyzeCalendarPdf(
 
     if (textResult.status === "success" || !shouldFallbackAfterTextResult(textResult)) {
       if (textResult.status === "success" && vectorResult?.supported) {
+        const mergedImportResult = mergeVectorCalendarAssignments(textResult.importResult, vectorResult);
+        console.info("AI calendar assignment transformation", {
+          stage: "vector_merge",
+          mergedAssignmentDigest: await computeDatedScheduleAssignmentDigest(
+            mergedImportResult.datedScheduleAssignments || []
+          ),
+          assignmentCount: mergedImportResult.datedScheduleAssignments?.length || 0,
+        });
         textResult = {
           ...textResult,
-          importResult: mergeVectorCalendarAssignments(textResult.importResult, vectorResult),
+          importResult: mergedImportResult,
         };
       }
       if (textResult.status === "success") {

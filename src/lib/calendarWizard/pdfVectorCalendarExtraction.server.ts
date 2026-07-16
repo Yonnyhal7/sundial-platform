@@ -2,6 +2,7 @@ import "server-only";
 
 import { MAX_CALENDAR_IMPORT_PAGES } from "./aiPdfValidation";
 import { loadPdfjsWorkerDataUrlForRuntime } from "./pdfjsWorker.server";
+import { computeDatedScheduleAssignmentDigest } from "./assignmentDigest";
 
 export type PdfVectorAssignment = {
   date: string;
@@ -399,7 +400,13 @@ export async function extractPdfVectorCalendar(file: File): Promise<PdfVectorCal
         }
       }
     }
-    return { ...matchVectorCalendarStructure(texts, rectangles), durationMs: Date.now() - startedAt };
+    const result = { ...matchVectorCalendarStructure(texts, rectangles), durationMs: Date.now() - startedAt };
+    console.info("AI calendar assignment transformation", {
+      stage: "vector_extraction",
+      vectorAssignmentDigest: await computeDatedScheduleAssignmentDigest(result.assignments),
+      assignmentCount: result.assignments.length,
+    });
+    return result;
   } finally {
     await document.destroy();
   }

@@ -77,7 +77,10 @@ describe("vector calendar extraction", () => {
     const merged = mergeVectorCalendarAssignments(base, vector);
     expect(merged.firstInstructionalAssignment).toMatchObject({ date: "2026-08-12", scheduleName: "All Periods 1-6", source: "pdf_vector_fill" });
     expect(merged.specialDays.find((day) => day.startDate === "2026-08-12")?.rotationBehavior).toBe("pause");
-    expect(merged.specialDays.find((day) => day.startDate === "2026-08-13")?.rotationBehavior).toBe("advance");
+    expect(merged.specialDays.find((day) => day.startDate === "2026-08-13")).toBeUndefined();
+    expect(merged.datedScheduleAssignments?.find((day) => day.date === "2026-08-13")).toMatchObject({
+      scheduleName: "Brown Day", source: "pdf_vector_fill", rotationBehavior: "advance",
+    });
     expect(merged.legendMappings).toContainEqual({ normalizedColor: "#ff0000", canonicalScheduleKey: "all-periods-1-6", scheduleId: "pdf-vector-all-periods-1-6" });
   });
 

@@ -49,6 +49,20 @@ export function buildAiPreviewConfig(
       ...day,
       scheduleId: day.isInstructional ? day.scheduleTempId || null : null,
       rotationBehavior: day.rotationBehavior || "pause",
+      assignmentSource: day.assignmentSource === "administrator"
+        ? "administrator"
+        : day.assignmentSource === "explicit_text"
+          ? "explicit_text"
+          : "genuine_special",
+    })),
+    datedScheduleAssignments: (importResult.datedScheduleAssignments || []).map((assignment) => ({
+      id: assignment.id,
+      date: assignment.date,
+      scheduleId: assignment.scheduleTempId,
+      source: assignment.source,
+      confidence: assignment.confidence,
+      label: assignment.scheduleName,
+      rotationBehavior: assignment.rotationBehavior,
     })),
     informationalDates: importResult.informationalDates,
   };

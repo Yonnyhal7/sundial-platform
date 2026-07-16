@@ -50,6 +50,17 @@ export type SpecialSchoolDay = DateRange & {
   label: string;
   isInstructional?: boolean;
   rotationBehavior?: RotationBehavior;
+  assignmentSource?: "pdf_vector_fill" | "administrator" | "explicit_text" | "ai_inference" | "genuine_special";
+};
+
+export type DatedScheduleAssignment = {
+  id?: string;
+  date: DateString;
+  scheduleId: string;
+  source: "pdf_vector_fill" | "explicit_text" | "administrator";
+  confidence: number;
+  label?: string;
+  rotationBehavior?: RotationBehavior;
 };
 
 export type InformationalDate = {
@@ -64,6 +75,7 @@ export type CalendarWizardConfig = {
   pattern: CalendarSchedulePattern;
   noSchoolRanges?: NoSchoolRange[];
   specialDays?: SpecialSchoolDay[];
+  datedScheduleAssignments?: DatedScheduleAssignment[];
   informationalDates?: InformationalDate[];
 };
 
@@ -71,6 +83,7 @@ export type GeneratedDaySource = {
   noSchoolRangeIds: string[];
   specialDayIds: string[];
   informationalDateIds: string[];
+  datedScheduleAssignmentId?: string | null;
 };
 
 export type GeneratedCalendarDay = {
@@ -83,6 +96,7 @@ export type GeneratedCalendarDay = {
   labels: string[];
   sources: GeneratedDaySource;
   warningCodes: CalendarGenerationWarningCode[];
+  assignmentSource?: "pdf_vector_fill" | "administrator" | "explicit_text" | "genuine_special" | "pattern_generated" | "no_school" | null;
 };
 
 export type CalendarGenerationWarningCode =

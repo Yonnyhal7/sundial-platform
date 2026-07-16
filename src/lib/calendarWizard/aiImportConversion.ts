@@ -79,6 +79,9 @@ function getUnresolvedRequiredScheduleIds(
       required.add(specialDay.scheduleTempId);
     }
   }
+  for (const assignment of importResult.datedScheduleAssignments || []) {
+    required.add(assignment.scheduleTempId);
+  }
 
   return [...required].filter((tempId) => !scheduleIdFor(tempId, resolutionsByTempId));
 }
@@ -90,6 +93,9 @@ export function getRequiredDetectedScheduleIds(importResult: AiCalendarImportRes
     if (specialDay.isInstructional && specialDay.scheduleTempId) {
       required.add(specialDay.scheduleTempId);
     }
+  }
+  for (const assignment of importResult.datedScheduleAssignments || []) {
+    required.add(assignment.scheduleTempId);
   }
 
   return [...required];
@@ -129,6 +135,15 @@ export function getDetectedScheduleUsageCounts(importResult: AiCalendarImportRes
     specialDays: importResult.specialDays.map((day) => ({
       ...day,
       scheduleId: day.isInstructional ? day.scheduleTempId || null : null,
+    })),
+    datedScheduleAssignments: (importResult.datedScheduleAssignments || []).map((assignment) => ({
+      id: assignment.id,
+      date: assignment.date,
+      scheduleId: assignment.scheduleTempId,
+      source: assignment.source,
+      confidence: assignment.confidence,
+      label: assignment.scheduleName,
+      rotationBehavior: assignment.rotationBehavior,
     })),
     informationalDates: importResult.informationalDates,
   };

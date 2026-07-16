@@ -29,7 +29,16 @@ function deduplicateSchedules(importResult: AiCalendarImportResult) {
     }
     return retainedId;
   };
-  return { ...importResult, detectedSchedules: [...retained.values()], pattern: { ...importResult.pattern, scheduleTempIds: [...new Set(importResult.pattern.scheduleTempIds.map(id))] }, specialDays: importResult.specialDays.map((day) => day.scheduleTempId ? { ...day, scheduleTempId: id(day.scheduleTempId) } : day) };
+  return {
+    ...importResult,
+    detectedSchedules: [...retained.values()],
+    pattern: { ...importResult.pattern, scheduleTempIds: [...new Set(importResult.pattern.scheduleTempIds.map(id))] },
+    specialDays: importResult.specialDays.map((day) => day.scheduleTempId ? { ...day, scheduleTempId: id(day.scheduleTempId) } : day),
+    datedScheduleAssignments: importResult.datedScheduleAssignments?.map((assignment) => ({
+      ...assignment,
+      scheduleTempId: id(assignment.scheduleTempId),
+    })),
+  };
 }
 
 export function mergeVectorCalendarAssignments(
@@ -53,29 +62,61 @@ export function mergeVectorCalendarAssignments(
   const consolidated = deduplicateSchedules({ ...importResult, detectedSchedules });
   const retainedSchedules = consolidated.detectedSchedules;
   const rotationIds = new Set(consolidated.pattern.scheduleTempIds);
-  const explicitDays = vector.assignments
+  const datedScheduleAssignments = vector.assignments
     .filter((assignment) => assignment.date >= importResult.schoolYear.startDate && assignment.date <= importResult.schoolYear.endDate)
     .map((assignment) => {
       const schedule = scheduleForName(retainedSchedules, assignment.scheduleName)!;
       return {
-        id: `pdf-vector-${assignment.date}`,
-        startDate: assignment.date,
-        endDate: assignment.date,
-        label: assignment.scheduleName,
-        type: "PDF vector assignment",
+        id: `pdf-vector-assignment-${assignment.date}`,
+        date: assignment.date,
         scheduleTempId: schedule.tempId,
-        isInstructional: true,
         rotationBehavior: rotationIds.has(schedule.tempId) ? "advance" as const : "pause" as const,
-        confidence: assignment.confidence >= 0.95 ? "high" as const : "review" as const,
-        evidence: { page: assignment.page, explanation: `Explicit calendar cell fill ${assignment.color}` },
-        assignmentSource: "pdf_vector_fill" as const,
-        assignmentConfidence: assignment.confidence,
+        scheduleName: assignment.scheduleName,
+        source: "pdf_vector_fill" as const,
+        confidence: assignment.confidence,
+        color: assignment.color,
       };
     });
-  const explicitDates = new Set(explicitDays.map((day) => day.startDate));
+  const genuineVectorSpecialDays = datedScheduleAssignments
+    .filter((assignment) => !rotationIds.has(assignment.scheduleTempId))
+    .map((assignment) => ({
+      id: `pdf-vector-special-${assignment.date}`,
+      startDate: assignment.date,
+      endDate: assignment.date,
+      label: assignment.scheduleName,
+      type: "PDF vector special schedule",
+      scheduleTempId: assignment.scheduleTempId,
+      isInstructional: true,
+      rotationBehavior: assignment.rotationBehavior || "pause" as const,
+      confidence: assignment.confidence >= 0.95 ? "high" as const : "review" as const,
+      evidence: { explanation: `Explicit calendar cell fill ${assignment.color}` },
+      assignmentSource: "pdf_vector_fill" as const,
+      assignmentConfidence: assignment.confidence,
+    }));
+  const normalVectorDates = new Set(
+    datedScheduleAssignments
+      .filter((assignment) => rotationIds.has(assignment.scheduleTempId))
+      .map((assignment) => assignment.date)
+  );
+  const rotationCanonicalKeys = new Set(
+    retainedSchedules
+      .filter((schedule) => rotationIds.has(schedule.tempId))
+      .map((schedule) => canonicalScheduleName(schedule.detectedName))
+  );
+  const isLegacyRotationSpecialDay = (day: AiCalendarImportResult["specialDays"][number]) =>
+    day.assignmentSource !== "administrator" &&
+    day.startDate === day.endDate &&
+    normalVectorDates.has(day.startDate) &&
+    Boolean(
+      (day.scheduleTempId && rotationIds.has(day.scheduleTempId)) ||
+      rotationCanonicalKeys.has(canonicalScheduleName(day.label))
+    );
+  const explicitDates = new Set(genuineVectorSpecialDays.map((day) => day.startDate));
   const specialDays = [
-    ...consolidated.specialDays.filter((day) => !explicitDates.has(day.startDate)),
-    ...explicitDays,
+    ...consolidated.specialDays.filter(
+      (day) => !explicitDates.has(day.startDate) && !isLegacyRotationSpecialDay(day)
+    ),
+    ...genuineVectorSpecialDays,
   ].sort((a, b) => a.startDate.localeCompare(b.startDate));
 
   const firstDate = importResult.schoolYear.startDate;
@@ -96,13 +137,14 @@ export function mergeVectorCalendarAssignments(
     canonicalKey: canonicalScheduleName(schedule.detectedName),
     matchedExistingScheduleId: null,
     legendColor: vector.legend.find((entry) => canonicalScheduleName(entry.scheduleName) === canonicalScheduleName(schedule.detectedName))?.color || null,
-    referencedByDatedAssignment: explicitDays.some((day) => day.scheduleTempId === schedule.tempId),
+    referencedByDatedAssignment: datedScheduleAssignments.some((day) => day.scheduleTempId === schedule.tempId),
   })));
 
   return {
     ...consolidated,
     detectedSchedules: retainedSchedules,
     specialDays,
+    datedScheduleAssignments,
     deterministicAssignments: vector.assignments.map(({ date, scheduleName, source, confidence, color }) => ({ date, scheduleName, source, confidence, color })),
     legendMappings: vector.legend.map((entry) => ({ normalizedColor: entry.color.toLowerCase(), canonicalScheduleKey: canonicalScheduleName(entry.scheduleName), scheduleId: scheduleForName(retainedSchedules, entry.scheduleName)!.tempId })),
     firstInstructionalAssignment: first ? {

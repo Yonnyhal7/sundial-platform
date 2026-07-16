@@ -16,6 +16,7 @@ if (typeof extract !== "function") {
 for (const input of process.argv.slice(2)) {
   const path = resolve(process.cwd(), input);
   const bytes = await readFile(path);
+  const startedAt = performance.now();
   const result = await extract(
     new File([bytes], basename(path), { type: "application/pdf" })
   );
@@ -23,6 +24,9 @@ for (const input of process.argv.slice(2)) {
     file: basename(path),
     supported: result.supported,
     confidence: result.confidence,
+    assignmentCount: result.assignments.length,
+    legendCount: result.legend.length,
+    durationMs: Math.round(performance.now() - startedAt),
     reasonCodes: result.reasonCodes,
     firstTenAssignments: result.assignments.slice(0, 10),
   }));

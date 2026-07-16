@@ -24,6 +24,7 @@ import {
 import { AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS } from "@/lib/calendarWizard/aiImportTimeouts";
 import { getSchoolForSetup } from "@/lib/schools";
 import { extractPdfVectorCalendar } from "@/lib/calendarWizard/pdfVectorCalendarExtraction.server";
+import { computeDatedScheduleAssignmentDigest } from "@/lib/calendarWizard/assignmentDigest";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -473,6 +474,14 @@ export async function POST(request: Request, context: RouteContext) {
         ? cacheKeys.byStrategy[AI_CALENDAR_TEXT_STRATEGY]
         : cacheKeys.byStrategy[AI_CALENDAR_PDF_STRATEGY];
     if (result.status === "success") {
+      console.info("AI calendar assignment transformation", {
+        stage: "route_result",
+        analysisAttemptId,
+        draftAssignmentDigest: await computeDatedScheduleAssignmentDigest(
+          result.importResult.datedScheduleAssignments || []
+        ),
+        assignmentCount: result.importResult.datedScheduleAssignments?.length || 0,
+      });
       await setCalendarAnalysisStage(resultCacheKey, "generating_calendar_preview", {
         routeRequestId: requestId,
         analysisAttemptId,

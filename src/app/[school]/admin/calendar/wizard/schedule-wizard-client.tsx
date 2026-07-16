@@ -1102,6 +1102,25 @@ function getScheduleName(scheduleMap: Map<string, WizardScheduleSummary>, id: st
   return scheduleMap.get(id)?.name || "Unknown schedule";
 }
 
+function assignmentSourceLabel(source: GeneratedCalendarDay["assignmentSource"]) {
+  switch (source) {
+    case "pdf_vector_fill":
+      return "pdf_vector_fill";
+    case "administrator":
+      return "administrator";
+    case "explicit_text":
+      return "explicit_text";
+    case "pattern_generated":
+      return "pattern_generated";
+    case "no_school":
+      return "no_school";
+    case "genuine_special":
+      return "genuine_special";
+    default:
+      return "unassigned";
+  }
+}
+
 function warningMessage(warning: CalendarGenerationWarning) {
   const dateText = warning.dates?.length ? `${warning.dates.join(", ")}: ` : "";
   switch (warning.code) {
@@ -3184,6 +3203,13 @@ function AiImportReview({
     unresolvedPreviewDays.length === 0;
   const matchedCount = resolutions.filter((resolution) => resolution.matchedExistingScheduleId).length;
   const newScheduleCount = schedulesNeedingTimes.length;
+  const patternScheduleNames = importResult.pattern.scheduleTempIds
+    .map((scheduleId) => previewScheduleMap.get(scheduleId)?.name)
+    .filter((name): name is string => Boolean(name));
+  const patternBegins = [...(importResult.datedScheduleAssignments || [])]
+    .filter((assignment) => importResult.pattern.scheduleTempIds.includes(assignment.scheduleTempId))
+    .sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+  const firstInstructionalAssignment = importResult.firstInstructionalAssignment;
 
   function requestRemoveSchedule(resolution: DetectedScheduleResolution) {
     const usage = getAiScheduleUsageDetails(importResult, resolution.tempId);
@@ -3269,7 +3295,7 @@ function AiImportReview({
           value={String(importResult.noSchoolRanges.length)}
         />
         <MetricCard
-          label="Special school days"
+          label="Special schedule days"
           value={String(importResult.specialDays.length)}
         />
         <MetricCard
@@ -3301,13 +3327,29 @@ function AiImportReview({
           <ReviewLine label="Dates" value={`${formatDateForDisplay(importResult.schoolYear.startDate)} - ${formatDateForDisplay(importResult.schoolYear.endDate)}`} />
           <ReviewLine label="Confidence" value={confidenceLabel(importResult.schoolYear.confidence)} />
         </ReviewPanel>
-        <ReviewPanel title="Calendar Rules">
-          <ReviewLine label="Pattern" value={importResult.pattern.type} />
+        <ReviewPanel title="Detected Schedule Pattern">
+          <ReviewLine
+            label="Pattern"
+            value={patternScheduleNames.length > 1
+              ? `${patternScheduleNames.join("/")} alternating schedule`
+              : patternScheduleNames[0] || importResult.pattern.type}
+          />
+          <ReviewLine
+            label="Begins"
+            value={patternBegins ? formatDateForDisplay(patternBegins.date) : "Review"}
+          />
+          <ReviewLine
+            label="First instructional day"
+            value={firstInstructionalAssignment
+              ? `${formatDateForDisplay(firstInstructionalAssignment.date)} · ${firstInstructionalAssignment.scheduleName}`
+              : "Review"}
+          />
+          <ReviewLine label="No-school behavior" value="No-school days pause rotation" />
           <ReviewLine label="Confidence" value={confidenceLabel(importResult.pattern.confidence)} />
         </ReviewPanel>
       </div>
 
-      <ReviewPanel title="Detected Schedules" className="mt-4">
+      <ReviewPanel title="Schedule Templates" className="mt-4">
         <div className="space-y-3">
           {resolutions.map((resolution) => {
             const matchedSchedule = schedules.find(
@@ -3655,9 +3697,9 @@ function AiImportReview({
             ))
           )}
         </ReviewPanel>
-        <ReviewPanel title="Special School Days">
+        <ReviewPanel title="Special Schedule Days">
           {importResult.specialDays.length === 0 ? (
-            <p className="text-sm text-slate-500">No special school days detected.</p>
+            <p className="text-sm text-slate-500">No special schedule days detected.</p>
           ) : (
             importResult.specialDays.map((day) => (
               <ReviewLine
@@ -3780,6 +3822,11 @@ function AiImportedCalendarPreview({
           compareDateStrings(day.endDate, selectedDay.date) >= 0
       )
     : null;
+  const selectedDatedAssignment = selectedDay
+    ? importResult.datedScheduleAssignments?.find(
+        (assignment) => assignment.date === selectedDay.date
+      ) || null
+    : null;
   const selectedInfo = selectedDay
     ? importResult.informationalDates.filter((date) => date.date === selectedDay.date)
     : [];
@@ -3880,7 +3927,7 @@ function AiImportedCalendarPreview({
 
       {showBrownGoldVerification && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-[#242424]">
-          <h3 className="text-sm font-bold">Brown/Gold verification</h3>
+          <h3 className="text-sm font-bold">Assignment Verification</h3>
           <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
             First instructional day and first two instructional weeks must match the visual calendar.
           </p>
@@ -3933,22 +3980,20 @@ function AiImportedCalendarPreview({
               <SummaryRow label="Notes" value={selectedDay.labels.join(", ") || "None"} />
               <SummaryRow
                 label="Source"
-                value={
-                  selectedSpecialDay?.evidence?.explanation ||
-                  (selectedDay.sources.specialDayIds.length
-                    ? "Explicit AI-detected date assignment"
-                    : selectedDay.sources.noSchoolRangeIds.length
-                      ? "No-school coverage"
-                      : "Pattern-generated assignment")
-                }
+                value={assignmentSourceLabel(selectedDay.assignmentSource)}
               />
               <SummaryRow
                 label="Confidence"
-                value={selectedSpecialDay?.assignmentConfidence !== undefined
+                value={selectedDatedAssignment?.confidence !== undefined
+                  ? `${Math.round(selectedDatedAssignment.confidence * 100)}%`
+                  : selectedSpecialDay?.assignmentConfidence !== undefined
                   ? `${Math.round(selectedSpecialDay.assignmentConfidence * 100)}%`
                   : confidenceLabel(selectedSpecialDay?.confidence || "review")}
               />
-              <SummaryRow label="Rotation behavior" value={selectedSpecialDay?.rotationBehavior || "advance"} />
+              <SummaryRow
+                label="Rotation behavior"
+                value={selectedDatedAssignment?.rotationBehavior || selectedSpecialDay?.rotationBehavior || "advance"}
+              />
               {selectedDay.scheduleId &&
                 scheduleMap.get(selectedDay.scheduleId)?.setupStatus === "needs_times" && (
                   <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">

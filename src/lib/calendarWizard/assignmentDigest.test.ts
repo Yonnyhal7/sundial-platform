@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeAssignmentDigest } from "./assignmentDigest";
+import {
+  computeAssignmentDigest,
+  findAssignmentDigestDifferences,
+} from "./assignmentDigest";
 
 describe("calendar assignment digest", () => {
   it("matches preview and creation payloads across temporary and persisted schedule IDs", async () => {
@@ -12,5 +15,25 @@ describe("calendar assignment digest", () => {
       { date: "2026-08-13", isSchoolDay: true, scheduleId: "uuid-brown" },
     ], (id) => ({ "uuid-all": "All-Periods 1–6", "uuid-brown": "Brown Day" })[id]);
     expect(creation).toBe(preview);
+  });
+
+  it("is order-independent and compares instructional assignments only", async () => {
+    const first = await computeAssignmentDigest([
+      { date: "2026-09-07", isSchoolDay: false, scheduleId: null },
+      { date: "2026-08-13", isSchoolDay: true, scheduleId: "brown" },
+    ], (id) => id);
+    const second = await computeAssignmentDigest([
+      { date: "2026-08-13", isSchoolDay: true, scheduleId: "brown" },
+    ], (id) => id);
+    expect(first).toBe(second);
+  });
+
+  it("reports the first differing assignment dates safely", () => {
+    expect(findAssignmentDigestDifferences(
+      [{ date: "2026-08-13", isSchoolDay: true, scheduleId: "brown" }],
+      [{ date: "2026-08-13", isSchoolDay: true, scheduleId: "gold" }],
+      (id) => id,
+      (id) => id
+    )).toEqual(["2026-08-13"]);
   });
 });

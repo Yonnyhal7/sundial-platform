@@ -287,6 +287,8 @@ export function getAiScheduleUsageDetails(
   ).length;
   const specialDayReferenceCount = importResult.specialDays.filter(
     (day) => day.isInstructional && day.scheduleTempId === tempId
+  ).length + (importResult.datedScheduleAssignments || []).filter(
+    (assignment) => assignment.scheduleTempId === tempId
   ).length;
 
   return {
@@ -320,6 +322,11 @@ function replaceScheduleReferences(
         ? { ...day, scheduleTempId: replacementScheduleId }
         : day
     ),
+    datedScheduleAssignments: importResult.datedScheduleAssignments?.map((assignment) =>
+      assignment.scheduleTempId === tempId
+        ? { ...assignment, scheduleTempId: replacementScheduleId }
+        : assignment
+    ),
   };
 }
 
@@ -337,6 +344,9 @@ function removeScheduleReferencesAsNoSchool(
 
   const convertedSpecialDays = importResult.specialDays.filter(
     (day) => !(day.isInstructional && day.scheduleTempId === tempId)
+  );
+  const convertedDatedAssignments = (importResult.datedScheduleAssignments || []).filter(
+    (assignment) => assignment.scheduleTempId !== tempId
   );
   const specialNoSchoolRanges = importResult.specialDays
     .filter((day) => day.isInstructional && day.scheduleTempId === tempId)
@@ -388,6 +398,7 @@ function removeScheduleReferencesAsNoSchool(
       ...dateNoSchoolRanges,
     ].sort((a, b) => a.startDate.localeCompare(b.startDate)),
     specialDays: convertedSpecialDays,
+    datedScheduleAssignments: convertedDatedAssignments,
   };
 }
 
@@ -492,6 +503,9 @@ export function collectReferencedScheduleIds(importResult: AiCalendarImportResul
   const ids = new Set(importResult.pattern.scheduleTempIds);
   for (const day of importResult.specialDays) {
     if (day.isInstructional && day.scheduleTempId) ids.add(day.scheduleTempId);
+  }
+  for (const assignment of importResult.datedScheduleAssignments || []) {
+    ids.add(assignment.scheduleTempId);
   }
   return [...ids];
 }
@@ -694,6 +708,20 @@ export function resolveAiScheduleReferences(
       label: day.label,
       isInstructional: day.isInstructional,
       rotationBehavior: day.rotationBehavior || "pause",
+      assignmentSource: day.assignmentSource === "administrator"
+        ? "administrator"
+        : day.assignmentSource === "explicit_text"
+          ? "explicit_text"
+          : "genuine_special",
+    })),
+    datedScheduleAssignments: (importResult.datedScheduleAssignments || []).map((assignment) => ({
+      id: assignment.id,
+      date: assignment.date,
+      scheduleId: mapTempId(assignment.scheduleTempId, tempToScheduleId),
+      source: assignment.source,
+      confidence: assignment.confidence,
+      label: assignment.scheduleName,
+      rotationBehavior: assignment.rotationBehavior,
     })),
     informationalDates: importResult.informationalDates.map((date) => ({
       id: date.id,

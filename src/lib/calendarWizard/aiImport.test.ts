@@ -518,6 +518,51 @@ describe("AI calendar import normalization", () => {
     }
   });
 
+  it("normalizes single-day noninstructional holidays into canonical no-school coverage", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        firstInstructionalDate: "2026-08-12",
+        lastInstructionalDate: "2026-11-13",
+        specialSchoolDays: [
+          {
+            id: "labor-day",
+            startDate: "2026-09-07",
+            endDate: null,
+            label: "Labor Day",
+            type: "Holiday",
+            scheduleTempId: null,
+            isInstructional: false,
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "veterans-day",
+            startDate: "2026-11-11",
+            endDate: null,
+            label: "Veterans Day",
+            type: "Holiday",
+            scheduleTempId: null,
+            isInstructional: false,
+            confidence: "high",
+            evidence: null,
+          },
+        ],
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.importResult.specialDays).toHaveLength(0);
+      expect(normalized.importResult.noSchoolRanges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ startDate: "2026-09-07", endDate: "2026-09-07", label: "Labor Day" }),
+          expect.objectContaining({ startDate: "2026-11-11", endDate: "2026-11-11", label: "Veterans Day" }),
+        ])
+      );
+    }
+  });
+
   it("rejects malformed structured responses after normalization", () => {
     const normalized = normalizeAiCalendarExtraction(
       rawExtraction({ firstInstructionalDate: "August 10" }),

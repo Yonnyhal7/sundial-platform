@@ -18,7 +18,11 @@ import {
   type CalendarWizardStoredData,
 } from "@/lib/calendarWizard/draftPersistence";
 import { generateSchoolYearCalendar } from "@/lib/calendarWizard/generateSchoolYearCalendar";
-import { computeAssignmentDigest } from "@/lib/calendarWizard/assignmentDigest";
+import {
+  computeAssignmentDigest,
+  computeDatedScheduleAssignmentDigest,
+  findAssignmentDigestDifferences,
+} from "@/lib/calendarWizard/assignmentDigest";
 import { canonicalScheduleName } from "@/lib/calendarWizard/scheduleIdentity";
 import {
   buildAiPreviewConfig,
@@ -102,6 +106,7 @@ export type GenerateCalendarActionResult =
       status: "server_error";
       message: string;
       severity?: "high";
+      code?: "calendar_assignment_digest_mismatch";
     };
 
 export type CreateAiCalendarFromDraftActionInput = {
@@ -508,6 +513,12 @@ type ExistingCalendarRow = {
   date: string;
 };
 
+type SavedCalendarAssignmentRow = {
+  date: string;
+  schedule_id: string | null;
+  is_school_day: boolean;
+};
+
 type AiCalendarRpcResult = {
   status:
     | "success"
@@ -785,6 +796,24 @@ export async function createAiCalendarFromDraftAction(
         "This draft does not include an AI calendar import. Continue manually or upload the PDF again."
       );
     }
+    const detectedNameByTempId = new Map(
+      importResult.detectedSchedules.map((schedule) => [schedule.tempId, schedule.detectedName])
+    );
+    const draftAssignmentDigest = await computeDatedScheduleAssignmentDigest(
+      (importResult.datedScheduleAssignments || []).map((assignment) => ({
+        date: assignment.date,
+        scheduleName:
+          assignment.scheduleName ||
+          detectedNameByTempId.get(assignment.scheduleTempId) ||
+          assignment.scheduleTempId,
+        source: assignment.source,
+      }))
+    );
+    console.info("AI calendar draft assignment digest", {
+      analysisAttemptId: aiImport.analysisAttemptId,
+      draftAssignmentDigest,
+      assignmentCount: importResult.datedScheduleAssignments?.length || 0,
+    });
     const unreviewedRequiredDates = getUnreviewedRequiredAssignmentDates(importResult);
     if (unreviewedRequiredDates.length > 0) {
       return validationError(
@@ -881,7 +910,7 @@ export async function createAiCalendarFromDraftAction(
       const persistedId = plan.tempToScheduleId[detected.tempId];
       if (persistedId) persistedScheduleNames.set(persistedId, detected.detectedName);
     }
-    const creationPayloadAssignmentDigest = await computeAssignmentDigest(
+    const creationPayloadDigest = await computeAssignmentDigest(
       generated.days,
       (scheduleId) => persistedScheduleNames.get(scheduleId)
     );
@@ -902,31 +931,38 @@ export async function createAiCalendarFromDraftAction(
       (scheduleId) => previewScheduleNames.get(scheduleId)
     );
     const clientPreviewAssignmentDigest = input.previewAssignmentDigest;
-    const matches = serverPreviewAssignmentDigest === creationPayloadAssignmentDigest &&
+    const matches = serverPreviewAssignmentDigest === creationPayloadDigest &&
       (!clientPreviewAssignmentDigest || clientPreviewAssignmentDigest === serverPreviewAssignmentDigest);
+    const previewCreationDifferingDates = serverPreviewAssignmentDigest === creationPayloadDigest
+      ? []
+      : findAssignmentDigestDifferences(
+          serverPreview.days,
+          generated.days,
+          (scheduleId) => previewScheduleNames.get(scheduleId),
+          (scheduleId) => persistedScheduleNames.get(scheduleId)
+        );
     console.info("AI calendar assignment digest diagnostic", {
       analysisAttemptId: aiImport.analysisAttemptId,
       previewAssignmentDigest: serverPreviewAssignmentDigest,
       clientPreviewAssignmentDigest,
-      creationPayloadAssignmentDigest,
+      creationPayloadDigest,
       matches,
+      firstDifferingDates: previewCreationDifferingDates,
     });
     if (!matches) {
-      return validationError(
-        "The calendar preview changed before creation. Review the latest assignments and try again.",
-        { calendar: "Preview and creation assignment digests do not match." }
-      );
+      return {
+        status: "server_error",
+        code: "calendar_assignment_digest_mismatch",
+        severity: "high",
+        message: `calendar_assignment_digest_mismatch: Preview and creation assignments differ${previewCreationDifferingDates.length > 0 ? ` on ${previewCreationDifferingDates.join(", ")}` : ""}. Review the latest preview and try again.`,
+      };
     }
 
     const vectorByDate = new Map(
       (importResult.deterministicAssignments || []).map((assignment) => [assignment.date, assignment])
     );
-    const explicitByDate = new Map(
-      importResult.specialDays.flatMap((day) => day.startDate === day.endDate ? [[day.startDate, day] as const] : [])
-    );
     for (const day of generated.days.filter((item) => item.isSchoolDay).slice(0, 10)) {
       const vector = vectorByDate.get(day.date);
-      const explicit = explicitByDate.get(day.date);
       const finalScheduleCanonicalKey = day.scheduleId
         ? canonicalScheduleName(persistedScheduleNames.get(day.scheduleId) || day.scheduleId)
         : null;
@@ -935,7 +971,7 @@ export async function createAiCalendarFromDraftAction(
       console.info("AI calendar assignment provenance", {
         date: day.date,
         finalScheduleCanonicalKey,
-        assignmentSource: explicit?.assignmentSource || "pattern",
+        assignmentSource: day.assignmentSource,
         analysisAttemptId: aiImport.analysisAttemptId,
         existingCalendarRead: false,
         patternSource: importResult.deterministicExtraction?.status === "succeeded"
@@ -945,7 +981,7 @@ export async function createAiCalendarFromDraftAction(
             : "ai_inference",
         vectorAssignmentPresent: Boolean(vector),
         wasOverwritten,
-        overwriteSource: wasOverwritten ? explicit?.assignmentSource || "pattern" : null,
+        overwriteSource: wasOverwritten ? day.assignmentSource : null,
       });
     }
 
@@ -1022,6 +1058,14 @@ export async function createAiCalendarFromDraftAction(
 
     if (rpcError) {
       console.error("AI calendar RPC error:", JSON.stringify(rpcError, null, 2));
+      if (`${rpcError.message} ${rpcError.details || ""}`.includes("calendar_assignment_digest_mismatch")) {
+        return {
+          status: "server_error",
+          code: "calendar_assignment_digest_mismatch",
+          severity: "high",
+          message: "calendar_assignment_digest_mismatch: The saved calendar assignments differed from the creation payload. No changes were saved.",
+        };
+      }
       return {
         status: "server_error",
         message: "Sundial could not create the imported calendar. No changes were saved.",
@@ -1053,6 +1097,59 @@ export async function createAiCalendarFromDraftAction(
           rpcResult.message ||
           "Sundial could not create the imported calendar. Review the import and try again.",
       } as GenerateCalendarActionResult;
+    }
+
+    const { data: savedCalendarRows, error: savedCalendarError } = await adminUser.supabase
+      .from("calendar_days")
+      .select("date, schedule_id, is_school_day")
+      .eq("school_id", schoolData.id)
+      .gte("date", config.schoolYear.startDate)
+      .lte("date", config.schoolYear.endDate)
+      .order("date")
+      .returns<SavedCalendarAssignmentRow[]>();
+    if (savedCalendarError) {
+      console.error("AI calendar saved assignment verification error:", JSON.stringify(savedCalendarError, null, 2));
+      return {
+        status: "server_error",
+        severity: "high",
+        message: "The calendar was created, but Sundial could not verify the saved assignments. Reload the calendar before retrying.",
+      };
+    }
+    const savedCalendarDigest = await computeAssignmentDigest(
+      (savedCalendarRows || []).map((row) => ({
+        date: row.date,
+        scheduleId: row.schedule_id,
+        isSchoolDay: row.is_school_day,
+      })),
+      (scheduleId) => persistedScheduleNames.get(scheduleId)
+    );
+    const savedDigestMatches = creationPayloadDigest === savedCalendarDigest;
+    const firstDifferingDates = savedDigestMatches
+      ? []
+      : findAssignmentDigestDifferences(
+          generated.days,
+          (savedCalendarRows || []).map((row) => ({
+            date: row.date,
+            scheduleId: row.schedule_id,
+            isSchoolDay: row.is_school_day,
+          })),
+          (scheduleId) => persistedScheduleNames.get(scheduleId),
+          (scheduleId) => persistedScheduleNames.get(scheduleId)
+        );
+    console.info("AI calendar saved assignment digest diagnostic", {
+      analysisAttemptId: aiImport.analysisAttemptId,
+      creationPayloadDigest,
+      savedCalendarDigest,
+      matches: savedDigestMatches,
+      firstDifferingDates,
+    });
+    if (!savedDigestMatches) {
+      return {
+        status: "server_error",
+        code: "calendar_assignment_digest_mismatch",
+        severity: "high",
+        message: `calendar_assignment_digest_mismatch: Saved assignments differed on ${firstDifferingDates.join(", ") || "one or more dates"}.`,
+      };
     }
 
     revalidateCalendarConsumers(school);

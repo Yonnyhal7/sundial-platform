@@ -671,7 +671,7 @@ export function normalizeAiCalendarExtraction(
     warnings
   );
   const reclassifiedInformationalDates: AiDetectedInformationalDate[] = [];
-  const noSchoolRanges = mergeNoSchoolCoverage(
+  let noSchoolRanges = mergeNoSchoolCoverage(
     normalizedNoSchoolCandidates.filter((range) => {
       if (!shouldReclassifyNoSchoolAsInformational(range)) {
         return true;
@@ -701,7 +701,7 @@ export function normalizeAiCalendarExtraction(
     preservedNoSchoolLabelDates
   ).sort((a, b) => compareDateStrings(a.startDate, b.startDate));
 
-  const specialDays = dedupeByKey(
+  const normalizedSpecialDays = dedupeByKey(
     rawSpecialSchoolDays.map((day, index) => ({
       id: trimRequired(day.id, makeId("ai-special", day.label, index)),
       startDate: normalizeDateValue(day.startDate),
@@ -719,6 +719,26 @@ export function normalizeAiCalendarExtraction(
     dateRangeKey,
     warnings
   ).sort((a, b) => compareDateStrings(a.startDate, b.startDate));
+
+  const specialNoSchoolRanges = normalizedSpecialDays
+    .filter((day) => !day.isInstructional)
+    .map((day) => ({
+      id: `${day.id}-no-school`,
+      startDate: day.startDate,
+      endDate: day.endDate,
+      label: day.label,
+      type: day.type || "No School",
+      confidence: day.confidence,
+      evidence: day.evidence,
+    }));
+  if (specialNoSchoolRanges.length > 0) {
+    noSchoolRanges = mergeNoSchoolCoverage(
+      [...noSchoolRanges, ...specialNoSchoolRanges],
+      automaticResolutions,
+      preservedNoSchoolLabelDates
+    ).sort((a, b) => compareDateStrings(a.startDate, b.startDate));
+  }
+  const specialDays = normalizedSpecialDays.filter((day) => day.isInstructional);
 
   const informationalDates = dedupeByKey(
     [

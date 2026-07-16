@@ -12,6 +12,7 @@ import type {
   CalendarGenerationWarningCode,
   CalendarWizardConfig,
   DateString,
+  DatedScheduleAssignment,
   GeneratedCalendarDay,
   InformationalDate,
   NoSchoolRange,
@@ -183,6 +184,13 @@ function buildInfoMap(informationalDates: InformationalDate[] = []) {
   return map;
 }
 
+function buildDatedAssignmentMap(assignments: DatedScheduleAssignment[] = []) {
+  return new Map(assignments.map((assignment, index) => [assignment.date, {
+    ...assignment,
+    id: assignment.id || `dated-assignment-${index + 1}`,
+  }]));
+}
+
 function addRangeValidationWarnings(
   warnings: CalendarGenerationWarning[],
   noSchoolRanges: Array<NormalizedRange<NoSchoolRange>>,
@@ -326,6 +334,7 @@ export function generateSchoolYearCalendar(
   const noSchoolMap = buildRangeMap(noSchoolRanges, schoolYearStart, schoolYearEnd);
   const specialDayMap = buildRangeMap(specialDays, schoolYearStart, schoolYearEnd);
   const infoMap = buildInfoMap(config.informationalDates);
+  const datedAssignmentMap = buildDatedAssignmentMap(config.datedScheduleAssignments);
   const days: GeneratedCalendarDay[] = [];
 
   addRangeValidationWarnings(
@@ -344,12 +353,14 @@ export function generateSchoolYearCalendar(
     const noSchoolEntries = noSchoolMap.get(date) || [];
     const specialEntries = specialDayMap.get(date) || [];
     const informationalEntries = infoMap.get(date) || [];
+    const datedAssignment = datedAssignmentMap.get(date) || null;
     const labels: string[] = [];
     const warningCodes: CalendarGenerationWarningCode[] = [];
     const sources = {
       noSchoolRangeIds: noSchoolEntries.map((entry) => entry.id),
       specialDayIds: specialEntries.map((entry) => entry.id),
       informationalDateIds: informationalEntries.map((entry) => entry.id || ""),
+      datedScheduleAssignmentId: datedAssignment?.id || null,
     };
 
     addLabels(labels, informationalEntries.map((entry) => entry.label));
@@ -367,6 +378,7 @@ export function generateSchoolYearCalendar(
         labels,
         sources,
         warningCodes,
+        assignmentSource: null,
       });
       continue;
     }
@@ -409,6 +421,7 @@ export function generateSchoolYearCalendar(
         labels,
         sources,
         warningCodes,
+        assignmentSource: "no_school",
       });
       continue;
     }
@@ -451,12 +464,37 @@ export function generateSchoolYearCalendar(
           labels,
           sources,
           warningCodes,
+          assignmentSource: "no_school",
         });
         continue;
       }
     }
 
-    const scheduleId = specialDay?.scheduleId ?? baseScheduleId;
+    const administratorOverride = specialEntries.find(
+      (entry) => entry.isInstructional && entry.assignmentSource === "administrator"
+    ) || null;
+    const explicitTextAssignment = specialEntries.find(
+      (entry) => entry.isInstructional && entry.assignmentSource === "explicit_text"
+    ) || null;
+    const genuineSpecialDay = specialEntries.find(
+      (entry) =>
+        entry.isInstructional &&
+        entry.assignmentSource !== "administrator" &&
+        entry.assignmentSource !== "explicit_text"
+    ) || null;
+    const scheduleId = administratorOverride?.scheduleId ??
+      datedAssignment?.scheduleId ??
+      explicitTextAssignment?.scheduleId ??
+      genuineSpecialDay?.scheduleId ??
+      baseScheduleId;
+    const assignmentSource = administratorOverride
+      ? "administrator" as const
+      : datedAssignment?.source ||
+        (explicitTextAssignment
+          ? "explicit_text" as const
+          : genuineSpecialDay
+            ? "genuine_special" as const
+            : "pattern_generated" as const);
 
     if (!scheduleId) {
       const code = "instructional_day_missing_schedule";
@@ -479,10 +517,15 @@ export function generateSchoolYearCalendar(
       labels,
       sources,
       warningCodes,
+      assignmentSource,
     });
 
     if (shouldAdvanceRepeatingPattern(config)) {
-      const behavior = specialDay?.rotationBehavior || "advance";
+      const behavior = administratorOverride?.rotationBehavior ||
+        datedAssignment?.rotationBehavior ||
+        explicitTextAssignment?.rotationBehavior ||
+        genuineSpecialDay?.rotationBehavior ||
+        "advance";
 
       // Restart semantics: special instructional dates consume their current
       // normal pattern position, then the sequence resets after the last date
@@ -491,7 +534,7 @@ export function generateSchoolYearCalendar(
         repeatingIndex += 1;
       }
 
-      if (behavior === "restart" && specialDay && date === specialDay.endDate) {
+      if (behavior === "restart" && genuineSpecialDay && date === genuineSpecialDay.endDate) {
         repeatingIndex = 0;
       }
     }

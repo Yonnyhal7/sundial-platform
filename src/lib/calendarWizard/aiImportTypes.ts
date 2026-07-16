@@ -84,6 +84,17 @@ export type AiDetectedSpecialDay = {
   assignmentConfidence?: number;
 };
 
+export type AiDatedScheduleAssignment = {
+  id: string;
+  date: string;
+  scheduleTempId: string;
+  scheduleName: string;
+  source: "pdf_vector_fill" | "explicit_text" | "administrator";
+  confidence: number;
+  color?: string;
+  rotationBehavior?: RotationBehavior;
+};
+
 export type AiDetectedInformationalDate = {
   id: string;
   date: string;
@@ -142,6 +153,7 @@ export type AiCalendarImportResult = {
   pattern: AiDetectedPattern;
   noSchoolRanges: AiDetectedNoSchoolRange[];
   specialDays: AiDetectedSpecialDay[];
+  datedScheduleAssignments?: AiDatedScheduleAssignment[];
   informationalDates: AiDetectedInformationalDate[];
   warnings: AiImportWarning[];
   automaticResolutions?: AiImportAutomaticResolution[];
@@ -621,6 +633,60 @@ export function validateAiCalendarImportResult(value: unknown): AiImportValidati
         });
       }
       assertConfidence(day.confidence, `specialDays.${index}.confidence`, errors, validationErrors);
+    });
+  }
+
+  if (
+    value.datedScheduleAssignments !== undefined &&
+    !Array.isArray(value.datedScheduleAssignments)
+  ) {
+    pushValidationError(errors, validationErrors, {
+      path: "datedScheduleAssignments",
+      code: "invalid_type",
+      expected: "array",
+      received: describeReceivedValue(value.datedScheduleAssignments),
+      required: false,
+      message: "datedScheduleAssignments must be an array.",
+    });
+  } else if (Array.isArray(value.datedScheduleAssignments)) {
+    value.datedScheduleAssignments.forEach((assignment, index) => {
+      if (!isRecord(assignment)) {
+        pushValidationError(errors, validationErrors, {
+          path: `datedScheduleAssignments.${index}`,
+          code: "invalid_type",
+          expected: "object",
+          received: describeReceivedValue(assignment),
+          message: `datedScheduleAssignments.${index} must be an object.`,
+        });
+        return;
+      }
+      assertString(assignment.id, `datedScheduleAssignments.${index}.id`, errors, validationErrors);
+      assertDate(assignment.date, `datedScheduleAssignments.${index}.date`, errors, validationErrors);
+      assertString(assignment.scheduleTempId, `datedScheduleAssignments.${index}.scheduleTempId`, errors, validationErrors);
+      assertString(assignment.scheduleName, `datedScheduleAssignments.${index}.scheduleName`, errors, validationErrors);
+      if (!["pdf_vector_fill", "explicit_text", "administrator"].includes(String(assignment.source))) {
+        pushValidationError(errors, validationErrors, {
+          path: `datedScheduleAssignments.${index}.source`,
+          code: "invalid_value",
+          expected: "pdf_vector_fill, explicit_text, or administrator",
+          received: describeReceivedValue(assignment.source),
+          message: `datedScheduleAssignments.${index}.source is unsupported.`,
+        });
+      }
+      if (
+        typeof assignment.confidence !== "number" ||
+        !Number.isFinite(assignment.confidence) ||
+        assignment.confidence < 0 ||
+        assignment.confidence > 1
+      ) {
+        pushValidationError(errors, validationErrors, {
+          path: `datedScheduleAssignments.${index}.confidence`,
+          code: "invalid_value",
+          expected: "number from 0 to 1",
+          received: describeReceivedValue(assignment.confidence),
+          message: `datedScheduleAssignments.${index}.confidence must be from 0 to 1.`,
+        });
+      }
     });
   }
 
