@@ -13,12 +13,25 @@ import {
   resolveAiImportStatusAccess,
 } from "@/lib/calendarWizard/aiImportStatus.server";
 import { getOpenAiCalendarTimeoutMs } from "@/lib/calendarWizard/openAiCalendarAnalyzerUtils";
+import type { CalendarAnalysisStageSnapshot } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
 
 export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{ school: string }>;
 };
+
+function statusMetadata(stage: CalendarAnalysisStageSnapshot | null | undefined) {
+  if (!stage) return {};
+  return {
+    stage: stage.stage,
+    strategy: stage.strategy,
+    attemptId: stage.requestId,
+    stageStartedAt: stage.updatedAt,
+    jobStartedAt: stage.createdAt,
+    updatedAt: stage.updatedAt,
+  };
+}
 
 export async function GET(request: Request, context: RouteContext) {
   const { school } = await context.params;
@@ -59,6 +72,11 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   if (readyKey) {
+    const readyStage =
+      getCalendarAnalysisStage(readyKey) ||
+      (await readCalendarAnalysisStage(readyKey, {
+        minUpdatedAt: access.startedAt || undefined,
+      }));
     logAiImportStatusDiagnostic({
       event: "cached_result_found",
       school,
@@ -67,7 +85,9 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({
       status: "ready",
       resultId: readyKey.pdfHash,
+      ...statusMetadata(readyStage),
       stage: "ready",
+      cacheHit: true,
     });
   }
 
@@ -107,6 +127,7 @@ export async function GET(request: Request, context: RouteContext) {
       reasonCode: staleStage.reasonCode,
       stage: "confirmed_failed",
       strategy: staleStage.strategy,
+      ...statusMetadata(staleStage),
     });
   }
 
@@ -138,6 +159,7 @@ export async function GET(request: Request, context: RouteContext) {
       reasonCode: activeStage.reasonCode,
       stage: activeStage.stage,
       strategy: activeStage.strategy,
+      ...statusMetadata(activeStage),
     });
   }
 
@@ -154,6 +176,7 @@ export async function GET(request: Request, context: RouteContext) {
       status: "pending",
       stage: activeStage?.stage || "checking_cache",
       strategy: activeStage?.strategy,
+      ...statusMetadata(activeStage),
     });
   }
 

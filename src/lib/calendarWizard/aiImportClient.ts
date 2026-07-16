@@ -24,22 +24,38 @@ export type AnalyzeCalendarPdfFailureResult = Exclude<
   { status: "success" }
 >;
 
+export type AiImportStatusMetadata = {
+  stage?: AiImportServerStage;
+  strategy?: string;
+  attemptId?: string;
+  stageStartedAt?: number;
+  jobStartedAt?: number;
+  updatedAt?: number;
+  reasonCode?: string;
+  cacheHit?: boolean;
+};
+
 export type AiImportStatusResponse =
-  | { status: "pending"; stage?: AiImportServerStage; strategy?: string }
-  | { status: "ready"; resultId: string; stage?: AiImportServerStage; strategy?: string }
-  | { status: "failed"; reasonCode?: string; stage?: AiImportServerStage; strategy?: string }
-  | { status: "expired"; reasonCode?: string; stage?: AiImportServerStage; strategy?: string };
+  | ({ status: "pending" } & AiImportStatusMetadata)
+  | ({ status: "ready"; resultId: string } & AiImportStatusMetadata)
+  | ({ status: "failed" } & AiImportStatusMetadata)
+  | ({ status: "expired" } & AiImportStatusMetadata);
 
 function withOptionalAiImportStatusMetadata<T extends object>(
   value: T,
-  stage?: AiImportServerStage,
-  strategy?: string
-): T & { stage?: AiImportServerStage; strategy?: string } {
-  const next: T & { stage?: AiImportServerStage; strategy?: string } = {
+  metadata: AiImportStatusMetadata
+): T & AiImportStatusMetadata {
+  const next: T & AiImportStatusMetadata = {
     ...value,
   };
-  if (stage) next.stage = stage;
-  if (strategy) next.strategy = strategy;
+  if (metadata.stage) next.stage = metadata.stage;
+  if (metadata.strategy) next.strategy = metadata.strategy;
+  if (metadata.attemptId) next.attemptId = metadata.attemptId;
+  if (metadata.stageStartedAt) next.stageStartedAt = metadata.stageStartedAt;
+  if (metadata.jobStartedAt) next.jobStartedAt = metadata.jobStartedAt;
+  if (metadata.updatedAt) next.updatedAt = metadata.updatedAt;
+  if (metadata.reasonCode) next.reasonCode = metadata.reasonCode;
+  if (metadata.cacheHit !== undefined) next.cacheHit = metadata.cacheHit;
   return next;
 }
 
@@ -218,20 +234,47 @@ export async function parseAiImportStatusResponse(
         reasonCode?: unknown;
         stage?: unknown;
         strategy?: unknown;
+        attemptId?: unknown;
+        requestId?: unknown;
+        stageStartedAt?: unknown;
+        jobStartedAt?: unknown;
+        updatedAt?: unknown;
+        cacheHit?: unknown;
       };
       const status = record.status;
-      const stage = isAiImportServerStage(record.stage) ? record.stage : undefined;
-      const strategy =
-        typeof record.strategy === "string" ? record.strategy : undefined;
+      const metadata: AiImportStatusMetadata = {
+        stage: isAiImportServerStage(record.stage) ? record.stage : undefined,
+        strategy: typeof record.strategy === "string" ? record.strategy : undefined,
+        attemptId:
+          typeof record.attemptId === "string"
+            ? record.attemptId
+            : typeof record.requestId === "string"
+              ? record.requestId
+              : undefined,
+        stageStartedAt:
+          typeof record.stageStartedAt === "number" &&
+          Number.isFinite(record.stageStartedAt)
+            ? record.stageStartedAt
+            : undefined,
+        jobStartedAt:
+          typeof record.jobStartedAt === "number" &&
+          Number.isFinite(record.jobStartedAt)
+            ? record.jobStartedAt
+            : undefined,
+        updatedAt:
+          typeof record.updatedAt === "number" && Number.isFinite(record.updatedAt)
+            ? record.updatedAt
+            : undefined,
+        cacheHit: typeof record.cacheHit === "boolean" ? record.cacheHit : undefined,
+      };
 
       if (status === "pending") {
-        return withOptionalAiImportStatusMetadata({ status }, stage, strategy);
+        return withOptionalAiImportStatusMetadata({ status }, metadata);
       }
       if (status === "ready" && typeof record.resultId === "string") {
         return withOptionalAiImportStatusMetadata(
           { status, resultId: record.resultId },
-          stage,
-          strategy
+          metadata
         );
       }
       if (status === "failed" || status === "expired") {
@@ -241,7 +284,7 @@ export async function parseAiImportStatusResponse(
             typeof record.reasonCode === "string"
               ? record.reasonCode
               : undefined,
-        }, stage, strategy);
+        }, metadata);
       }
     }
   } catch {

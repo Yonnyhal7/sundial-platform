@@ -1,5 +1,5 @@
 import { isDateString } from "./dateUtils";
-import type { PatternType, Weekday } from "./types";
+import type { PatternType, RotationBehavior, Weekday } from "./types";
 
 export type AiImportConfidence = "high" | "review" | "uncertain";
 
@@ -77,6 +77,7 @@ export type AiDetectedSpecialDay = {
   type?: string;
   scheduleTempId?: string;
   isInstructional: boolean;
+  rotationBehavior?: RotationBehavior;
   confidence: AiImportConfidence;
   evidence?: AiImportEvidence;
 };

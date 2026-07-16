@@ -5,6 +5,7 @@ import {
   getBrownGoldVerificationConflicts,
   getBrownGoldVerificationRows,
   hasBrownGoldVerificationScheduleSet,
+  updateAiImportPreviewDay,
 } from "./aiImportPreview";
 import type { AiCalendarImportResult } from "./aiImportTypes";
 
@@ -122,5 +123,36 @@ describe("AI import calendar preview", () => {
         actual: "Brown Day",
       })
     );
+  });
+
+  it("edits one preview date without mutating the imported source object", () => {
+    const original = brownGoldImport({
+      schoolYear: {
+        ...brownGoldImport().schoolYear,
+        startDate: "2026-08-10",
+      },
+      noSchoolRanges: [{
+        id: "orientation",
+        startDate: "2026-08-10",
+        endDate: "2026-08-11",
+        label: "Teacher Orientation",
+        confidence: "high",
+      }],
+    });
+
+    const edited = updateAiImportPreviewDay(original, {
+      date: "2026-08-11",
+      scheduleTempId: "sched-gold",
+      isSchoolDay: true,
+      note: "Orientation ends",
+    });
+    const result = generateSchoolYearCalendar(buildAiPreviewConfig(edited));
+    const byDate = new Map(result.days.map((day) => [day.date, day]));
+
+    expect(byDate.get("2026-08-10")?.isSchoolDay).toBe(false);
+    expect(byDate.get("2026-08-10")?.labels).toContain("Teacher Orientation");
+    expect(byDate.get("2026-08-11")?.isSchoolDay).toBe(true);
+    expect(byDate.get("2026-08-11")?.scheduleId).toBe("sched-gold");
+    expect(original.noSchoolRanges[0].endDate).toBe("2026-08-11");
   });
 });

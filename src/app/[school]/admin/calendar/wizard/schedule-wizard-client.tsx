@@ -5,13 +5,21 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScheduleColorField } from "@/components/admin/ScheduleColorField";
 import {
+  CalendarMonthNavigation,
+  CalendarScheduleDetails,
+  SchoolCalendarMonthGrid,
+} from "@/components/admin/SchoolCalendar";
+import {
+  getAiImportEstimatedProgress,
   getAiImportStageDetails,
+  getAiImportStageSequence,
   getAiImportLongRunningMessage,
   getAiImportProgressAfterRetry,
   getAiImportProgressAfterSuccess,
   type AiImportServerStage,
 } from "@/lib/calendarWizard/aiImportProgress";
 import {
+  AI_IMPORT_CLIENT_TIMEOUT_MS,
   calculatePdfSha256,
   createAiImportClientTimeoutController,
   getAiImportTerminalFailureMessage,
@@ -19,12 +27,15 @@ import {
   mapAiImportClientError,
   parseAiImportResponse,
   parseAiImportStatusResponse,
+  type AiImportStatusResponse,
 } from "@/lib/calendarWizard/aiImportClient";
+import { AI_CALENDAR_ANALYSIS_VERSION } from "@/lib/calendarWizard/aiCalendarAnalysisVersion";
 import {
   buildAiPreviewConfig,
   getBrownGoldVerificationConflicts,
   getBrownGoldVerificationRows,
   hasBrownGoldVerificationScheduleSet,
+  updateAiImportPreviewDay,
 } from "@/lib/calendarWizard/aiImportPreview";
 import {
   clearAiImportMetadata,
@@ -189,9 +200,14 @@ type PendingAiImport = {
   pdfHash: string;
   fileName?: string;
   startedAt: number;
+  attemptId: string;
   requestId?: string;
 };
 type AiReviewMode = "review" | "advanced";
+type AiImportTimingStats = Record<string, number[]>;
+
+const AI_IMPORT_TIMING_STORAGE_KEY = "sundial:ai-calendar-import:timing:v1";
+const AI_IMPORT_TIMING_SAMPLE_LIMIT = 7;
 
 const WIZARD_STEPS: Array<{ id: WizardStep; label: string }> = [
   { id: "school-year", label: "School Year" },
@@ -552,6 +568,95 @@ function getPendingAiImportStorageKey(school: string) {
   return `sundial:ai-calendar-import:pending:${school}`;
 }
 
+function getAiImportFileSizeBucket(size?: number | null) {
+  if (!size || size <= 0) return "unknown-size";
+  if (size < 1_000_000) return "lt-1mb";
+  if (size < 5_000_000) return "1-5mb";
+  if (size < 10_000_000) return "5-10mb";
+  return "10mb-plus";
+}
+
+function getAiImportTimingKey({
+  stage,
+  strategy,
+  fileSize,
+}: {
+  stage: AiImportServerStage;
+  strategy?: string | null;
+  fileSize?: number | null;
+}) {
+  return [
+    AI_CALENDAR_ANALYSIS_VERSION,
+    strategy || "unknown-strategy",
+    getAiImportFileSizeBucket(fileSize),
+    stage,
+  ].join(":");
+}
+
+function readAiImportTimingStats(): AiImportTimingStats {
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(AI_IMPORT_TIMING_STORAGE_KEY) || "{}"
+    ) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    const stats: AiImportTimingStats = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!Array.isArray(value)) continue;
+      const durations = value.filter(
+        (duration): duration is number =>
+          typeof duration === "number" &&
+          Number.isFinite(duration) &&
+          duration > 0
+      );
+      if (durations.length > 0) stats[key] = durations.slice(-AI_IMPORT_TIMING_SAMPLE_LIMIT);
+    }
+    return stats;
+  } catch {
+    return {};
+  }
+}
+
+function recordAiImportStageDuration({
+  stage,
+  strategy,
+  fileSize,
+  durationMs,
+}: {
+  stage: AiImportServerStage;
+  strategy?: string | null;
+  fileSize?: number | null;
+  durationMs: number;
+}) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return;
+  const stats = readAiImportTimingStats();
+  const key = getAiImportTimingKey({ stage, strategy, fileSize });
+  stats[key] = [...(stats[key] || []), Math.round(durationMs)].slice(
+    -AI_IMPORT_TIMING_SAMPLE_LIMIT
+  );
+  try {
+    window.localStorage.setItem(AI_IMPORT_TIMING_STORAGE_KEY, JSON.stringify(stats));
+  } catch {
+    // Best-effort telemetry only.
+  }
+}
+
+function getAiImportExpectedStageDuration({
+  stage,
+  strategy,
+  fileSize,
+}: {
+  stage: AiImportServerStage;
+  strategy?: string | null;
+  fileSize?: number | null;
+}) {
+  const stats = readAiImportTimingStats();
+  const durations = stats[getAiImportTimingKey({ stage, strategy, fileSize })];
+  if (!durations || durations.length < 3) return null;
+  const sorted = [...durations].sort((a, b) => a - b);
+  const p75Index = Math.min(sorted.length - 1, Math.floor(sorted.length * 0.75));
+  return sorted[p75Index];
+}
+
 function parsePendingAiImport(value: string | null): PendingAiImport | null {
   if (!value) return null;
 
@@ -573,6 +678,12 @@ function parsePendingAiImport(value: string | null): PendingAiImport | null {
       pdfHash: parsed.pdfHash.toLowerCase(),
       fileName: typeof parsed.fileName === "string" ? parsed.fileName : undefined,
       startedAt: parsed.startedAt,
+      attemptId:
+        typeof parsed.attemptId === "string"
+          ? parsed.attemptId
+          : typeof parsed.requestId === "string"
+            ? parsed.requestId
+            : `legacy-${parsed.startedAt}`,
       requestId:
         typeof parsed.requestId === "string" ? parsed.requestId : undefined,
     };
@@ -1899,10 +2010,20 @@ function AiCalendarImportCard({
   const [progress, setProgress] = useState(0);
   const [serverStage, setServerStage] =
     useState<AiImportServerStage>("upload_received");
+  const [serverStageStartedAt, setServerStageStartedAt] = useState<number | null>(null);
+  const [progressIsEstimated, setProgressIsEstimated] = useState(false);
+  const [progressIsIndeterminate, setProgressIsIndeterminate] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [pollingFileName, setPollingFileName] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [reviewMode, setReviewMode] = useState<AiReviewMode>("review");
+  const activeAttemptIdRef = useRef<string | null>(null);
+  const completedAttemptIdRef = useRef<string | null>(null);
+  const latestStatusUpdatedAtRef = useRef(0);
+  const latestStageSequenceRef = useRef(getAiImportStageSequence("upload_received"));
+  const currentStageRef = useRef<AiImportServerStage>("upload_received");
+  const currentStageStartedAtRef = useRef<number | null>(null);
+  const currentStrategyRef = useRef<string | null>(null);
   const resumedPendingImportRef = useRef(false);
   const pollForImportResultRef = useRef<
     ((pending: PendingAiImport) => Promise<void>) | null
@@ -1932,10 +2053,25 @@ function AiCalendarImportCard({
 
     const interval = window.setInterval(() => {
       setElapsedSeconds((previousElapsed) => previousElapsed + 1);
+      setProgress((previousProgress) => {
+        const next = getAiImportEstimatedProgress({
+          stage: serverStage,
+          previousProgress,
+          stageStartedAt: serverStageStartedAt,
+          expectedDurationMs: getAiImportExpectedStageDuration({
+            stage: serverStage,
+            strategy: currentStrategyRef.current,
+            fileSize: selectedFile?.size,
+          }),
+        });
+        setProgressIsEstimated(next.estimated);
+        setProgressIsIndeterminate(next.indeterminate);
+        return next.progress;
+      });
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [isWorking]);
+  }, [isWorking, selectedFile?.size, serverStage, serverStageStartedAt]);
 
   useEffect(() => {
     pollForImportResultRef.current = pollForImportResult;
@@ -1958,9 +2094,19 @@ function AiCalendarImportCard({
     setActionResult(null);
     setMessage("");
     setProgress(getAiImportProgressAfterRetry());
+    setProgressIsEstimated(false);
+    setProgressIsIndeterminate(false);
     setServerStage("upload_received");
+    setServerStageStartedAt(null);
     setElapsedSeconds(0);
     setPollingFileName(null);
+    activeAttemptIdRef.current = null;
+    completedAttemptIdRef.current = null;
+    latestStatusUpdatedAtRef.current = 0;
+    latestStageSequenceRef.current = getAiImportStageSequence("upload_received");
+    currentStageRef.current = "upload_received";
+    currentStageStartedAtRef.current = null;
+    currentStrategyRef.current = null;
 
     if (!file) {
       setSelectedFile(null);
@@ -1991,17 +2137,93 @@ function AiCalendarImportCard({
     window.sessionStorage.setItem(pendingImportStorageKey, JSON.stringify(pending));
   }
 
+  function setMonotonicProgress(nextProgress: number, estimated = false, indeterminate = false) {
+    setProgress((previousProgress) => Math.max(previousProgress, nextProgress));
+    setProgressIsEstimated(estimated);
+    setProgressIsIndeterminate(indeterminate);
+  }
+
+  function applyStatusProgress(statusResult: AiImportStatusResponse) {
+    if (!statusResult.stage) return;
+    if (
+      statusResult.attemptId &&
+      activeAttemptIdRef.current &&
+      statusResult.attemptId !== activeAttemptIdRef.current
+    ) {
+      return;
+    }
+
+    const updatedAt = statusResult.updatedAt || Date.now();
+    const nextStageSequence = getAiImportStageSequence(statusResult.stage);
+    if (nextStageSequence < latestStageSequenceRef.current) {
+      return;
+    }
+    if (
+      updatedAt < latestStatusUpdatedAtRef.current &&
+      nextStageSequence <= latestStageSequenceRef.current
+    ) {
+      return;
+    }
+
+    latestStatusUpdatedAtRef.current = Math.max(
+      latestStatusUpdatedAtRef.current,
+      updatedAt
+    );
+    latestStageSequenceRef.current = Math.max(
+      latestStageSequenceRef.current,
+      nextStageSequence
+    );
+    if (statusResult.strategy) currentStrategyRef.current = statusResult.strategy;
+    if (currentStageRef.current !== statusResult.stage) {
+      const previousStartedAt = currentStageStartedAtRef.current;
+      if (previousStartedAt) {
+        recordAiImportStageDuration({
+          stage: currentStageRef.current,
+          strategy: currentStrategyRef.current,
+          fileSize: selectedFile?.size,
+          durationMs: updatedAt - previousStartedAt,
+        });
+      }
+      currentStageRef.current = statusResult.stage;
+      currentStageStartedAtRef.current = statusResult.stageStartedAt || updatedAt;
+    }
+    setServerStage(statusResult.stage);
+    setServerStageStartedAt(statusResult.stageStartedAt || updatedAt);
+    setProgress((previousProgress) => {
+      const next = getAiImportEstimatedProgress({
+        stage: statusResult.stage!,
+        previousProgress,
+        stageStartedAt: statusResult.stageStartedAt || updatedAt,
+        now: Date.now(),
+        expectedDurationMs: getAiImportExpectedStageDuration({
+          stage: statusResult.stage!,
+          strategy: statusResult.strategy || currentStrategyRef.current,
+          fileSize: selectedFile?.size,
+        }),
+      });
+      setProgressIsEstimated(next.estimated);
+      setProgressIsIndeterminate(next.indeterminate);
+      return next.progress;
+    });
+  }
+
   async function handleSuccessfulAiImportResult({
     result,
     requestId,
     fileName,
     pdfHash,
+    attemptId,
   }: {
     result: Extract<AnalyzeCalendarPdfResult, { status: "success" }>;
     requestId: string | null;
     fileName?: string;
     pdfHash?: string;
+    attemptId?: string;
   }) {
+    const completionKey = attemptId || requestId || pdfHash || "latest";
+    if (completedAttemptIdRef.current === completionKey) return;
+    completedAttemptIdRef.current = completionKey;
+
     const schemaValidation = validateAiCalendarImportResult(result.importResult);
     if (!schemaValidation.success) {
       const reasonCode = getAiImportValidationReasonCode(
@@ -2129,6 +2351,7 @@ function AiCalendarImportCard({
     const query = new URLSearchParams({
       pdfHash: pending.pdfHash,
       startedAt: String(pending.startedAt),
+      attemptId: pending.attemptId,
     });
     const response = await fetch(
       `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/result?${query.toString()}`
@@ -2139,44 +2362,68 @@ function AiCalendarImportCard({
 
   async function pollForImportResult(pending: PendingAiImport) {
     const pollingStartedAt = Date.now();
-    const pollingExpiresAt = pollingStartedAt + 90_000;
+    const pollingExpiresAt = Math.max(
+      pollingStartedAt + 90_000,
+      pending.startedAt + AI_IMPORT_CLIENT_TIMEOUT_MS
+    );
+    activeAttemptIdRef.current = pending.attemptId;
 
     console.info("AI calendar import diagnostic", {
       event: "status_poll_started",
       school: schoolSlug,
+      attemptId: pending.attemptId,
     });
     setIsPolling(true);
     setPollingFileName(pending.fileName || null);
     setStatus("analyzing");
     setActionResult(null);
-    setServerStage("checking_cache");
-    setProgress(20);
+    setServerStage((currentStage) =>
+      getAiImportStageSequence(currentStage) > getAiImportStageSequence("checking_cache")
+        ? currentStage
+        : "checking_cache"
+    );
+    if (getAiImportStageSequence(currentStageRef.current) < getAiImportStageSequence("checking_cache")) {
+      if (currentStageStartedAtRef.current) {
+        recordAiImportStageDuration({
+          stage: currentStageRef.current,
+          strategy: currentStrategyRef.current,
+          fileSize: selectedFile?.size,
+          durationMs: Date.now() - currentStageStartedAtRef.current,
+        });
+      }
+      currentStageRef.current = "checking_cache";
+      currentStageStartedAtRef.current = Date.now();
+    }
+    latestStageSequenceRef.current = Math.max(
+      latestStageSequenceRef.current,
+      getAiImportStageSequence("checking_cache")
+    );
+    setMonotonicProgress(getAiImportStageDetails("checking_cache").progress || 22);
     setMessage(
       "Sundial is still finishing the calendar analysis. You can keep this page open or return shortly."
     );
 
     while (Date.now() < pollingExpiresAt) {
+      if (completedAttemptIdRef.current === pending.attemptId) return;
+      if (activeAttemptIdRef.current && activeAttemptIdRef.current !== pending.attemptId) return;
+
       try {
         const query = new URLSearchParams({
           pdfHash: pending.pdfHash,
           startedAt: String(pending.startedAt),
+          attemptId: pending.attemptId,
         });
         const response = await fetch(
           `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/status?${query.toString()}`
         );
         const statusResult = await parseAiImportStatusResponse(response);
-        if (statusResult.stage) {
-          setServerStage(statusResult.stage);
-          const stageDetails = getAiImportStageDetails(statusResult.stage);
-          if (stageDetails.progress !== null) {
-            setProgress(stageDetails.progress);
-          }
-        }
+        applyStatusProgress(statusResult);
 
         if (statusResult.status === "ready") {
           console.info("AI calendar import diagnostic", {
             event: "cached_result_found",
             school: schoolSlug,
+            attemptId: pending.attemptId,
           });
           const result = await fetchCachedImportResult(pending);
           setActionResult(result);
@@ -2187,6 +2434,7 @@ function AiCalendarImportCard({
               requestId: pending.requestId || null,
               fileName: pending.fileName,
               pdfHash: pending.pdfHash,
+              attemptId: pending.attemptId,
             });
             return;
           }
@@ -2202,6 +2450,7 @@ function AiCalendarImportCard({
             event: "confirmed_analysis_failed",
             school: schoolSlug,
             reasonCode: statusResult.reasonCode,
+            attemptId: pending.attemptId,
           });
           const failure: AnalyzeCalendarPdfResult = {
             status: "analysis_failed",
@@ -2257,6 +2506,7 @@ function AiCalendarImportCard({
       const query = new URLSearchParams({
         pdfHash: pending.pdfHash,
         startedAt: String(pending.startedAt),
+        attemptId: pending.attemptId,
       });
       const response = await fetch(
         `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/status?${query.toString()}`
@@ -2272,6 +2522,7 @@ function AiCalendarImportCard({
             requestId: pending.requestId || null,
             fileName: pending.fileName,
             pdfHash: pending.pdfHash,
+            attemptId: pending.attemptId,
           });
           return;
         }
@@ -2313,31 +2564,51 @@ function AiCalendarImportCard({
 
     const timeoutController = createAiImportClientTimeoutController();
     const startedAt = Date.now();
+    const attemptId = crypto.randomUUID();
     let pendingImport: PendingAiImport | null = null;
+    let pollingPromise: Promise<void> | null = null;
 
+    activeAttemptIdRef.current = attemptId;
+    completedAttemptIdRef.current = null;
+    latestStatusUpdatedAtRef.current = 0;
+    latestStageSequenceRef.current = getAiImportStageSequence("preparing_upload");
+    currentStageRef.current = "preparing_upload";
+    currentStageStartedAtRef.current = startedAt;
+    currentStrategyRef.current = null;
     setStatus("uploading");
     setMessage("Reading your calendar...");
     setActionResult(null);
-    setServerStage("upload_received");
-    setProgress(getAiImportStageDetails("upload_received").progress || 10);
+    setServerStage("preparing_upload");
+    setServerStageStartedAt(startedAt);
+    setProgress(0);
+    setProgressIsEstimated(false);
+    setProgressIsIndeterminate(false);
+    setMonotonicProgress(getAiImportStageDetails("preparing_upload").progress || 3);
     setElapsedSeconds(0);
 
     const formData = new FormData();
     formData.append("calendarPdf", selectedFile);
     formData.append("cacheMode", analyzeAgain ? "bypass" : "default");
+    formData.append("analysisAttemptId", attemptId);
     if (analyzeAgain) formData.append("analyzeAgain", "true");
 
     try {
       setServerStage("hashing_pdf");
-      setProgress(getAiImportStageDetails("hashing_pdf").progress || 15);
+      setServerStageStartedAt(Date.now());
+      currentStageRef.current = "hashing_pdf";
+      currentStageStartedAtRef.current = Date.now();
+      setMonotonicProgress(getAiImportStageDetails("hashing_pdf").progress || 18);
       const pdfHash = await calculatePdfSha256(selectedFile);
       pendingImport = {
         school: schoolSlug,
         pdfHash,
         fileName: selectedFile.name,
         startedAt,
+        attemptId,
+        requestId: attemptId,
       };
       persistPendingAiImport(pendingImport);
+      pollingPromise = pollForImportResult(pendingImport);
       setStatus("analyzing");
       setMessage("Finding school dates and checking schedule patterns...");
       const response = await fetch(
@@ -2351,14 +2622,14 @@ function AiCalendarImportCard({
       const result = await parseAiImportResponse(response);
       const requestId = response.headers.get("x-sundial-ai-import-request-id");
       if (pendingImport) {
-        pendingImport = { ...pendingImport, requestId: requestId || undefined };
+        pendingImport = { ...pendingImport, requestId: requestId || attemptId };
         persistPendingAiImport(pendingImport);
       }
       setActionResult(result);
 
       if (result.status !== "success") {
         if (pendingImport && isRecoverableAiImportInterruption(result)) {
-          await pollForImportResult(pendingImport);
+          await (pollingPromise || pollForImportResult(pendingImport));
           return;
         }
         setStatus(result.status === "validation_error" ? "failed" : "failed");
@@ -2372,12 +2643,13 @@ function AiCalendarImportCard({
         requestId,
         fileName: selectedFile.name,
         pdfHash: pendingImport?.pdfHash,
+        attemptId,
       });
     } catch (error) {
       const result = mapAiImportClientError(error);
       if (pendingImport && isRecoverableAiImportInterruption(result)) {
         setActionResult(result);
-        await pollForImportResult(pendingImport);
+        await (pollingPromise || pollForImportResult(pendingImport));
         return;
       }
       setActionResult(result);
@@ -2582,7 +2854,17 @@ function AiCalendarImportCard({
     setMessage("");
     setActionResult(null);
     setProgress(0);
+    setProgressIsEstimated(false);
+    setProgressIsIndeterminate(false);
     setElapsedSeconds(0);
+    setServerStageStartedAt(null);
+    activeAttemptIdRef.current = null;
+    completedAttemptIdRef.current = null;
+    latestStatusUpdatedAtRef.current = 0;
+    latestStageSequenceRef.current = getAiImportStageSequence("upload_received");
+    currentStageRef.current = "upload_received";
+    currentStageStartedAtRef.current = null;
+    currentStrategyRef.current = null;
     updateDraft((previousDraft) => clearAiImportMetadata(previousDraft));
   }
 
@@ -2693,6 +2975,8 @@ function AiCalendarImportCard({
           elapsedSeconds={elapsedSeconds}
           progress={progress}
           stage={serverStage}
+          estimated={progressIsEstimated}
+          indeterminate={progressIsIndeterminate}
           error={failureMessage}
           retryable={failureRetryable}
           onRetry={() => analyzeSelectedFile(false)}
@@ -2712,18 +2996,22 @@ function AiCalendarImportCard({
           elapsedSeconds={elapsedSeconds}
           progress={progress}
           stage={serverStage}
+          estimated={progressIsEstimated}
+          indeterminate={progressIsIndeterminate}
         />
       )}
 
-      {importResult && draft.aiImport?.state === "review" && (
+      {importResult &&
+        draft.aiImport?.state !== "applied" &&
+        draft.aiImport?.state !== "failed" && (
         <AiImportReview
           importResult={importResult}
           reviewMode={reviewMode}
           cacheMetadata={{
-            cacheHit: draft.aiImport.cacheHit,
-            cacheAnalyzedAt: draft.aiImport.cacheAnalyzedAt,
-            cacheStrategy: draft.aiImport.cacheStrategy,
-            analysisVersion: draft.aiImport.analysisVersion,
+            cacheHit: draft.aiImport?.cacheHit,
+            cacheAnalyzedAt: draft.aiImport?.cacheAnalyzedAt,
+            cacheStrategy: draft.aiImport?.cacheStrategy,
+            analysisVersion: draft.aiImport?.analysisVersion,
           }}
           resolutions={resolutions}
           schedules={schedules}
@@ -3435,6 +3723,12 @@ function AiImportedCalendarPreview({
   const [selectedDate, setSelectedDate] = useState(
     result.days.find((day) => day.isSchoolDay)?.date || result.days[0]?.date || ""
   );
+  const [editorEdit, setEditorEdit] = useState<{
+    date: string;
+    scheduleId: string;
+    isSchoolDay: boolean;
+    note: string;
+  } | null>(null);
   const [lastResult, setLastResult] = useState<AiCalendarImportResult | null>(null);
   const selectedDay =
     result.days.find((calendarDay) => calendarDay.date === selectedDate) || null;
@@ -3448,6 +3742,14 @@ function AiImportedCalendarPreview({
   const selectedInfo = selectedDay
     ? importResult.informationalDates.filter((date) => date.date === selectedDay.date)
     : [];
+  const editor = editorEdit && editorEdit.date === selectedDay?.date
+    ? editorEdit
+    : {
+        date: selectedDay?.date || "",
+        scheduleId: selectedDay?.scheduleId || "",
+        isSchoolDay: selectedDay?.isSchoolDay ?? true,
+        note: selectedDay?.labels.join(", ") || "",
+      };
   const monthIndex = months.findIndex(([key]) => key === monthKey);
   const monthDays = months[monthIndex]?.[1] || [];
   const previousMonth = monthIndex > 0 ? months[monthIndex - 1]?.[0] : null;
@@ -3476,71 +3778,22 @@ function AiImportedCalendarPreview({
     onImportResultChange(nextResult);
   }
 
-  function updateSelectedDate({
-    scheduleTempId,
-    noSchool,
-    note,
-  }: {
-    scheduleTempId?: string;
-    noSchool?: boolean;
-    note?: string;
-  }) {
+  function saveSelectedDate() {
     if (!selectedDay) return;
-    const date = selectedDay.date;
-    const nextNoSchoolRanges = importResult.noSchoolRanges.filter(
-      (range) => range.id !== `manual-no-school-${date}`
-    );
-    const nextSpecialDays = importResult.specialDays.filter(
-      (day) => day.id !== `manual-special-${date}`
-    );
-    const nextInformationalDates = importResult.informationalDates.filter(
-      (item) => item.id !== `manual-info-${date}`
-    );
-
-    if (noSchool) {
-      nextNoSchoolRanges.push({
-        id: `manual-no-school-${date}`,
-        startDate: date,
-        endDate: date,
-        label: note?.trim() || "No School",
-        type: "No School",
-        confidence: "high",
-        evidence: { explanation: "Manual edit" },
-      });
-    } else if (scheduleTempId) {
-      nextSpecialDays.push({
-        id: `manual-special-${date}`,
-        startDate: date,
-        endDate: date,
-        label: getScheduleName(scheduleMap, scheduleTempId),
-        type: "Manual Edit",
-        scheduleTempId,
-        isInstructional: true,
-        confidence: "high",
-        evidence: { explanation: "Manual edit" },
-      });
-    }
-
-    if (note?.trim()) {
-      nextInformationalDates.push({
-        id: `manual-info-${date}`,
-        date,
-        label: note.trim(),
-        confidence: "high",
-        evidence: { explanation: "Manual edit" },
-      });
-    }
-
-    rememberAndApply({
-      ...importResult,
-      noSchoolRanges: nextNoSchoolRanges,
-      specialDays: nextSpecialDays,
-      informationalDates: nextInformationalDates,
-    });
+    rememberAndApply(updateAiImportPreviewDay(importResult, {
+      date: selectedDay.date,
+      scheduleTempId: editor.scheduleId || null,
+      isSchoolDay: editor.isSchoolDay,
+      note: editor.note,
+      rotationBehavior: selectedSpecialDay?.rotationBehavior || "pause",
+    }));
   }
 
   return (
     <ReviewPanel title="Calendar Preview" className="mt-4">
+      <p className="mb-4 text-sm leading-6 text-slate-600 dark:text-slate-300">
+        Review the calendar exactly as it will appear after creation. Select a date to inspect or change its schedule.
+      </p>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard label="Instructional days" value={String(result.summary.instructionalDayCount)} />
         <MetricCard label="No-school days" value={String(result.summary.noSchoolWeekdayCount)} />
@@ -3593,35 +3846,20 @@ function AiImportedCalendarPreview({
         </div>
       )}
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          disabled={!previousMonth}
-          onClick={() => previousMonth && setMonthKey(previousMonth)}
-          className={subtleButtonClass}
-        >
-          Previous
-        </button>
-        <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
-          Defaulted to the first instructional month.
-        </p>
-        <button
-          type="button"
-          disabled={!nextMonth}
-          onClick={() => nextMonth && setMonthKey(nextMonth)}
-          className={subtleButtonClass}
-        >
-          Next
-        </button>
-      </div>
-
       <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
-        <MonthPreview
-          monthKey={monthKey}
-          days={monthDays}
-          scheduleMap={scheduleMap}
+        <SchoolCalendarMonthGrid
+          month={new Date(`${monthKey}-01T00:00:00Z`)}
+          days={monthDays.map((day) => ({
+            date: day.date,
+            scheduleId: day.scheduleId,
+            label: day.labels.join(", ") || null,
+            isSchoolDay: day.isSchoolDay,
+            hasConflict: day.warningCodes.length > 0 || brownGoldConflicts.some((conflict) => conflict.date === day.date),
+          }))}
+          schedules={[...scheduleMap.values()].map((schedule) => ({ id: schedule.id, name: schedule.name, type: schedule.type, calendarColor: schedule.calendarColor, setupStatus: schedule.setupStatus }))}
           selectedDate={selectedDate}
-          onSelectDate={setSelectedDate}
+          onSelectDate={(date) => { setSelectedDate(date); setEditorEdit(null); }}
+          navigation={<CalendarMonthNavigation month={new Date(`${monthKey}-01T00:00:00Z`)} previousDisabled={!previousMonth} nextDisabled={!nextMonth} onPrevious={() => previousMonth && setMonthKey(previousMonth)} onNext={() => nextMonth && setMonthKey(nextMonth)} />}
         />
 
         <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-black">
@@ -3659,14 +3897,14 @@ function AiImportedCalendarPreview({
                 />
               )}
 
-              {reviewMode === "advanced" && (
-                <div className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-700">
-                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
-                    Change schedule
+              <div className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Schedule
                     <select
                       className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-[#242424] dark:text-white"
-                      defaultValue={selectedDay.scheduleId || ""}
-                      onChange={(event) => updateSelectedDate({ scheduleTempId: event.target.value })}
+                      value={editor.scheduleId}
+                      disabled={!editor.isSchoolDay}
+                      onChange={(event) => setEditorEdit({ ...editor, scheduleId: event.target.value })}
                     >
                       <option value="">No schedule</option>
                       {resolutions.filter((resolution) => resolution.status !== "ignored").map((resolution) => (
@@ -3681,21 +3919,24 @@ function AiImportedCalendarPreview({
                       ))}
                     </select>
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => updateSelectedDate({ noSchool: true, note: "No School" })}
-                    className={secondaryButtonClass}
-                  >
-                    Mark No School
-                  </button>
-                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
-                    Add note
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Optional Note / Event Name
                     <input
                       className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-[#242424] dark:text-white"
                       placeholder="Event or note"
-                      onBlur={(event) => updateSelectedDate({ note: event.target.value })}
+                      value={editor.note}
+                      onChange={(event) => setEditorEdit({ ...editor, note: event.target.value })}
                     />
                   </label>
+                  <label className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-300">
+                    <input type="checkbox" checked={editor.isSchoolDay} onChange={(event) => setEditorEdit({ ...editor, isSchoolDay: event.target.checked, scheduleId: event.target.checked ? editor.scheduleId : "" })} />
+                    School Day
+                  </label>
+                  {editor.isSchoolDay && <CalendarScheduleDetails schedule={editor.scheduleId ? (() => { const schedule = scheduleMap.get(editor.scheduleId); return schedule ? { id: schedule.id, name: schedule.name, type: schedule.type, calendarColor: schedule.calendarColor, setupStatus: schedule.setupStatus } : null; })() : null} />}
+                  <button type="button" onClick={saveSelectedDate} className={sundialPrimaryButtonClass("w-full")}>
+                    Save Preview Day
+                  </button>
+                  {reviewMode === "advanced" && <p className="text-xs font-semibold text-slate-500">Advanced mode keeps additional import controls available above.</p>}
                   <button
                     type="button"
                     disabled={!lastResult}
@@ -3708,7 +3949,6 @@ function AiImportedCalendarPreview({
                     Undo Last Edit
                   </button>
                 </div>
-              )}
             </div>
           )}
         </aside>
@@ -3795,6 +4035,8 @@ function AiCalendarImportProgress({
   elapsedSeconds,
   progress,
   stage,
+  estimated = false,
+  indeterminate = false,
   error,
   retryable = false,
   onRetry,
@@ -3805,6 +4047,8 @@ function AiCalendarImportProgress({
   elapsedSeconds: number;
   progress: number;
   stage: AiImportServerStage;
+  estimated?: boolean;
+  indeterminate?: boolean;
   error?: string;
   retryable?: boolean;
   onRetry?: () => void;
@@ -3817,7 +4061,8 @@ function AiCalendarImportProgress({
     0,
     Math.min(100, stageDetails.progress ?? progress)
   );
-  const isIndeterminate = state === "working" && stageDetails.indeterminate;
+  const isIndeterminate =
+    state === "working" && (indeterminate || (stageDetails.indeterminate && !estimated));
   const stageLabel = state === "complete" ? "Calendar draft ready" : stageDetails.label;
   const description =
     state === "complete"
@@ -3853,6 +4098,7 @@ function AiCalendarImportProgress({
         </div>
         {!isIndeterminate && (
           <p className="text-sm font-bold text-[#9A7209] dark:text-[#F6C64A]">
+            {estimated ? "Estimated " : ""}
             {displayProgress}%
           </p>
         )}
@@ -3864,14 +4110,18 @@ function AiCalendarImportProgress({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={isIndeterminate ? undefined : displayProgress}
-        aria-label="AI calendar import progress"
+        aria-label={
+          estimated
+            ? "Estimated AI calendar import progress"
+            : "AI calendar import progress"
+        }
       >
         <div
           className={[
             "h-full rounded-full bg-[#D4A017]",
             "transition-[width] duration-700 ease-out motion-reduce:transition-none",
             isIndeterminate
-              ? "w-full animate-pulse motion-reduce:animate-none"
+              ? "w-1/2 animate-pulse motion-reduce:animate-none"
               : "",
           ].join(" ")}
           style={isIndeterminate ? undefined : { width: `${displayProgress}%` }}
@@ -3885,7 +4135,9 @@ function AiCalendarImportProgress({
           <p className="leading-6 text-slate-600 dark:text-slate-300">
             {isIndeterminate
               ? "This step is running on the analysis service. The bar is animated while Sundial waits for the result."
-              : "Processing is still running. Sundial will update this stage as the server advances."}
+              : estimated
+                ? "Timing varies based on the calendar's layout and complexity."
+                : "Processing is still running. Sundial will update this stage as the server advances."}
           </p>
         )}
         <p className="font-semibold text-slate-500 dark:text-slate-400">

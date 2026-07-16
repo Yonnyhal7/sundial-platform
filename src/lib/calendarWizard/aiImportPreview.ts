@@ -48,10 +48,80 @@ export function buildAiPreviewConfig(
     specialDays: importResult.specialDays.map((day) => ({
       ...day,
       scheduleId: day.isInstructional ? day.scheduleTempId || null : null,
-      rotationBehavior: "pause",
+      rotationBehavior: day.rotationBehavior || "pause",
     })),
     informationalDates: importResult.informationalDates,
   };
+}
+
+function withoutDateFromRanges<T extends { id: string; startDate: string; endDate: string }>(
+  ranges: T[],
+  date: string
+) {
+  return ranges.flatMap((range) => {
+    if (date < range.startDate || date > range.endDate) return [range];
+    const pieces: T[] = [];
+    const previous = new Date(`${date}T00:00:00Z`);
+    previous.setUTCDate(previous.getUTCDate() - 1);
+    const next = new Date(`${date}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    const previousDate = previous.toISOString().slice(0, 10);
+    const nextDate = next.toISOString().slice(0, 10);
+    if (range.startDate < date) pieces.push({ ...range, id: `${range.id}-before-${date}`, endDate: previousDate });
+    if (range.endDate > date) pieces.push({ ...range, id: `${range.id}-after-${date}`, startDate: nextDate });
+    return pieces;
+  });
+}
+
+export function updateAiImportPreviewDay(importResult: AiCalendarImportResult, edit: {
+  date: string;
+  scheduleTempId: string | null;
+  isSchoolDay: boolean;
+  note: string;
+  rotationBehavior?: "advance" | "pause" | "restart";
+}) {
+  const noSchoolRanges = withoutDateFromRanges(importResult.noSchoolRanges, edit.date);
+  const specialDays = withoutDateFromRanges(importResult.specialDays, edit.date);
+  const informationalDates = importResult.informationalDates.filter(
+    (item) => item.id !== `manual-info-${edit.date}`
+  );
+
+  if (edit.isSchoolDay) {
+    specialDays.push({
+      id: `manual-special-${edit.date}`,
+      startDate: edit.date,
+      endDate: edit.date,
+      label: edit.note.trim() || "Preview day edit",
+      type: "Manual Edit",
+      scheduleTempId: edit.scheduleTempId || undefined,
+      isInstructional: true,
+      rotationBehavior: edit.rotationBehavior || "pause",
+      confidence: "high",
+      evidence: { explanation: "Administrator preview edit" },
+    });
+  } else {
+    noSchoolRanges.push({
+      id: `manual-no-school-${edit.date}`,
+      startDate: edit.date,
+      endDate: edit.date,
+      label: edit.note.trim() || "No School",
+      type: "No School",
+      confidence: "high",
+      evidence: { explanation: "Administrator preview edit" },
+    });
+  }
+
+  if (edit.note.trim()) {
+    informationalDates.push({
+      id: `manual-info-${edit.date}`,
+      date: edit.date,
+      label: edit.note.trim(),
+      confidence: "high",
+      evidence: { explanation: "Administrator preview edit" },
+    });
+  }
+
+  return { ...importResult, noSchoolRanges, specialDays, informationalDates };
 }
 
 export function hasBrownGoldVerificationScheduleSet(

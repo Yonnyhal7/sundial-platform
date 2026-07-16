@@ -32,6 +32,7 @@ type RouteContext = {
 };
 
 type AiImportCacheMode = "default" | "bypass" | "invalidate_and_analyze";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 class AiImportRouteDeadlineError extends Error {
   constructor() {
@@ -144,7 +145,7 @@ function parseCacheMode(formData: FormData): AiImportCacheMode {
 
 export async function POST(request: Request, context: RouteContext) {
   const { school } = await context.params;
-  const requestId = crypto.randomUUID();
+  let requestId = crypto.randomUUID();
   const startedAt = Date.now();
   const respond = (result: AnalyzeCalendarPdfResult, init?: ResponseInit) =>
     json(result, {
@@ -221,6 +222,10 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
     const upload = formData.get("calendarPdf");
+    const submittedAttemptId = formData.get("analysisAttemptId");
+    if (typeof submittedAttemptId === "string" && UUID_PATTERN.test(submittedAttemptId)) {
+      requestId = submittedAttemptId;
+    }
 
     if (!(upload instanceof File)) {
       return respond(
@@ -240,10 +245,50 @@ export async function POST(request: Request, context: RouteContext) {
       fileType: upload.type || "unknown",
     });
 
+    let earlyPdfHash: string | null = null;
+    let uploadBytes: ArrayBuffer | null = null;
+    try {
+      uploadBytes = await upload.arrayBuffer();
+      earlyPdfHash = Array.from(
+        new Uint8Array(await crypto.subtle.digest("SHA-256", uploadBytes))
+      )
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+      const earlyCacheKeys = getCacheKeys({
+        schoolId: schoolData.id,
+        pdfHash: earlyPdfHash,
+      });
+      await Promise.all(
+        earlyCacheKeys.preferred.map((cacheKey) =>
+          setCalendarAnalysisStage(cacheKey, "upload_received", {
+            requestId,
+            elapsedMs: Date.now() - startedAt,
+          })
+        )
+      );
+      await Promise.all(
+        earlyCacheKeys.preferred.map((cacheKey) =>
+          setCalendarAnalysisStage(cacheKey, "validating_pdf", {
+            requestId,
+            elapsedMs: Date.now() - startedAt,
+          })
+        )
+      );
+    } catch {
+      // Validation below will produce the safe client-facing error.
+    }
+
     let validation;
     try {
       validation = await validateCalendarPdfFile(upload);
     } catch {
+      if (earlyPdfHash) {
+        await Promise.all(
+          getCacheKeys({ schoolId: schoolData.id, pdfHash: earlyPdfHash }).preferred.map(
+            (cacheKey) => recordCalendarAnalysisFailure(cacheKey, "pdf_validation_failed")
+          )
+        );
+      }
       logAiImportRouteDiagnostic({
         level: "warn",
         event: "pdf_validation_failed",
@@ -263,6 +308,13 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (!validation.valid) {
+      if (earlyPdfHash) {
+        await Promise.all(
+          getCacheKeys({ schoolId: schoolData.id, pdfHash: earlyPdfHash }).preferred.map(
+            (cacheKey) => recordCalendarAnalysisFailure(cacheKey, "pdf_validation_failed")
+          )
+        );
+      }
       logAiImportRouteDiagnostic({
         level: "warn",
         event: "upload_rejected",
@@ -282,13 +334,26 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const pdfHash = Array.from(
-      new Uint8Array(await crypto.subtle.digest("SHA-256", await upload.arrayBuffer()))
-    )
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
+    const pdfHash =
+      earlyPdfHash ||
+      Array.from(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            uploadBytes || (await upload.arrayBuffer())
+          )
+        )
+      )
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
     const cacheKeys = getCacheKeys({ schoolId: schoolData.id, pdfHash });
     const cacheMode = parseCacheMode(formData);
+    for (const cacheKey of cacheKeys.preferred) {
+      await setCalendarAnalysisStage(cacheKey, "hashing_pdf", {
+        requestId,
+        elapsedMs: Date.now() - startedAt,
+      });
+    }
 
     if (cacheMode === "invalidate_and_analyze") {
       await invalidateCalendarAnalysisCache(
@@ -366,8 +431,6 @@ export async function POST(request: Request, context: RouteContext) {
         elapsedMs: Date.now() - startedAt,
       });
     };
-    await setStage("upload_received");
-    await setStage("hashing_pdf");
     const routeDeadline = createAiImportRouteDeadline();
     let result: AnalyzeCalendarPdfResult;
     try {
@@ -412,6 +475,11 @@ export async function POST(request: Request, context: RouteContext) {
         ? cacheKeys.byStrategy[AI_CALENDAR_TEXT_STRATEGY]
         : cacheKeys.byStrategy[AI_CALENDAR_PDF_STRATEGY];
     if (result.status === "success") {
+      await setCalendarAnalysisStage(resultCacheKey, "generating_calendar_preview", {
+        requestId,
+        strategy: resultCacheKey.strategy,
+        elapsedMs: Date.now() - startedAt,
+      });
       await setCalendarAnalysisStage(resultCacheKey, "saving_result", {
         requestId,
         strategy: resultCacheKey.strategy,

@@ -947,7 +947,8 @@ export async function analyzeCalendarPdf(
     });
   }
 
-  const directVisualStrategy = Boolean(extracted && quality?.likelyVisualLayoutDependency);
+	  const directVisualStrategy = Boolean(extracted && quality?.likelyVisualLayoutDependency);
+	  await options.onStageChange?.("selecting_strategy", "text-gpt5-mini");
 
   if (extracted && quality?.usable) {
     const textResult = await analyzeCalendarText({
@@ -986,10 +987,10 @@ export async function analyzeCalendarPdf(
           : textResult.reasonCode,
       durationMs: Date.now() - startedAt,
     });
-  } else if (directVisualStrategy) {
-    if (!hasEnoughBudgetForPdfFallback(startedAt)) {
-      return insufficientFallbackBudgetResult(startedAt);
-    }
+	  } else if (directVisualStrategy) {
+	    if (!hasEnoughBudgetForPdfFallback(startedAt)) {
+	      return insufficientFallbackBudgetResult(startedAt);
+	    }
 
     logPipelineDiagnostic("pdf_visual_analysis_selected", {
       strategy: "pdf-gpt5",
@@ -1014,9 +1015,10 @@ export async function analyzeCalendarPdf(
       fallbackReasonCode: quality?.reasonCodes.join(",") || "text_extraction_failed",
       durationMs: Date.now() - startedAt,
     });
-  }
+	  }
 
-  const pdfResult = await analyzeCalendarPdfFallback({
+	  await options.onStageChange?.("preparing_visual_analysis", "pdf-gpt5");
+	  const pdfResult = await analyzeCalendarPdfFallback({
     client,
     file,
     model: pdfModel,

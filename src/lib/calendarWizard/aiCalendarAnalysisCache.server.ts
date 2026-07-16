@@ -54,6 +54,7 @@ export type CalendarAnalysisStageSnapshot = {
   strategy?: string;
   requestId?: string;
   reasonCode?: string;
+  createdAt?: number;
   updatedAt: number;
   lastHeartbeatAt?: number;
 };
@@ -221,7 +222,8 @@ export async function setCalendarAnalysisStage(
   context: { requestId?: string; strategy?: string; reasonCode?: string; elapsedMs?: number } = {}
 ) {
   const id = keyString(key);
-  const previousStage = currentStages.get(id)?.stage;
+  const previousSnapshot = currentStages.get(id);
+  const previousStage = previousSnapshot?.stage;
   const isHeartbeat = previousStage === stage && stage !== "ready" && stage !== "confirmed_failed";
   const status =
     stage === "ready" ? "ready" : stage === "confirmed_failed" ? "failed" : "pending";
@@ -234,6 +236,7 @@ export async function setCalendarAnalysisStage(
     strategy: context.strategy || key.strategy,
     requestId: context.requestId,
     reasonCode: context.reasonCode,
+    createdAt: previousSnapshot?.createdAt || nowMs,
     updatedAt: nowMs,
     lastHeartbeatAt: status === "pending" ? nowMs : undefined,
   });
@@ -329,7 +332,7 @@ export async function readCalendarAnalysisStage(
   const supabase = await createSupabaseServerClient();
   let query = supabase
     .from("ai_calendar_analysis_cache")
-    .select("status, current_stage, stage_strategy, request_id, reason_code, updated_at, last_heartbeat_at")
+    .select("status, current_stage, stage_strategy, request_id, reason_code, created_at, updated_at, last_heartbeat_at")
     .eq("school_id", key.schoolId)
     .eq("pdf_sha256", key.pdfHash)
     .eq("analysis_strategy", key.strategy)
@@ -359,6 +362,7 @@ export async function readCalendarAnalysisStage(
     strategy: data.stage_strategy || key.strategy,
     requestId: data.request_id || undefined,
     reasonCode: data.reason_code || undefined,
+    createdAt: data.created_at ? new Date(data.created_at).getTime() : undefined,
     updatedAt: new Date(data.updated_at).getTime(),
     lastHeartbeatAt: data.last_heartbeat_at
       ? new Date(data.last_heartbeat_at).getTime()
@@ -429,7 +433,7 @@ export async function markStaleCalendarAnalysisIfNeeded(
     .eq("analysis_version", key.version)
     .is("invalidated_at", null)
     .eq("status", "pending")
-    .select("status, current_stage, stage_strategy, request_id, reason_code, updated_at, last_heartbeat_at")
+    .select("status, current_stage, stage_strategy, request_id, reason_code, created_at, updated_at, last_heartbeat_at")
     .maybeSingle();
 
   if (error || !data || !isAiImportServerStage(data.current_stage)) {
@@ -458,6 +462,7 @@ export async function markStaleCalendarAnalysisIfNeeded(
     strategy: data.stage_strategy || key.strategy,
     requestId: data.request_id || undefined,
     reasonCode: data.reason_code || "analysis_job_stale",
+    createdAt: data.created_at ? new Date(data.created_at).getTime() : undefined,
     updatedAt: new Date(data.updated_at).getTime(),
     lastHeartbeatAt: data.last_heartbeat_at
       ? new Date(data.last_heartbeat_at).getTime()

@@ -127,6 +127,10 @@ describe("AI import client response handling", () => {
             status: "pending",
             stage: "analyzing_pdf",
             strategy: "pdf-gpt5",
+            attemptId: "attempt-1",
+            stageStartedAt: 1784160000000,
+            jobStartedAt: 1784159900000,
+            updatedAt: 1784160001000,
           }),
         })
       )
@@ -134,6 +138,10 @@ describe("AI import client response handling", () => {
       status: "pending",
       stage: "analyzing_pdf",
       strategy: "pdf-gpt5",
+      attemptId: "attempt-1",
+      stageStartedAt: 1784160000000,
+      jobStartedAt: 1784159900000,
+      updatedAt: 1784160001000,
     });
 
     await expect(

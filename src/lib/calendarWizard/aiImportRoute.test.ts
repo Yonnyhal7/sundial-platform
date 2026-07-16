@@ -85,6 +85,17 @@ function requestWithFileAndOptions(file: File | Blob | string, options: { analyz
   });
 }
 
+function requestWithAttempt(file: File | Blob | string, attemptId: string) {
+  const formData = new FormData();
+  formData.set("calendarPdf", file);
+  formData.set("analysisAttemptId", attemptId);
+
+  return new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import", {
+    method: "POST",
+    body: formData,
+  });
+}
+
 async function post(file: File | Blob | string = pdfFile()) {
   return POST(requestWithFile(file), { params: Promise.resolve({ school: "test" }) });
 }
@@ -120,6 +131,26 @@ describe("AI import API route", () => {
     expect(body).toMatchObject({ status: "success" });
     expect(response.headers.get("x-sundial-ai-import-request-id")).toBeTruthy();
     expect(mocks.analyzeCalendarPdf).toHaveBeenCalledOnce();
+  });
+
+  it("uses the client analysis attempt id for stage updates and the response header", async () => {
+    const attemptId = "11111111-1111-4111-8111-111111111111";
+    const response = await POST(
+      requestWithAttempt(pdfFile(), attemptId),
+      { params: Promise.resolve({ school: "test" }) }
+    );
+
+    expect(response.headers.get("x-sundial-ai-import-request-id")).toBe(attemptId);
+    expect(mocks.setCalendarAnalysisStage).toHaveBeenCalledWith(
+      expect.objectContaining({ schoolId: "school-1" }),
+      "upload_received",
+      expect.objectContaining({ requestId: attemptId })
+    );
+    expect(mocks.setCalendarAnalysisStage).toHaveBeenCalledWith(
+      expect.objectContaining({ schoolId: "school-1" }),
+      "validating_pdf",
+      expect.objectContaining({ requestId: attemptId })
+    );
   });
 
   it("reuses a successful cache entry without another OpenAI call", async () => {
@@ -336,10 +367,11 @@ describe("AI import API route", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       status: "ready",
       resultId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       stage: "ready",
+      cacheHit: true,
     });
   });
 
@@ -357,7 +389,7 @@ describe("AI import API route", () => {
     );
     const body = await response.json();
 
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       status: "pending",
       stage: "analyzing_text",
       strategy: "text-gpt5-mini",
@@ -378,7 +410,7 @@ describe("AI import API route", () => {
     );
     const body = await response.json();
 
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       status: "pending",
       stage: "analyzing_pdf",
       strategy: "pdf-gpt5",
@@ -400,7 +432,7 @@ describe("AI import API route", () => {
     );
     const body = await response.json();
 
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       status: "failed",
       reasonCode: "analysis_job_stale",
       stage: "confirmed_failed",
