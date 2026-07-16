@@ -1,111 +1,150 @@
+export type AiImportServerStage =
+  | "upload_received"
+  | "hashing_pdf"
+  | "checking_cache"
+  | "extracting_text"
+  | "evaluating_text_quality"
+  | "analyzing_text"
+  | "validating_text_result"
+  | "repairing_text_result"
+  | "falling_back_to_pdf"
+  | "uploading_pdf_to_ai"
+  | "analyzing_pdf"
+  | "validating_pdf_result"
+  | "repairing_pdf_result"
+  | "saving_result"
+  | "ready"
+  | "confirmed_failed";
+
 export type AiImportProgressStage = {
-  id:
-    | "uploading"
-    | "reading"
-    | "dates"
-    | "patterns"
-    | "special-days"
-    | "draft"
-    | "review";
+  id: AiImportServerStage;
   label: string;
   description: string;
-  min: number;
-  max: number;
+  progress: number | null;
+  indeterminate: boolean;
 };
 
-export const AI_IMPORT_PROGRESS_STAGES: AiImportProgressStage[] = [
-  {
-    id: "uploading",
-    label: "Uploading PDF",
+export const AI_IMPORT_STAGE_DETAILS: Record<AiImportServerStage, AiImportProgressStage> = {
+  upload_received: {
+    id: "upload_received",
+    label: "Uploading calendar PDF",
     description: "Securely sending your calendar for analysis.",
-    min: 5,
-    max: 15,
+    progress: 10,
+    indeterminate: false,
   },
-  {
-    id: "reading",
-    label: "Reading calendar pages",
-    description: "Reading text, legends, colors, and calendar layout.",
-    min: 15,
-    max: 30,
+  hashing_pdf: {
+    id: "hashing_pdf",
+    label: "Preparing upload",
+    description: "Creating a secure fingerprint for this PDF.",
+    progress: 15,
+    indeterminate: false,
   },
-  {
-    id: "dates",
-    label: "Detecting school dates",
-    description: "Finding the first day, last day, and instructional dates.",
-    min: 30,
-    max: 45,
+  checking_cache: {
+    id: "checking_cache",
+    label: "Checking completed analyses",
+    description: "Looking for an existing review for this exact PDF.",
+    progress: 20,
+    indeterminate: false,
   },
-  {
-    id: "patterns",
-    label: "Identifying schedule patterns",
-    description: "Looking for patterns such as Brown/Gold, A/B, or regular schedules.",
-    min: 45,
-    max: 60,
+  extracting_text: {
+    id: "extracting_text",
+    label: "Reading calendar text",
+    description: "Extracting readable text from the PDF pages.",
+    progress: 30,
+    indeterminate: false,
   },
-  {
-    id: "special-days",
-    label: "Finding holidays and special days",
-    description: "Checking breaks, closures, finals, rallies, and minimum days.",
-    min: 60,
-    max: 75,
+  evaluating_text_quality: {
+    id: "evaluating_text_quality",
+    label: "Checking fast-analysis fit",
+    description: "Checking whether the calendar can use fast analysis.",
+    progress: 38,
+    indeterminate: false,
   },
-  {
-    id: "draft",
-    label: "Building your calendar draft",
-    description: "Organizing the detected dates into the Schedule Wizard.",
-    min: 75,
-    max: 88,
+  analyzing_text: {
+    id: "analyzing_text",
+    label: "Analyzing calendar details",
+    description: "Sundial is reading dates, schedule names, and school-year patterns.",
+    progress: null,
+    indeterminate: true,
   },
-  {
-    id: "review",
-    label: "Running final review checks",
-    description: "Comparing counts and flagging anything that may need review.",
-    min: 88,
-    max: 94,
+  validating_text_result: {
+    id: "validating_text_result",
+    label: "Checking dates and schedule patterns",
+    description: "Validating the fast analysis before opening review.",
+    progress: 62,
+    indeterminate: false,
   },
-];
+  repairing_text_result: {
+    id: "repairing_text_result",
+    label: "Correcting a formatting issue",
+    description: "Sundial is repairing a structured response before validating again.",
+    progress: null,
+    indeterminate: true,
+  },
+  falling_back_to_pdf: {
+    id: "falling_back_to_pdf",
+    label: "Performing deeper PDF review",
+    description: "This calendar relies on visual layout. Sundial is performing a deeper review.",
+    progress: 68,
+    indeterminate: false,
+  },
+  uploading_pdf_to_ai: {
+    id: "uploading_pdf_to_ai",
+    label: "Preparing visual PDF review",
+    description: "Uploading the original PDF for layout-aware analysis.",
+    progress: 72,
+    indeterminate: false,
+  },
+  analyzing_pdf: {
+    id: "analyzing_pdf",
+    label: "Analyzing visual calendar layout",
+    description: "Sundial is checking layout, legends, colors, and date cells.",
+    progress: null,
+    indeterminate: true,
+  },
+  validating_pdf_result: {
+    id: "validating_pdf_result",
+    label: "Checking dates and schedule patterns",
+    description: "Validating the deeper PDF analysis before opening review.",
+    progress: 88,
+    indeterminate: false,
+  },
+  repairing_pdf_result: {
+    id: "repairing_pdf_result",
+    label: "Correcting a formatting issue",
+    description: "Sundial is repairing a structured response before validating again.",
+    progress: null,
+    indeterminate: true,
+  },
+  saving_result: {
+    id: "saving_result",
+    label: "Preparing your calendar review",
+    description: "Saving the completed analysis so the review screen can open.",
+    progress: 96,
+    indeterminate: false,
+  },
+  ready: {
+    id: "ready",
+    label: "Calendar analysis complete",
+    description: "Sundial found calendar details and is opening the review screen.",
+    progress: 100,
+    indeterminate: false,
+  },
+  confirmed_failed: {
+    id: "confirmed_failed",
+    label: "Calendar analysis stopped",
+    description: "Sundial could not complete this analysis.",
+    progress: null,
+    indeterminate: false,
+  },
+};
 
-export const AI_IMPORT_WAITING_THRESHOLD = 94;
-
-export function getAiImportStageForProgress(progress: number) {
-  const safeProgress = Math.max(0, Math.min(100, progress));
-  return (
-    AI_IMPORT_PROGRESS_STAGES.find(
-      (stage) => safeProgress >= stage.min && safeProgress < stage.max
-    ) || AI_IMPORT_PROGRESS_STAGES[AI_IMPORT_PROGRESS_STAGES.length - 1]
-  );
+export function isAiImportServerStage(value: unknown): value is AiImportServerStage {
+  return typeof value === "string" && value in AI_IMPORT_STAGE_DETAILS;
 }
 
-export function getEstimatedAiImportProgress(elapsedSeconds: number, previousProgress: number) {
-  const elapsed = Math.max(0, elapsedSeconds);
-  const anchors = [
-    [0, 5],
-    [2, 15],
-    [6, 30],
-    [12, 45],
-    [20, 60],
-    [30, 75],
-    [45, 88],
-    [60, 92],
-  ] as const;
-
-  let target: number = anchors[0][1];
-  for (let index = 1; index < anchors.length; index += 1) {
-    const [time, progress] = anchors[index];
-    const [previousTime, previousAnchorProgress] = anchors[index - 1];
-    if (elapsed <= time) {
-      const ratio = (elapsed - previousTime) / (time - previousTime);
-      target = previousAnchorProgress + (progress - previousAnchorProgress) * ratio;
-      break;
-    }
-    target = progress;
-  }
-
-  if (elapsed > 60) {
-    target = Math.min(AI_IMPORT_WAITING_THRESHOLD, 92 + (elapsed - 60) * 0.04);
-  }
-
-  return Math.max(previousProgress, Math.min(AI_IMPORT_WAITING_THRESHOLD, Math.round(target)));
+export function getAiImportStageDetails(stage: AiImportServerStage) {
+  return AI_IMPORT_STAGE_DETAILS[stage];
 }
 
 export function getAiImportLongRunningMessage(elapsedSeconds: number) {
@@ -125,11 +164,7 @@ export function getAiImportLongRunningMessage(elapsedSeconds: number) {
 }
 
 export function getAiImportProgressAfterSuccess() {
-  return 100;
-}
-
-export function getAiImportProgressAfterError(previousProgress: number) {
-  return previousProgress;
+  return AI_IMPORT_STAGE_DETAILS.ready.progress || 100;
 }
 
 export function getAiImportProgressAfterRetry() {

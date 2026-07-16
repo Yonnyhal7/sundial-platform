@@ -1,5 +1,9 @@
 import type { AnalyzeCalendarPdfResult } from "./aiImportTypes";
 import {
+  isAiImportServerStage,
+  type AiImportServerStage,
+} from "./aiImportProgress";
+import {
   getAiImportClientTimeoutMs,
   parseOpenAiCalendarTimeoutMs,
 } from "./aiImportTimeouts";
@@ -21,10 +25,23 @@ export type AnalyzeCalendarPdfFailureResult = Exclude<
 >;
 
 export type AiImportStatusResponse =
-  | { status: "pending" }
-  | { status: "ready"; resultId: string }
-  | { status: "failed"; reasonCode?: string }
-  | { status: "expired"; reasonCode?: string };
+  | { status: "pending"; stage?: AiImportServerStage; strategy?: string }
+  | { status: "ready"; resultId: string; stage?: AiImportServerStage; strategy?: string }
+  | { status: "failed"; reasonCode?: string; stage?: AiImportServerStage; strategy?: string }
+  | { status: "expired"; reasonCode?: string; stage?: AiImportServerStage; strategy?: string };
+
+function withOptionalAiImportStatusMetadata<T extends object>(
+  value: T,
+  stage?: AiImportServerStage,
+  strategy?: string
+): T & { stage?: AiImportServerStage; strategy?: string } {
+  const next: T & { stage?: AiImportServerStage; strategy?: string } = {
+    ...value,
+  };
+  if (stage) next.stage = stage;
+  if (strategy) next.strategy = strategy;
+  return next;
+}
 
 export class AiImportClientTimeoutError extends Error {
   constructor() {
@@ -187,21 +204,32 @@ export async function parseAiImportStatusResponse(
         status: string;
         resultId?: unknown;
         reasonCode?: unknown;
+        stage?: unknown;
+        strategy?: unknown;
       };
       const status = record.status;
+      const stage = isAiImportServerStage(record.stage) ? record.stage : undefined;
+      const strategy =
+        typeof record.strategy === "string" ? record.strategy : undefined;
 
-      if (status === "pending") return { status };
+      if (status === "pending") {
+        return withOptionalAiImportStatusMetadata({ status }, stage, strategy);
+      }
       if (status === "ready" && typeof record.resultId === "string") {
-        return { status, resultId: record.resultId };
+        return withOptionalAiImportStatusMetadata(
+          { status, resultId: record.resultId },
+          stage,
+          strategy
+        );
       }
       if (status === "failed" || status === "expired") {
-        return {
+        return withOptionalAiImportStatusMetadata({
           status,
           reasonCode:
             typeof record.reasonCode === "string"
               ? record.reasonCode
               : undefined,
-        };
+        }, stage, strategy);
       }
     }
   } catch {

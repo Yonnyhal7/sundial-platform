@@ -43,6 +43,7 @@ import {
   type OpenAiCalendarAnalysisStage,
   type CalendarAnalyzerResult,
 } from "./openAiCalendarAnalyzerUtils";
+import type { AiImportServerStage } from "./aiImportProgress";
 
 export { DEFAULT_OPENAI_CALENDAR_MODEL };
 
@@ -53,6 +54,10 @@ type OpenAiResponseUsage = {
 };
 
 type AnalysisStrategy = "text-gpt5-mini" | "pdf-gpt5";
+type AnalyzerStageCallback = (
+  stage: AiImportServerStage,
+  strategy?: AnalysisStrategy
+) => void | Promise<void>;
 
 function getOpenAiClient(apiKey: string) {
   logOpenAiCalendarEnvironmentDiagnostic("before_openai_client_create");
@@ -118,6 +123,7 @@ async function normalizeValidateAndRepair({
   strategy,
   fileUploadSucceeded,
   responsesApiCallBegan,
+  onStageChange,
 }: {
   client: OpenAI;
   model: string;
@@ -129,10 +135,15 @@ async function normalizeValidateAndRepair({
   strategy: AnalysisStrategy;
   fileUploadSucceeded: boolean;
   responsesApiCallBegan: boolean;
+  onStageChange?: AnalyzerStageCallback;
 }): Promise<CalendarAnalyzerResult> {
   let normalized: ReturnType<typeof normalizeAiCalendarExtraction>;
 
   try {
+    await onStageChange?.(
+      strategy === "text-gpt5-mini" ? "validating_text_result" : "validating_pdf_result",
+      strategy
+    );
     normalized = normalizeAiCalendarExtraction(raw, {
       source: "openai",
       usage: {
@@ -166,6 +177,10 @@ async function normalizeValidateAndRepair({
 
   let repaired = false;
   if (!normalized.success) {
+    await onStageChange?.(
+      strategy === "text-gpt5-mini" ? "repairing_text_result" : "repairing_pdf_result",
+      strategy
+    );
     const repairIssues = summarizeAiImportValidationErrors(normalized.validationErrors);
     logOpenAiCalendarDiagnostic("info", "repair_started", {
       model,
@@ -274,12 +289,14 @@ async function analyzeCalendarText({
   model,
   timeoutMs,
   startedAt,
+  onStageChange,
 }: {
   client: OpenAI;
   extracted: ExtractedCalendarText;
   model: string;
   timeoutMs: number;
   startedAt: number;
+  onStageChange?: AnalyzerStageCallback;
 }): Promise<CalendarAnalyzerResult> {
   let responsesApiCallBegan = false;
 
@@ -287,6 +304,7 @@ async function analyzeCalendarText({
     const timeoutController = createOpenAiCalendarTimeoutController(timeoutMs);
 
     try {
+      await onStageChange?.("analyzing_text", "text-gpt5-mini");
       logPipelineDiagnostic("text_analysis_started", {
         model,
         strategy: "text-gpt5-mini",
@@ -341,6 +359,7 @@ async function analyzeCalendarText({
         strategy: "text-gpt5-mini",
         fileUploadSucceeded: false,
         responsesApiCallBegan,
+        onStageChange,
       });
 
       logPipelineDiagnostic("text_analysis_finished", {
@@ -404,12 +423,14 @@ async function analyzeCalendarPdfFallback({
   model,
   timeoutMs,
   startedAt,
+  onStageChange,
 }: {
   client: OpenAI;
   file: File;
   model: string;
   timeoutMs: number;
   startedAt: number;
+  onStageChange?: AnalyzerStageCallback;
 }): Promise<CalendarAnalyzerResult> {
   let stage: OpenAiCalendarAnalysisStage = "preparing_file";
   let fileUploadSucceeded = false;
@@ -428,6 +449,7 @@ async function analyzeCalendarPdfFallback({
     const timeoutController = createOpenAiCalendarTimeoutController(timeoutMs);
 
     try {
+      await onStageChange?.("falling_back_to_pdf", "pdf-gpt5");
       logPipelineDiagnostic("pdf_fallback_started", {
         model,
         strategy: "pdf-gpt5",
@@ -442,6 +464,7 @@ async function analyzeCalendarPdfFallback({
       });
 
       stage = "uploading_file";
+      await onStageChange?.("uploading_pdf_to_ai", "pdf-gpt5");
       const uploaded = await client.files.create(
         {
           file: uploadableFile,
@@ -462,6 +485,7 @@ async function analyzeCalendarPdfFallback({
 
       stage = "creating_response";
       responsesApiCallBegan = true;
+      await onStageChange?.("analyzing_pdf", "pdf-gpt5");
       logOpenAiCalendarEnvironmentDiagnostic("before_responses_api_call");
       const { data: response, request_id: requestId } = await client.responses
         .create(
@@ -508,6 +532,7 @@ async function analyzeCalendarPdfFallback({
         strategy: "pdf-gpt5",
         fileUploadSucceeded,
         responsesApiCallBegan,
+        onStageChange,
       });
 
       logPipelineDiagnostic("pdf_fallback_finished", {
@@ -593,7 +618,10 @@ function shouldFallbackAfterTextResult(result: CalendarAnalyzerResult) {
   );
 }
 
-export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerResult> {
+export async function analyzeCalendarPdf(
+  file: File,
+  options: { onStageChange?: AnalyzerStageCallback; requestId?: string } = {}
+): Promise<CalendarAnalyzerResult> {
   const configuration = getOpenAiCalendarConfiguration();
 
   if (configuration.ok && configuration.mode === "mock") {
@@ -620,11 +648,13 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
   let quality: CalendarTextQuality | null = null;
 
   try {
+    await options.onStageChange?.("extracting_text", "text-gpt5-mini");
     logPipelineDiagnostic("pdf_text_extraction_started", {
       fileSize: file.size,
       durationMs: Date.now() - startedAt,
     });
     extracted = await extractCalendarPdfText(file);
+    await options.onStageChange?.("evaluating_text_quality", "text-gpt5-mini");
     quality = evaluateCalendarTextQuality({
       text: extracted.text,
       pageCount: extracted.pageCount,
@@ -654,6 +684,7 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
       model: textModel,
       timeoutMs,
       startedAt,
+      onStageChange: options.onStageChange,
     });
 
     if (textResult.status === "success" || !shouldFallbackAfterTextResult(textResult)) {
@@ -691,6 +722,7 @@ export async function analyzeCalendarPdf(file: File): Promise<CalendarAnalyzerRe
     model: pdfModel,
     timeoutMs,
     startedAt,
+    onStageChange: options.onStageChange,
   });
   logPipelineDiagnostic(
     pdfResult.status === "success" ? "import_ready" : "import_confirmed_failed",

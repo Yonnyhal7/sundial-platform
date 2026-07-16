@@ -9,10 +9,13 @@ const mocks = vi.hoisted(() => ({
   analyzeCalendarPdf: vi.fn(),
   readCalendarAnalysisCache: vi.fn(),
   readCalendarAnalysisCacheEntry: vi.fn(),
+  readCalendarAnalysisStage: vi.fn(),
   writeCalendarAnalysisCache: vi.fn(),
   hasPendingCalendarAnalysis: vi.fn(),
   getCalendarAnalysisFailure: vi.fn(),
+  getCalendarAnalysisStage: vi.fn(),
   recordCalendarAnalysisFailure: vi.fn(),
+  setCalendarAnalysisStage: vi.fn(),
   validateCalendarPdfFile: vi.fn(),
 }));
 
@@ -38,10 +41,13 @@ vi.mock("@/lib/calendarWizard/aiCalendarAnalysisCache.server", () => ({
   AI_CALENDAR_TEXT_STRATEGY: "text-gpt5-mini",
   readCalendarAnalysisCache: mocks.readCalendarAnalysisCache,
   readCalendarAnalysisCacheEntry: mocks.readCalendarAnalysisCacheEntry,
+  readCalendarAnalysisStage: mocks.readCalendarAnalysisStage,
   writeCalendarAnalysisCache: mocks.writeCalendarAnalysisCache,
   hasPendingCalendarAnalysis: mocks.hasPendingCalendarAnalysis,
   getCalendarAnalysisFailure: mocks.getCalendarAnalysisFailure,
+  getCalendarAnalysisStage: mocks.getCalendarAnalysisStage,
   recordCalendarAnalysisFailure: mocks.recordCalendarAnalysisFailure,
+  setCalendarAnalysisStage: mocks.setCalendarAnalysisStage,
   dedupeCalendarAnalysis: (_key: unknown, analyze: () => Promise<unknown>) => analyze(),
 }));
 
@@ -84,8 +90,10 @@ describe("AI import API route", () => {
     mocks.canAccessAdminSection.mockResolvedValue(true);
     mocks.readCalendarAnalysisCache.mockResolvedValue(null);
     mocks.readCalendarAnalysisCacheEntry.mockResolvedValue(null);
+    mocks.readCalendarAnalysisStage.mockResolvedValue(null);
     mocks.hasPendingCalendarAnalysis.mockReturnValue(false);
     mocks.getCalendarAnalysisFailure.mockReturnValue(null);
+    mocks.getCalendarAnalysisStage.mockReturnValue(null);
     mocks.validateCalendarPdfFile.mockResolvedValue({ valid: true });
     mocks.analyzeCalendarPdf.mockResolvedValue({
       status: "success",
@@ -273,11 +281,17 @@ describe("AI import API route", () => {
     expect(body).toEqual({
       status: "ready",
       resultId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      stage: "ready",
     });
   });
 
   it("reports pending when an identical analysis is still running", async () => {
     mocks.hasPendingCalendarAnalysis.mockReturnValue(true);
+    mocks.getCalendarAnalysisStage.mockReturnValue({
+      stage: "analyzing_text",
+      strategy: "text-gpt5-mini",
+      updatedAt: Date.now(),
+    });
 
     const response = await GET_STATUS(
       new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
@@ -285,7 +299,32 @@ describe("AI import API route", () => {
     );
     const body = await response.json();
 
-    expect(body).toEqual({ status: "pending" });
+    expect(body).toEqual({
+      status: "pending",
+      stage: "analyzing_text",
+      strategy: "text-gpt5-mini",
+    });
+  });
+
+  it("reports a persisted pending stage when the in-memory request state is gone", async () => {
+    mocks.readCalendarAnalysisStage.mockResolvedValue({
+      status: "pending",
+      stage: "analyzing_pdf",
+      strategy: "pdf-gpt5",
+      updatedAt: Date.now(),
+    });
+
+    const response = await GET_STATUS(
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+      { params: Promise.resolve({ school: "test" }) }
+    );
+    const body = await response.json();
+
+    expect(body).toEqual({
+      status: "pending",
+      stage: "analyzing_pdf",
+      strategy: "pdf-gpt5",
+    });
   });
 
   it("reports confirmed failures from the server status path", async () => {
@@ -303,6 +342,7 @@ describe("AI import API route", () => {
     expect(body).toEqual({
       status: "failed",
       reasonCode: "schema_validation_failed",
+      stage: "confirmed_failed",
     });
   });
 

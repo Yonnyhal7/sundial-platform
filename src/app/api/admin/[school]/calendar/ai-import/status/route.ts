@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   getCalendarAnalysisFailure,
+  getCalendarAnalysisStage,
   hasPendingCalendarAnalysis,
+  readCalendarAnalysisStage,
   readCalendarAnalysisCacheEntry,
 } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
 import {
@@ -62,6 +64,7 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({
       status: "ready",
       resultId: readyKey.pdfHash,
+      stage: "ready",
     });
   }
 
@@ -79,16 +82,55 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({
       status: "failed",
       reasonCode: failure.reasonCode,
+      stage: "confirmed_failed",
     });
   }
 
-  if (access.cacheKeys.some((cacheKey) => hasPendingCalendarAnalysis(cacheKey))) {
+  const memoryStages = access.cacheKeys.flatMap((cacheKey) => {
+    const stage = getCalendarAnalysisStage(cacheKey);
+    return stage ? [stage] : [];
+  });
+  const persistedStages = (
+    await Promise.all(
+      access.cacheKeys.map((cacheKey) =>
+        readCalendarAnalysisStage(cacheKey, {
+          minUpdatedAt: access.startedAt || undefined,
+        })
+      )
+    )
+  ).filter((stage): stage is NonNullable<typeof stage> => Boolean(stage));
+  const activeStages = [...memoryStages, ...persistedStages];
+  const activeStage = activeStages.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+
+  if (activeStage?.status === "failed") {
+    logAiImportStatusDiagnostic({
+      event: "confirmed_analysis_failed",
+      school,
+      durationMs: Date.now() - startedAt,
+      reasonCode: activeStage.reasonCode,
+    });
+    return NextResponse.json({
+      status: "failed",
+      reasonCode: activeStage.reasonCode,
+      stage: activeStage.stage,
+      strategy: activeStage.strategy,
+    });
+  }
+
+  if (
+    access.cacheKeys.some((cacheKey) => hasPendingCalendarAnalysis(cacheKey)) ||
+    activeStage?.status === "pending"
+  ) {
     logAiImportStatusDiagnostic({
       event: "analysis_still_pending",
       school,
       durationMs: Date.now() - startedAt,
     });
-    return NextResponse.json({ status: "pending" });
+    return NextResponse.json({
+      status: "pending",
+      stage: activeStage?.stage || "checking_cache",
+      strategy: activeStage?.strategy,
+    });
   }
 
   if (access.startedAt && Date.now() - access.startedAt > 15 * 60 * 1000) {
@@ -101,6 +143,7 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({
       status: "expired",
       reasonCode: "expired",
+      stage: "confirmed_failed",
     });
   }
 
@@ -110,5 +153,5 @@ export async function GET(request: Request, context: RouteContext) {
     durationMs: Date.now() - startedAt,
     reasonCode: "cache_not_ready",
   });
-  return NextResponse.json({ status: "pending" });
+  return NextResponse.json({ status: "pending", stage: "checking_cache" });
 }

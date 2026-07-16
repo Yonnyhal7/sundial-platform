@@ -1,46 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
-  AI_IMPORT_WAITING_THRESHOLD,
-  getAiImportLongRunningMessage,
-  getAiImportProgressAfterError,
-  getAiImportProgressAfterRetry,
-  getAiImportProgressAfterSuccess,
-  getAiImportStageForProgress,
-  getEstimatedAiImportProgress,
+  getAiImportStageDetails,
+  isAiImportServerStage,
 } from "./aiImportProgress";
 
-describe("AI import staged progress", () => {
-  it("never exceeds the waiting threshold before success", () => {
-    expect(getEstimatedAiImportProgress(300, 0)).toBe(AI_IMPORT_WAITING_THRESHOLD);
+describe("AI import progress stages", () => {
+  it("uses indeterminate progress for long OpenAI analysis stages", () => {
+    expect(getAiImportStageDetails("analyzing_text")).toMatchObject({
+      progress: null,
+      indeterminate: true,
+    });
+    expect(getAiImportStageDetails("analyzing_pdf")).toMatchObject({
+      progress: null,
+      indeterminate: true,
+    });
   });
 
-  it("never moves backward", () => {
-    expect(getEstimatedAiImportProgress(1, 70)).toBe(70);
+  it("reports concrete progress only for bounded server stages", () => {
+    expect(getAiImportStageDetails("checking_cache").progress).toBe(20);
+    expect(getAiImportStageDetails("falling_back_to_pdf").progress).toBe(68);
+    expect(getAiImportStageDetails("saving_result").progress).toBe(96);
+    expect(getAiImportStageDetails("ready").progress).toBe(100);
   });
 
-  it("success reaches 100", () => {
-    expect(getAiImportProgressAfterSuccess()).toBe(100);
-  });
-
-  it("error stops at the current progress", () => {
-    expect(getAiImportProgressAfterError(68)).toBe(68);
-  });
-
-  it("retry resets progress state", () => {
-    expect(getAiImportProgressAfterRetry()).toBe(0);
-  });
-
-  it("returns the correct stage for progress ranges", () => {
-    expect(getAiImportStageForProgress(8).label).toBe("Uploading PDF");
-    expect(getAiImportStageForProgress(34).label).toBe("Detecting school dates");
-    expect(getAiImportStageForProgress(68).label).toBe("Finding holidays and special days");
-    expect(getAiImportStageForProgress(93).label).toBe("Running final review checks");
-  });
-
-  it("changes long-running messages after 30, 60, and 120 seconds", () => {
-    expect(getAiImportLongRunningMessage(10)).toContain("keep waiting");
-    expect(getAiImportLongRunningMessage(30)).toContain("Detailed calendars");
-    expect(getAiImportLongRunningMessage(60)).toContain("longer than usual");
-    expect(getAiImportLongRunningMessage(120)).toContain("Complex PDF layouts");
+  it("validates server stage strings", () => {
+    expect(isAiImportServerStage("upload_received")).toBe(true);
+    expect(isAiImportServerStage("waiting_at_fake_94_percent")).toBe(false);
   });
 });

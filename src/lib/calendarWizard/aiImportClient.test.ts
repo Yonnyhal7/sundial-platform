@@ -118,6 +118,35 @@ describe("AI import client response handling", () => {
     ).resolves.toEqual({ status: "pending" });
   });
 
+  it("parses server-reported import stages from status polling", async () => {
+    await expect(
+      parseAiImportStatusResponse(
+        response({
+          body: JSON.stringify({
+            status: "pending",
+            stage: "analyzing_pdf",
+            strategy: "pdf-gpt5",
+          }),
+        })
+      )
+    ).resolves.toEqual({
+      status: "pending",
+      stage: "analyzing_pdf",
+      strategy: "pdf-gpt5",
+    });
+
+    await expect(
+      parseAiImportStatusResponse(
+        response({
+          body: JSON.stringify({
+            status: "pending",
+            stage: "not_a_real_stage",
+          }),
+        })
+      )
+    ).resolves.toEqual({ status: "pending" });
+  });
+
   it("allows retry after failure to reset progress", () => {
     expect(getAiImportProgressAfterRetry()).toBe(0);
   });

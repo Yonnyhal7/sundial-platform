@@ -5,11 +5,11 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScheduleColorField } from "@/components/admin/ScheduleColorField";
 import {
+  getAiImportStageDetails,
   getAiImportLongRunningMessage,
   getAiImportProgressAfterRetry,
   getAiImportProgressAfterSuccess,
-  getAiImportStageForProgress,
-  getEstimatedAiImportProgress,
+  type AiImportServerStage,
 } from "@/lib/calendarWizard/aiImportProgress";
 import {
   calculatePdfSha256,
@@ -1815,6 +1815,8 @@ function AiCalendarImportCard({
   const [actionResult, setActionResult] =
     useState<AnalyzeCalendarPdfResult | null>(null);
   const [progress, setProgress] = useState(0);
+  const [serverStage, setServerStage] =
+    useState<AiImportServerStage>("upload_received");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [pollingFileName, setPollingFileName] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
@@ -1846,13 +1848,7 @@ function AiCalendarImportCard({
     if (!isWorking) return undefined;
 
     const interval = window.setInterval(() => {
-      setElapsedSeconds((previousElapsed) => {
-        const nextElapsed = previousElapsed + 1;
-        setProgress((previousProgress) =>
-          getEstimatedAiImportProgress(nextElapsed, previousProgress)
-        );
-        return nextElapsed;
-      });
+      setElapsedSeconds((previousElapsed) => previousElapsed + 1);
     }, 1000);
 
     return () => window.clearInterval(interval);
@@ -1879,6 +1875,7 @@ function AiCalendarImportCard({
     setActionResult(null);
     setMessage("");
     setProgress(getAiImportProgressAfterRetry());
+    setServerStage("upload_received");
     setElapsedSeconds(0);
     setPollingFileName(null);
 
@@ -1944,6 +1941,7 @@ function AiCalendarImportCard({
     }
 
     setProgress(getAiImportProgressAfterSuccess());
+    setServerStage("ready");
     setStatus("complete");
     setMessage(
       result.outcome === "repaired"
@@ -2052,7 +2050,8 @@ function AiCalendarImportCard({
     setPollingFileName(pending.fileName || null);
     setStatus("analyzing");
     setActionResult(null);
-    setProgress((previousProgress) => Math.max(previousProgress, 94));
+    setServerStage("checking_cache");
+    setProgress(20);
     setMessage(
       "Sundial is still finishing the calendar analysis. You can keep this page open or return shortly."
     );
@@ -2067,6 +2066,13 @@ function AiCalendarImportCard({
           `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/status?${query.toString()}`
         );
         const statusResult = await parseAiImportStatusResponse(response);
+        if (statusResult.stage) {
+          setServerStage(statusResult.stage);
+          const stageDetails = getAiImportStageDetails(statusResult.stage);
+          if (stageDetails.progress !== null) {
+            setProgress(stageDetails.progress);
+          }
+        }
 
         if (statusResult.status === "ready") {
           console.info("AI calendar import diagnostic", {
@@ -2167,7 +2173,8 @@ function AiCalendarImportCard({
     setStatus("uploading");
     setMessage("Reading your calendar...");
     setActionResult(null);
-    setProgress(5);
+    setServerStage("upload_received");
+    setProgress(getAiImportStageDetails("upload_received").progress || 10);
     setElapsedSeconds(0);
 
     const formData = new FormData();
@@ -2175,6 +2182,8 @@ function AiCalendarImportCard({
     if (analyzeAgain) formData.append("analyzeAgain", "true");
 
     try {
+      setServerStage("hashing_pdf");
+      setProgress(getAiImportStageDetails("hashing_pdf").progress || 15);
       const pdfHash = await calculatePdfSha256(selectedFile);
       pendingImport = {
         school: schoolSlug,
@@ -2514,6 +2523,7 @@ function AiCalendarImportCard({
           filename={selectedFile?.name || pollingFileName || undefined}
           elapsedSeconds={elapsedSeconds}
           progress={progress}
+          stage={serverStage}
           error={failureMessage}
           retryable={failureRetryable}
           onRetry={() => analyzeSelectedFile(false)}
@@ -2532,6 +2542,7 @@ function AiCalendarImportCard({
           filename={selectedFile?.name || pollingFileName || undefined}
           elapsedSeconds={elapsedSeconds}
           progress={progress}
+          stage={serverStage}
         />
       )}
 
@@ -3159,6 +3170,7 @@ function AiCalendarImportProgress({
   filename,
   elapsedSeconds,
   progress,
+  stage,
   error,
   retryable = false,
   onRetry,
@@ -3168,18 +3180,25 @@ function AiCalendarImportProgress({
   filename?: string;
   elapsedSeconds: number;
   progress: number;
+  stage: AiImportServerStage;
   error?: string;
   retryable?: boolean;
   onRetry?: () => void;
   onContinueManually?: () => void;
 }) {
-  const displayProgress = Math.max(0, Math.min(100, progress));
-  const stage = getAiImportStageForProgress(displayProgress);
-  const stageLabel = state === "complete" ? "Calendar draft ready" : stage.label;
+  const stageDetails = getAiImportStageDetails(
+    state === "complete" ? "ready" : state === "failed" ? "confirmed_failed" : stage
+  );
+  const displayProgress = Math.max(
+    0,
+    Math.min(100, stageDetails.progress ?? progress)
+  );
+  const isIndeterminate = state === "working" && stageDetails.indeterminate;
+  const stageLabel = state === "complete" ? "Calendar draft ready" : stageDetails.label;
   const description =
     state === "complete"
       ? "Sundial found calendar details and is opening the review screen."
-      : stage.description;
+      : stageDetails.description;
   const failedTitle =
     error?.includes("still finishing")
       ? "Calendar analysis still finishing"
@@ -3208,9 +3227,11 @@ function AiCalendarImportProgress({
             </p>
           )}
         </div>
-        <p className="text-sm font-bold text-[#9A7209] dark:text-[#F6C64A]">
-          {displayProgress}%
-        </p>
+        {!isIndeterminate && (
+          <p className="text-sm font-bold text-[#9A7209] dark:text-[#F6C64A]">
+            {displayProgress}%
+          </p>
+        )}
       </div>
 
       <div
@@ -3218,27 +3239,29 @@ function AiCalendarImportProgress({
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={displayProgress}
+        aria-valuenow={isIndeterminate ? undefined : displayProgress}
         aria-label="AI calendar import progress"
       >
         <div
           className={[
             "h-full rounded-full bg-[#D4A017]",
             "transition-[width] duration-700 ease-out motion-reduce:transition-none",
-            state === "working" && displayProgress >= 92
-              ? "animate-pulse motion-reduce:animate-none"
+            isIndeterminate
+              ? "w-full animate-pulse motion-reduce:animate-none"
               : "",
           ].join(" ")}
-          style={{ width: `${displayProgress}%` }}
+          style={isIndeterminate ? undefined : { width: `${displayProgress}%` }}
         />
       </div>
 
       <div className="mt-4 grid gap-2">
         <p className="font-bold">{stageLabel}</p>
         <p className="leading-6 text-slate-600 dark:text-slate-300">{description}</p>
-        {state === "working" && displayProgress >= 15 && (
+        {state === "working" && (
           <p className="leading-6 text-slate-600 dark:text-slate-300">
-            Processing is still running. This step can take longer for scanned or image-heavy PDFs.
+            {isIndeterminate
+              ? "This step is running on the analysis service. The bar is animated while Sundial waits for the result."
+              : "Processing is still running. Sundial will update this stage as the server advances."}
           </p>
         )}
         <p className="font-semibold text-slate-500 dark:text-slate-400">
