@@ -60,6 +60,12 @@ function byte(value: unknown) {
 }
 
 function colorHex(args: unknown[]): string {
+  // Some pdfjs-dist versions pre-format the fill color as a CSS hex string
+  // (e.g. ["#ff0000"]) instead of separate [r, g, b] numeric channels.
+  const [first] = args;
+  if (typeof first === "string" && /^#[0-9a-fA-F]{6}$/.test(first)) {
+    return first.toLowerCase();
+  }
   const [r = 0, g = 0, b = 0] = args;
   return `#${[byte(r), byte(g), byte(b)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
@@ -86,12 +92,55 @@ function median(values: number[]) {
   return sorted[Math.floor(sorted.length / 2)] || 0;
 }
 
-function nearestMonth(text: PositionedText, texts: PositionedText[]) {
+/**
+ * Real calendar PDFs mix many rectangle "purposes" (day cells, header bars, week-spanning
+ * merged holiday bands, legend swatches). A single page-wide median width/height is easily
+ * pulled off the true day-cell size by those unrelated shapes. Instead, find the width that
+ * repeats most often (the day-cell grid is by far the most repeated shape on the page), then
+ * take the median height only among rects that already share that width.
+ */
+function typicalCellSize(rectangles: ColoredRect[]) {
+  const widthCounts = new Map<number, number>();
+  for (const rect of rectangles) {
+    if (rect.width <= 12) continue;
+    const bucket = Math.round(rect.width * 2) / 2;
+    widthCounts.set(bucket, (widthCounts.get(bucket) || 0) + 1);
+  }
+  let typicalWidth = 0;
+  let bestCount = 0;
+  for (const [width, count] of widthCounts) {
+    if (count > bestCount) {
+      typicalWidth = width;
+      bestCount = count;
+    }
+  }
+  if (!typicalWidth) return { typicalWidth: 0, typicalHeight: 0 };
+  const widthMatched = rectangles.filter(
+    (rect) => Math.abs(rect.width - typicalWidth) / typicalWidth < 0.15
+  );
+  return { typicalWidth, typicalHeight: median(widthMatched.map((rect) => rect.height)) };
+}
+
+/**
+ * Compact wallet-style calendars stack month blocks vertically, each block's header sitting at
+ * (or above) the first of its own rows, with a separate notes column to the side. A header can
+ * legitimately name two months ("SEPTEMBER - OCTOBER") when its rows roll over mid-month.
+ * Proximity search must therefore: (1) only ever consider a header that sits at or above the
+ * row being resolved (never a block below it), and (2) prefer the header column over any
+ * same-row notation text that happens to also mention a month name.
+ */
+function nearestMonthHeader(text: PositionedText, texts: PositionedText[], headerColumnMaxX: number) {
   const candidates = texts.flatMap((item) => {
-    const match = item.text.toLowerCase().match(new RegExp(`\\b(${MONTHS.join("|")})\\b(?:\\s+(20\\d{2}))?`));
-    if (!match || item.page !== text.page) return [];
-    const distance = Math.abs(item.x - text.x) + Math.abs(item.y - text.y) * 0.35;
-    return [{ month: MONTHS.indexOf(match[1]), year: match[2] ? Number(match[2]) : undefined, distance, item }];
+    if (item.page !== text.page || item.x >= headerColumnMaxX || item.y < text.y - 3) return [];
+    const matches = [...item.text.toLowerCase().matchAll(new RegExp(`\\b(${MONTHS.join("|")})\\b(?:\\s+(20\\d{2}))?`, "g"))];
+    if (!matches.length) return [];
+    const distance = (item.y - text.y) + Math.abs(item.x - text.x) * 0.05;
+    return [{
+      months: matches.map((match) => MONTHS.indexOf(match[1])),
+      year: matches[0][2] ? Number(matches[0][2]) : undefined,
+      distance,
+      item,
+    }];
   }).sort((a, b) => a.distance - b.distance);
   return candidates[0];
 }
@@ -106,33 +155,101 @@ function inferYear(month: number, explicitYear: number | undefined, allText: str
 
 export function matchVectorCalendarStructure(texts: PositionedText[], rectangles: ColoredRect[]): Omit<PdfVectorCalendarResult, "durationMs"> {
   const nonWhite = rectangles.filter((rect) => !isWhite(rect.color) && rect.width > 3 && rect.height > 3);
-  const typicalWidth = median(rectangles.filter((r) => r.width > 12).map((r) => r.width));
-  const typicalHeight = median(rectangles.filter((r) => r.height > 12).map((r) => r.height));
+  const { typicalWidth, typicalHeight } = typicalCellSize(rectangles);
   const cellRects = rectangles.filter((rect) =>
     typicalWidth > 0 && typicalHeight > 0 &&
-    Math.abs(rect.width - typicalWidth) / typicalWidth < 0.3 &&
+    Math.abs(rect.width - typicalWidth) / typicalWidth < 0.15 &&
     Math.abs(rect.height - typicalHeight) / typicalHeight < 0.3
   );
-  const dateCells = cellRects.flatMap((rect) => {
+  const dayCandidates = cellRects.flatMap((rect) => {
     const dateText = texts.find((item) => item.page === rect.page && /^(?:[1-9]|[12]\d|3[01])$/.test(item.text.trim()) && contains(rect, item));
-    if (!dateText) return [];
-    const month = nearestMonth(dateText, texts);
-    const monthNumber = month?.month;
-    const year = monthNumber === undefined ? undefined : inferYear(monthNumber, month.year, texts.map((item) => item.text).join(" "));
-    if (monthNumber === undefined || !year) return [];
-    const day = Number(dateText.text.trim());
-    return [{ rect, dateText, date: `${year}-${String(monthNumber + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}` }];
+    return dateText ? [{ rect, dateText, day: Number(dateText.text.trim()) }] : [];
+  });
+  const allText = texts.map((item) => item.text).join(" ");
+  const headerColumnMaxX = dayCandidates.length
+    ? Math.min(...dayCandidates.map((cell) => cell.dateText.x))
+    : Infinity;
+
+  // Group into visual rows (same page + y) so a header naming two months ("SEPTEMBER -
+  // OCTOBER") can be split correctly: advance to its next month only where the day number
+  // actually rolls over within that row, rather than per-cell in isolation.
+  const rows = new Map<string, typeof dayCandidates>();
+  for (const cell of dayCandidates) {
+    const rowKey = `${cell.rect.page}:${Math.round(cell.dateText.y)}`;
+    rows.set(rowKey, [...(rows.get(rowKey) || []), cell]);
+  }
+
+  const dateCells = [...rows.values()].flatMap((row) => {
+    const sorted = [...row].sort((a, b) => a.dateText.x - b.dateText.x);
+    let monthIndex = 0;
+    let previousDay = -Infinity;
+    return sorted.flatMap((cell) => {
+      const header = nearestMonthHeader(cell.dateText, texts, headerColumnMaxX);
+      if (!header) return [];
+      if (cell.day < previousDay && monthIndex < header.months.length - 1) monthIndex += 1;
+      previousDay = cell.day;
+      const monthNumber = header.months[Math.min(monthIndex, header.months.length - 1)];
+      const year = inferYear(monthNumber, header.year, allText);
+      if (monthNumber === undefined || !year) return [];
+      return [{
+        rect: cell.rect,
+        dateText: cell.dateText,
+        date: `${year}-${String(monthNumber + 1).padStart(2, "0")}-${String(cell.day).padStart(2, "0")}`,
+      }];
+    });
   });
 
-  const legend: PdfVectorLegendEntry[] = nonWhite.flatMap((rect) => {
-    if (dateCells.some((cell) => cell.rect === rect)) return [];
-    const nearby = texts
-      .filter((item) => item.page === rect.page && SCHEDULE_LABEL.test(item.text) &&
-        item.x >= rect.x - rect.width && item.x <= rect.x + rect.width * 5 &&
-        Math.abs((item.y + item.height / 2) - (rect.y + rect.height / 2)) <= Math.max(rect.height, item.height) * 1.5)
-      .sort((a, b) => Math.abs(a.x - rect.x) - Math.abs(b.x - rect.x))[0];
-    return nearby ? [{ color: rect.color, scheduleName: nearby.text.trim(), confidence: 0.98, page: rect.page }] : [];
-  }).filter((entry, index, entries) => entries.findIndex((other) => colorDistance(other.color, entry.color) < 12) === index);
+  // Legend swatches in real calendar exports are usually small colored pills that the label
+  // text is drawn on top of (contained within), not a swatch beside separately-flowed text.
+  // Matching by containment (picking the smallest containing rect, so a legend section's
+  // outer border box never wins over the specific swatch inside it) avoids false matches
+  // against unrelated same-colored day cells and marginal notes elsewhere on the page.
+  const dateCellRectSet = new Set(dateCells.map((cell) => cell.rect));
+  const legendCandidates = nonWhite.filter((rect) => !dateCellRectSet.has(rect));
+  const scheduleLabelTexts = texts.filter((item) => SCHEDULE_LABEL.test(item.text));
+  const bestSwatchForLabel = new Map<PositionedText, { rect: ColoredRect; area: number }>();
+  for (const rect of legendCandidates) {
+    const area = rect.width * rect.height;
+    for (const label of scheduleLabelTexts) {
+      if (label.page !== rect.page || !contains(rect, label)) continue;
+      const current = bestSwatchForLabel.get(label);
+      if (!current || area < current.area) bestSwatchForLabel.set(label, { rect, area });
+    }
+  }
+  let legendEntries = [...bestSwatchForLabel.entries()].map(([label, { rect, area }]) => ({
+    color: rect.color,
+    scheduleName: label.text.trim(),
+    confidence: 0.98,
+    page: rect.page,
+    area,
+  }));
+  if (legendEntries.length === 0) {
+    // Fallback for layouts where a small swatch sits beside separately-flowed label text.
+    legendEntries = legendCandidates.flatMap((rect) => {
+      const nearby = texts
+        .filter((item) => item.page === rect.page && SCHEDULE_LABEL.test(item.text) &&
+          item.x >= rect.x - rect.width && item.x <= rect.x + rect.width * 5 &&
+          Math.abs((item.y + item.height / 2) - (rect.y + rect.height / 2)) <= Math.max(rect.height, item.height) * 1.5)
+        .sort((a, b) => Math.abs(a.x - rect.x) - Math.abs(b.x - rect.x))[0];
+      return nearby ? [{ color: rect.color, scheduleName: nearby.text.trim(), confidence: 0.9, page: rect.page, area: rect.width * rect.height }] : [];
+    });
+  }
+  // Same-colored decorative shading elsewhere on the page (e.g. striped note rows reusing the
+  // legend palette) can also contain a schedule-label-shaped word. When two candidates share a
+  // color, prefer the one with the tightest (smallest-area) containing rect: the true legend
+  // swatch is a small pill, while incidental matches tend to sit inside larger shapes.
+  const dedupedLegend: typeof legendEntries = [];
+  for (const entry of legendEntries) {
+    const existingIndex = dedupedLegend.findIndex((other) => colorDistance(other.color, entry.color) < 12);
+    if (existingIndex === -1) dedupedLegend.push(entry);
+    else if (entry.area < dedupedLegend[existingIndex].area) dedupedLegend[existingIndex] = entry;
+  }
+  const legend: PdfVectorLegendEntry[] = dedupedLegend.map((entry) => ({
+    color: entry.color,
+    scheduleName: entry.scheduleName,
+    confidence: entry.confidence,
+    page: entry.page,
+  }));
 
   const assignments: PdfVectorAssignment[] = dateCells.flatMap(({ rect, date }) => {
     if (isWhite(rect.color)) return [];
@@ -186,7 +303,28 @@ export async function extractPdfVectorCalendar(file: File): Promise<PdfVectorCal
       let fill = "#000000";
       let ctm: Matrix = [1, 0, 0, 1, 0, 0];
       const stack: Matrix[] = [];
-      let pending: Array<Omit<ColoredRect, "color" | "page">> = [];
+      let pendingMinMax: number[] | null = null;
+      const fillPaintOps = new Set([
+        OPS.fill,
+        OPS.eoFill,
+        OPS.fillStroke,
+        OPS.eoFillStroke,
+        OPS.closeFillStroke,
+        OPS.closeEOFillStroke,
+      ]);
+      const pushRect = (minMax: number[]) => {
+        const [minX, minY, maxX, maxY] = minMax;
+        const a = transformPoint(ctm, minX, minY);
+        const b = transformPoint(ctm, maxX, maxY);
+        rectangles.push({
+          x: Math.min(a.x, b.x),
+          y: Math.min(a.y, b.y),
+          width: Math.abs(b.x - a.x),
+          height: Math.abs(b.y - a.y),
+          color: fill,
+          page: pageNumber,
+        });
+      };
       for (let index = 0; index < operators.fnArray.length; index += 1) {
         const op = operators.fnArray[index];
         const args = operators.argsArray[index] as unknown[];
@@ -196,22 +334,27 @@ export async function extractPdfVectorCalendar(file: File): Promise<PdfVectorCal
         else if (op === OPS.setFillRGBColor) fill = colorHex(args);
         else if (op === OPS.setFillGray) fill = colorHex([args[0], args[0], args[0]]);
         else if (op === OPS.constructPath) {
-          const pathOps = args[0] as number[];
-          const coords = Array.from((args[1] as ArrayLike<number>[] | undefined)?.[0] || []);
-          let cursor = 0;
-          for (const pathOp of pathOps || []) {
-            if (pathOp === OPS.rectangle) {
-              const [x, y, width, height] = coords.slice(cursor, cursor + 4);
-              const a = transformPoint(ctm, x, y);
-              const b = transformPoint(ctm, x + width, y + height);
-              pending.push({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) });
-              cursor += 4;
-            } else cursor += pathOp === OPS.moveTo || pathOp === OPS.lineTo ? 2 : pathOp >= OPS.curveTo && pathOp <= OPS.curveTo3 ? 6 : 0;
+          // pdf.js folds a simple "build path, then immediately paint it" sequence into a single
+          // constructPath call: args[0] carries the actual paint opcode (fill/stroke/clip/endPath)
+          // and args[2] is the path's axis-aligned bounding box, already computed for us.
+          const paintOp = args[0] as number;
+          const minMax = args[2] as number[] | undefined;
+          if (!minMax || minMax.length !== 4) {
+            pendingMinMax = null;
+          } else if (fillPaintOps.has(paintOp)) {
+            pushRect(minMax);
+            pendingMinMax = null;
+          } else {
+            // Clip-only or stroke-only paths: keep the bounding box in case a following
+            // standalone paint operator (older/unoptimized operator lists) references it.
+            pendingMinMax = minMax;
           }
-        } else if ([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke].includes(op)) {
-          rectangles.push(...pending.map((rect) => ({ ...rect, color: fill, page: pageNumber })));
-          pending = [];
-        } else if (op === OPS.endPath || op === OPS.stroke) pending = [];
+        } else if (fillPaintOps.has(op) && pendingMinMax) {
+          pushRect(pendingMinMax);
+          pendingMinMax = null;
+        } else if (op === OPS.endPath || op === OPS.stroke || op === OPS.clip || op === OPS.eoClip) {
+          pendingMinMax = null;
+        }
       }
     }
     return { ...matchVectorCalendarStructure(texts, rectangles), durationMs: Date.now() - startedAt };
