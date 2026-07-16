@@ -15,7 +15,7 @@ export {
 import { parseOpenAiCalendarTimeoutMs } from "./aiImportTimeouts";
 
 export type CalendarAnalyzerResult =
-  | { status: "success"; importResult: AiCalendarImportResult }
+  | { status: "success"; importResult: AiCalendarImportResult; outcome?: "successful" | "repaired" | "reviewable" }
   | {
       status:
         | "configuration_error"
@@ -410,6 +410,8 @@ export function logOpenAiCalendarDiagnostic(
     inputTokens?: number;
     outputTokens?: number;
     totalTokens?: number;
+    repairedIssueCount?: number;
+    remainingIssueCount?: number;
   }
 ) {
   const payload = {
@@ -423,6 +425,8 @@ export function logOpenAiCalendarDiagnostic(
     inputTokens: context.inputTokens,
     outputTokens: context.outputTokens,
     totalTokens: context.totalTokens,
+    repairedIssueCount: context.repairedIssueCount,
+    remainingIssueCount: context.remainingIssueCount,
   };
 
   if (level === "warn") {

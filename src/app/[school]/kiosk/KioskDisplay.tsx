@@ -354,8 +354,8 @@ export default function KioskDisplay({
             <SchoolLogo
               schoolName={schoolName}
               logoUrl={schoolLogoUrl}
-              size="lg"
-              className="h-[7dvh] w-[7dvh] rounded-[1.2dvh] text-[1.5dvh]"
+              variant="kioskHeader"
+              className="rounded-[1.2dvh]"
             />
 
             <div className="flex min-w-0 items-end gap-[15vw]">

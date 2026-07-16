@@ -253,7 +253,11 @@ export default function AppHeader({
           aria-label="Go to home"
           className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         >
-          <SchoolLogo schoolName={schoolName} logoUrl={logoUrl} size="md" />
+          <SchoolLogo
+            schoolName={schoolName}
+            logoUrl={logoUrl}
+            variant="appHeader"
+          />
         </Link>
 
         <button
@@ -296,7 +300,12 @@ export default function AppHeader({
                 onClick={closeMenu}
                 className="mx-auto block w-fit"
               >
-                <SchoolLogo schoolName={schoolName} logoUrl={logoUrl} size="lg" />
+                <SchoolLogo
+                  schoolName={schoolName}
+                  logoUrl={logoUrl}
+                  variant="preview"
+                  className="h-16 w-16"
+                />
               </Link>
               <p className="mt-4 truncate text-center text-xl font-black">{schoolName}</p>
             </div>
@@ -427,7 +436,12 @@ export default function AppHeader({
                 onClick={closeNotifications}
                 className="mx-auto block w-fit"
               >
-                <SchoolLogo schoolName={schoolName} logoUrl={logoUrl} size="lg" />
+                <SchoolLogo
+                  schoolName={schoolName}
+                  logoUrl={logoUrl}
+                  variant="preview"
+                  className="h-16 w-16"
+                />
               </Link>
               <p className="mt-4 truncate text-center text-xl font-black">{schoolName}</p>
               <div className="mt-6 flex items-end justify-between gap-4 border-t border-[color-mix(in_srgb,var(--school-primary-text)_24%,transparent)] pt-5">

@@ -1830,7 +1830,7 @@ function AiCalendarImportCard({
     setMessage(`${file.name} selected.`);
   }
 
-  async function analyzeSelectedFile() {
+  async function analyzeSelectedFile(analyzeAgain = false) {
     if (!selectedFile || isWorking) return;
 
     const timeoutController = createAiImportClientTimeoutController();
@@ -1842,6 +1842,7 @@ function AiCalendarImportCard({
 
     const formData = new FormData();
     formData.append("calendarPdf", selectedFile);
+    if (analyzeAgain) formData.append("analyzeAgain", "true");
 
     try {
       setStatus("analyzing");
@@ -1889,7 +1890,13 @@ function AiCalendarImportCard({
 
       setProgress(getAiImportProgressAfterSuccess());
       setStatus("complete");
-      setMessage("Calendar draft ready");
+      setMessage(
+        result.outcome === "repaired"
+          ? "Sundial corrected a formatting issue and completed the analysis."
+          : result.outcome === "reviewable"
+            ? "Sundial read the calendar, but one item needs your review."
+            : "Calendar analysis complete."
+      );
       await new Promise((resolve) => window.setTimeout(resolve, 400));
 
       let matchedResolutions: DetectedScheduleResolution[];
@@ -1945,6 +1952,12 @@ function AiCalendarImportCard({
             resolutions: matchedResolutions,
             warnings: result.importResult.warnings,
             warningResolutions,
+            banner:
+              result.outcome === "repaired"
+                ? "Sundial corrected a formatting issue and completed the analysis."
+                : result.outcome === "reviewable"
+                  ? "Sundial read the calendar, but one item needs your review."
+                  : "Calendar analysis complete.",
           },
         }));
       } catch (error) {
@@ -2218,12 +2231,21 @@ function AiCalendarImportCard({
         </label>
         <button
           type="button"
-          onClick={analyzeSelectedFile}
+          onClick={() => analyzeSelectedFile(false)}
           disabled={!selectedFile || isWorking}
           className={sundialPrimaryButtonClass("px-5")}
         >
           {isWorking ? "Analyzing..." : "Upload Calendar PDF"}
         </button>
+        {draft.aiImport?.result && selectedFile && !isWorking && (
+          <button
+            type="button"
+            onClick={() => analyzeSelectedFile(true)}
+            className={secondaryButtonClass}
+          >
+            Analyze Again
+          </button>
+        )}
       </div>
 
       <p id="ai-import-help" className="mt-3 text-sm font-medium text-slate-600 dark:text-slate-300">
@@ -2241,7 +2263,7 @@ function AiCalendarImportCard({
           progress={progress}
           error={failureMessage}
           retryable={failureRetryable}
-          onRetry={analyzeSelectedFile}
+          onRetry={() => analyzeSelectedFile(false)}
           onContinueManually={() => {
             setStatus("idle");
             setActionResult(null);

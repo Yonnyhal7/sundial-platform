@@ -47,3 +47,24 @@ export function buildCalendarImportResponsesRequest(model: string, fileId: strin
     max_output_tokens: 12000,
   };
 }
+
+export function buildCalendarImportRepairRequest(
+  model: string,
+  extraction: unknown,
+  issues: Array<{ path: string; code: string; expected: string; received: string; required: boolean }>
+) {
+  return {
+    model,
+    store: false,
+    instructions: `${CALENDAR_EXTRACTION_INSTRUCTIONS}\nRepair only the listed invalid fields. Preserve every valid field unchanged. Do not invent required dates or schedules.`,
+    input: [{
+      role: "user" as const,
+      content: [{
+        type: "input_text" as const,
+        text: JSON.stringify({ extraction, validationIssues: issues }),
+      }],
+    }],
+    text: { format: { type: "json_schema" as const, name: "sundial_calendar_import_repair", schema: aiCalendarImportJsonSchema, strict: true } },
+    max_output_tokens: 12000,
+  };
+}

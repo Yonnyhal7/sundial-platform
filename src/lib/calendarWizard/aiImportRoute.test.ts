@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   getSchoolForSetup: vi.fn(),
   canAccessAdminSection: vi.fn(),
   analyzeCalendarPdf: vi.fn(),
+  readCalendarAnalysisCache: vi.fn(),
+  writeCalendarAnalysisCache: vi.fn(),
 }));
 
 vi.mock("@/lib/schools", () => ({
@@ -17,6 +19,13 @@ vi.mock("@/lib/auth/adminPermissions", () => ({
 
 vi.mock("@/lib/calendarWizard/openAiCalendarAnalyzer.server", () => ({
   analyzeCalendarPdf: mocks.analyzeCalendarPdf,
+}));
+
+vi.mock("@/lib/calendarWizard/aiCalendarAnalysisCache.server", () => ({
+  AI_CALENDAR_PROMPT_SCHEMA_VERSION: "calendar-v2",
+  readCalendarAnalysisCache: mocks.readCalendarAnalysisCache,
+  writeCalendarAnalysisCache: mocks.writeCalendarAnalysisCache,
+  dedupeCalendarAnalysis: (_key: unknown, analyze: () => Promise<unknown>) => analyze(),
 }));
 
 import { POST, maxDuration } from "@/app/api/admin/[school]/calendar/ai-import/route";
@@ -43,6 +52,7 @@ describe("AI import API route", () => {
     vi.clearAllMocks();
     mocks.getSchoolForSetup.mockResolvedValue({ id: "school-1", subdomain: "test" });
     mocks.canAccessAdminSection.mockResolvedValue(true);
+    mocks.readCalendarAnalysisCache.mockResolvedValue(null);
     mocks.analyzeCalendarPdf.mockResolvedValue({
       status: "success",
       importResult: createMockAiCalendarImportResult(),
@@ -61,6 +71,20 @@ describe("AI import API route", () => {
     expect(body).toMatchObject({ status: "success" });
     expect(response.headers.get("x-sundial-ai-import-request-id")).toBeTruthy();
     expect(mocks.analyzeCalendarPdf).toHaveBeenCalledOnce();
+  });
+
+  it("reuses a successful cache entry without another OpenAI call", async () => {
+    mocks.readCalendarAnalysisCache.mockResolvedValue(createMockAiCalendarImportResult());
+    const response = await post();
+    expect(response.status).toBe(200);
+    expect(mocks.analyzeCalendarPdf).not.toHaveBeenCalled();
+  });
+
+  it("keys cache reads by the resolved school id and schema version", async () => {
+    await post();
+    expect(mocks.readCalendarAnalysisCache).toHaveBeenCalledWith(
+      expect.objectContaining({ schoolId: "school-1", version: "calendar-v2" })
+    );
   });
 
   it("returns configuration errors distinctly for a missing OpenAI API key", async () => {

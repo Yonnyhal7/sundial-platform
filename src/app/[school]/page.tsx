@@ -57,7 +57,11 @@ export default async function SchoolPage({
         style={{ borderTop: `8px solid ${schoolData.primary_color}` }}
       >
         <div className="flex items-center gap-4">
-          <SchoolLogo schoolName={schoolData.name} logoUrl={schoolData.logo_url} size="lg" />
+          <SchoolLogo
+            schoolName={schoolData.name}
+            logoUrl={schoolData.logo_url}
+            variant="websiteHeader"
+          />
           <div>
             <p className="text-sm uppercase tracking-widest text-neutral-400">
               Sundial

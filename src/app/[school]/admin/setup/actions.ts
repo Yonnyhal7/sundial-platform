@@ -25,6 +25,7 @@ import {
   completeSetupCalendarStep,
   getScheduleSetupReadiness,
 } from "@/lib/setupCalendarCompletion";
+import { validateLogoFileForUpload } from "@/lib/logoFiles";
 import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
 
 type SetupInviteRole = "school_admin" | "editor";
@@ -50,25 +51,6 @@ function cleanMultilineText(value: FormDataEntryValue | null) {
 
 function nullable(value: string) {
   return value || null;
-}
-
-const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
-const ALLOWED_LOGO_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/svg+xml",
-]);
-
-function getLogoExtension(file: File) {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-
-  if (extension === "jpg" || extension === "jpeg") return "jpg";
-  if (extension === "png" || extension === "webp" || extension === "svg") {
-    return extension;
-  }
-
-  return file.type === "image/svg+xml" ? "svg" : "png";
 }
 
 function isValidEmail(email: string) {
@@ -337,28 +319,39 @@ export async function updateSetupLogoAction(school: string, logoUrl: string) {
 export async function uploadSetupLogoAction(formData: FormData) {
   const school = cleanText(formData.get("school"));
   const file = formData.get("logo");
+  const originalFile = formData.get("originalLogo");
 
   if (!(file instanceof File) || file.size === 0) {
     throw new Error("Choose a logo file to upload.");
   }
 
-  if (!ALLOWED_LOGO_TYPES.has(file.type)) {
-    throw new Error("Use a PNG, JPG, WEBP, or SVG logo.");
-  }
-
-  if (file.size > MAX_LOGO_SIZE_BYTES) {
-    throw new Error("Logo must be 2MB or smaller.");
-  }
-
   const { schoolData, serviceSupabase } = await requireSetupAccess(school);
-  const extension = getLogoExtension(file);
+  const logoInfo = await validateLogoFileForUpload(file);
+
+  if (originalFile instanceof File && originalFile.size > 0) {
+    const originalInfo = await validateLogoFileForUpload(originalFile);
+    const originalPath = `schools/${schoolData.id}/logos/originals/${crypto.randomUUID()}.${originalInfo.extension}`;
+    const { error: originalUploadError } = await serviceSupabase.storage
+      .from("school-logos")
+      .upload(originalPath, originalFile, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: originalInfo.mimeType,
+      });
+
+    if (originalUploadError) {
+      throw new Error(originalUploadError.message);
+    }
+  }
+
+  const extension = logoInfo.extension;
   const filePath = `schools/${schoolData.id}/logos/${crypto.randomUUID()}.${extension}`;
   const { error: uploadError } = await serviceSupabase.storage
     .from("school-logos")
     .upload(filePath, file, {
       cacheControl: "3600",
       upsert: false,
-      contentType: file.type,
+      contentType: logoInfo.mimeType,
     });
 
   if (uploadError) {

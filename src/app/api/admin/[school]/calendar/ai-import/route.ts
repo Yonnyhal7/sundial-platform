@@ -3,7 +3,8 @@ import { canAccessAdminSection } from "@/lib/auth/adminPermissions";
 import type { AnalyzeCalendarPdfResult } from "@/lib/calendarWizard/aiImportTypes";
 import { validateCalendarPdfFile } from "@/lib/calendarWizard/aiPdfValidation";
 import { analyzeCalendarPdf } from "@/lib/calendarWizard/openAiCalendarAnalyzer.server";
-import { logOpenAiCalendarEnvironmentDiagnostic } from "@/lib/calendarWizard/openAiCalendarAnalyzerUtils";
+import { DEFAULT_OPENAI_CALENDAR_MODEL, getOpenAiCalendarConfiguration, logOpenAiCalendarEnvironmentDiagnostic } from "@/lib/calendarWizard/openAiCalendarAnalyzerUtils";
+import { AI_CALENDAR_PROMPT_SCHEMA_VERSION, dedupeCalendarAnalysis, readCalendarAnalysisCache, writeCalendarAnalysisCache } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
 import { getSchoolForSetup } from "@/lib/schools";
 
 export const runtime = "nodejs";
@@ -197,6 +198,17 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    const pdfHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await upload.arrayBuffer())))
+      .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const configured = getOpenAiCalendarConfiguration();
+    const model = configured.ok && configured.mode === "openai" ? configured.model : DEFAULT_OPENAI_CALENDAR_MODEL;
+    const cacheKey = { schoolId: schoolData.id, pdfHash, model, version: AI_CALENDAR_PROMPT_SCHEMA_VERSION };
+    const analyzeAgain = formData.get("analyzeAgain") === "true";
+    if (!analyzeAgain) {
+      const cached = await readCalendarAnalysisCache(cacheKey);
+      if (cached) return respond({ status: "success", importResult: cached, outcome: "successful" });
+    }
+
     logAiImportRouteDiagnostic({
       event: "analysis_started",
       requestId,
@@ -205,7 +217,8 @@ export async function POST(request: Request, context: RouteContext) {
       fileSize: upload.size,
       fileType: upload.type || "unknown",
     });
-    const result = await analyzeCalendarPdf(upload);
+    const result = await dedupeCalendarAnalysis(cacheKey, () => analyzeCalendarPdf(upload));
+    if (result.status === "success") await writeCalendarAnalysisCache(cacheKey, result.importResult);
     logAiImportRouteDiagnostic({
       level: result.status === "success" ? "info" : "warn",
       event: "analysis_finished",

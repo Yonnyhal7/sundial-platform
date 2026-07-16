@@ -178,6 +178,7 @@ export type AiImportValidationErrorDetail = {
   code: AiImportValidationErrorCode;
   expected: string;
   received: string;
+  required: boolean;
   message: string;
 };
 
@@ -185,6 +186,7 @@ export type AnalyzeCalendarPdfResult =
   | {
       status: "success";
       importResult: AiCalendarImportResult;
+      outcome?: "successful" | "repaired" | "reviewable";
     }
   | {
       status:
@@ -202,11 +204,12 @@ export type AnalyzeCalendarPdfResult =
 export function summarizeAiImportValidationErrors(
   validationErrors: AiImportValidationErrorDetail[]
 ) {
-  return validationErrors.map(({ path, code, expected, received }) => ({
+  return validationErrors.map(({ path, code, expected, received, required }) => ({
     path,
     code,
     expected,
     received,
+    required,
   }));
 }
 
@@ -257,15 +260,10 @@ function isConfidence(value: unknown): value is AiImportConfidence {
 
 function describeReceivedValue(value: unknown) {
   if (value === null) return "null";
-  if (Array.isArray(value)) return `array(length=${value.length})`;
+  if (Array.isArray(value)) return "array";
   const type = typeof value;
-  if (type === "string") {
-    const stringValue = value as string;
-    const valueLabel =
-      stringValue.length > 32 ? `${stringValue.slice(0, 32)}...` : stringValue;
-    return stringValue.trim() ? `string(${JSON.stringify(valueLabel)})` : "empty string";
-  }
-  if (type === "number" || type === "boolean") return `${type}(${String(value)})`;
+  if (type === "string") return (value as string).trim() ? "string" : "empty string";
+  if (type === "number" || type === "boolean") return type;
   if (type === "object") return "object";
   return type;
 }
@@ -273,11 +271,14 @@ function describeReceivedValue(value: unknown) {
 function pushValidationError(
   errors: string[],
   validationErrors: AiImportValidationErrorDetail[],
-  detail: Omit<AiImportValidationErrorDetail, "message"> & { message?: string }
+  detail: Omit<AiImportValidationErrorDetail, "message" | "required"> & {
+    message?: string;
+    required?: boolean;
+  }
 ) {
   const message = detail.message || `${detail.path} must be ${detail.expected}.`;
   errors.push(message);
-  validationErrors.push({ ...detail, message });
+  validationErrors.push({ ...detail, required: detail.required ?? true, message });
 }
 
 function assertDate(
@@ -345,6 +346,7 @@ export function validateAiCalendarImportResult(value: unknown): AiImportValidati
           code: "invalid_type",
           expected: "object",
           received: describeReceivedValue(value),
+          required: true,
           message: "Import result must be an object.",
         },
       ],
@@ -382,6 +384,7 @@ export function validateAiCalendarImportResult(value: unknown): AiImportValidati
       code: "invalid_type",
       expected: "non-negative integer or null",
       received: describeReceivedValue(value.expectedInstructionalDayCount),
+      required: false,
       message: "expectedInstructionalDayCount must be a positive integer.",
     });
   }

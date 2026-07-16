@@ -472,7 +472,7 @@ export default function AdminSidebar({
               <SchoolLogo
                 schoolName={schoolName}
                 logoUrl={logoUrl}
-                size="lg"
+                variant="adminSidebar"
                 className="h-12 w-12"
               />
             )}
@@ -515,7 +515,7 @@ export default function AdminSidebar({
               <SchoolLogo
                 schoolName={schoolName}
                 logoUrl={logoUrl}
-                size="lg"
+                variant="adminSidebar"
                 className="h-11 w-11 shrink-0"
               />
 

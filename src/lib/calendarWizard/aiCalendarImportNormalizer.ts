@@ -110,6 +110,71 @@ function asArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function enumValue<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim().toLowerCase();
+  return allowed.find((item) => item.toLowerCase() === normalized) || fallback;
+}
+
+/** Coerces only known, safe representation differences. It never supplies required dates or schedules. */
+function normalizeRawContract(value: unknown): RawAiCalendarExtraction {
+  const raw = asRecord(value);
+  const pattern = asRecord(raw.normalPattern);
+  const normalizeEvidence = (value: unknown) => {
+    if (value == null) return null;
+    const item = asRecord(value);
+    return {
+      sourceText: typeof item.sourceText === "string" ? item.sourceText : null,
+      page: normalizeInteger(item.page),
+      explanation: typeof item.explanation === "string" ? item.explanation : null,
+    };
+  };
+  const records = (value: unknown) => (Array.isArray(value) ? value.map(asRecord) : []);
+
+  return {
+    documentTitle: typeof raw.documentTitle === "string" ? raw.documentTitle : null,
+    detectedSchoolName: typeof raw.detectedSchoolName === "string" ? raw.detectedSchoolName : null,
+    schoolYearLabel: typeof raw.schoolYearLabel === "string" ? raw.schoolYearLabel : null,
+    firstInstructionalDate: typeof raw.firstInstructionalDate === "string" ? raw.firstInstructionalDate : "",
+    lastInstructionalDate: typeof raw.lastInstructionalDate === "string" ? raw.lastInstructionalDate : "",
+    operatingWeekdays: normalizeWeekdays(raw.operatingWeekdays),
+    expectedInstructionalDayCount: normalizeInteger(raw.expectedInstructionalDayCount),
+    schoolYearConfidence: normalizeConfidence(raw.schoolYearConfidence),
+    detectedSchedules: records(raw.detectedSchedules).map((item) => ({
+      tempId: typeof item.tempId === "string" ? item.tempId : "",
+      name: typeof item.name === "string" ? item.name : "",
+      category: enumValue(item.category, ["regular", "rotation", "special", "finals", "minimum", "testing", "unknown"] as const, "unknown"),
+      confidence: normalizeConfidence(item.confidence),
+      evidence: normalizeEvidence(item.evidence),
+    })),
+    normalPattern: {
+      type: enumValue(pattern.type, ["same", "repeating", "weekday"] as const, "same"),
+      scheduleTempIds: Array.isArray(pattern.scheduleTempIds) ? pattern.scheduleTempIds.filter((item): item is string => typeof item === "string").map((item) => item.trim()) : [],
+      weekdayMappings: [],
+      confidence: normalizeConfidence(pattern.confidence),
+      evidence: normalizeEvidence(pattern.evidence),
+    },
+    noSchoolRanges: records(raw.noSchoolRanges).map((item) => ({
+      id: typeof item.id === "string" ? item.id : "", startDate: typeof item.startDate === "string" ? item.startDate : "", endDate: typeof item.endDate === "string" ? item.endDate : null, label: typeof item.label === "string" ? item.label : "", type: typeof item.type === "string" ? item.type : null, confidence: normalizeConfidence(item.confidence), evidence: normalizeEvidence(item.evidence),
+    })),
+    specialSchoolDays: records(raw.specialSchoolDays).map((item) => ({
+      id: typeof item.id === "string" ? item.id : "", startDate: typeof item.startDate === "string" ? item.startDate : "", endDate: typeof item.endDate === "string" ? item.endDate : null, label: typeof item.label === "string" ? item.label : "", type: typeof item.type === "string" ? item.type : null, scheduleTempId: typeof item.scheduleTempId === "string" ? item.scheduleTempId.trim() : null, isInstructional: item.isInstructional === true, confidence: normalizeConfidence(item.confidence), evidence: normalizeEvidence(item.evidence),
+    })),
+    informationalDates: records(raw.informationalDates).map((item) => ({
+      id: typeof item.id === "string" ? item.id : "", date: typeof item.date === "string" ? item.date : "", label: typeof item.label === "string" ? item.label : "", confidence: normalizeConfidence(item.confidence), evidence: normalizeEvidence(item.evidence),
+    })),
+    legendInterpretation: typeof raw.legendInterpretation === "string" ? raw.legendInterpretation : null,
+    extractionNotes: typeof raw.extractionNotes === "string" ? raw.extractionNotes : null,
+    warnings: records(raw.warnings).map((item) => ({ code: typeof item.code === "string" ? item.code.trim() : "ai_import_review", message: typeof item.message === "string" ? item.message.trim() : "Review this imported item.", severity: enumValue(item.severity, ["info", "review", "blocking"] as const, "review") })),
+  };
+}
+
 function normalizeConfidence(value: unknown): AiImportConfidence {
   return value === "high" || value === "review" || value === "uncertain"
     ? value
@@ -253,7 +318,7 @@ function addDateWarnings(importResult: AiCalendarImportResult, warnings: AiImpor
     ) {
       warnings.push({
         code: "special_day_outside_school_year",
-        severity: "review",
+        severity: "blocking",
         message: `${specialDay.label} falls outside the detected school year.`,
       });
     }
@@ -296,9 +361,10 @@ function addInstructionalDayCountWarning(importResult: AiCalendarImportResult, w
 }
 
 export function normalizeAiCalendarExtraction(
-  raw: RawAiCalendarExtraction,
+  input: RawAiCalendarExtraction,
   options: NormalizeAiCalendarImportOptions
 ): NormalizeAiCalendarImportResult {
+  const raw = normalizeRawContract(input);
   const rawDetectedSchedules = asArray(raw.detectedSchedules);
   const rawNormalPattern = raw.normalPattern || {
     type: "same" as const,
@@ -372,6 +438,27 @@ export function normalizeAiCalendarExtraction(
     warnings
   ).sort((a, b) => compareDateStrings(a.date, b.date));
 
+  const impossibleRange = [...noSchoolRanges, ...specialDays].find(
+    (range) =>
+      isDateString(range.startDate) &&
+      isDateString(range.endDate) &&
+      compareDateStrings(range.startDate, range.endDate) > 0
+  );
+  if (impossibleRange) {
+    return {
+      success: false,
+      errors: ["A calendar date range ends before it starts."],
+      validationErrors: [{
+        path: "dateRanges",
+        code: "invalid_date",
+        expected: "end date on or after start date",
+        received: "reversed date range",
+        required: true,
+        message: "A calendar date range ends before it starts.",
+      }],
+    };
+  }
+
   const detectedSchedules = rawDetectedSchedules.map((schedule, index) => {
     const detectedName = trimRequired(schedule.name, `Detected Schedule ${index + 1}`);
     return {
@@ -444,6 +531,20 @@ export function normalizeAiCalendarExtraction(
     informationalDates,
     warnings,
   };
+
+  if (
+    importResult.schoolYear.confidence !== "high" ||
+    importResult.pattern.confidence !== "high" ||
+    importResult.detectedSchedules.some((schedule) => schedule.confidence !== "high") ||
+    [...importResult.noSchoolRanges, ...importResult.specialDays, ...importResult.informationalDates]
+      .some((item) => item.confidence !== "high")
+  ) {
+    warnings.push({
+      code: "low_confidence_classification",
+      severity: "review",
+      message: "One imported calendar item has a low-confidence classification and needs review.",
+    });
+  }
 
   addDateWarnings(importResult, warnings);
 
