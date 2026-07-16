@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "benchmark:ai-calendar-built": "node scripts/run-built-ai-calendar-benchmark.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -98,6 +98,8 @@ export function updateAiImportPreviewDay(importResult: AiCalendarImportResult, e
       rotationBehavior: edit.rotationBehavior || "pause",
       confidence: "high",
       evidence: { explanation: "Administrator preview edit" },
+      assignmentSource: "administrator",
+      assignmentConfidence: 1,
     });
   } else {
     noSchoolRanges.push({
@@ -121,7 +123,21 @@ export function updateAiImportPreviewDay(importResult: AiCalendarImportResult, e
     });
   }
 
-  return { ...importResult, noSchoolRanges, specialDays, informationalDates };
+  const assignmentReview = importResult.assignmentReview
+    ? {
+        ...importResult.assignmentReview,
+        reviewedDates: importResult.assignmentReview.requiredDates.includes(edit.date)
+          ? [...new Set([...importResult.assignmentReview.reviewedDates, edit.date])]
+          : importResult.assignmentReview.reviewedDates,
+      }
+    : undefined;
+  return { ...importResult, noSchoolRanges, specialDays, informationalDates, assignmentReview };
+}
+
+export function getUnreviewedRequiredAssignmentDates(importResult: AiCalendarImportResult) {
+  if (!importResult.assignmentReview) return [];
+  const reviewed = new Set(importResult.assignmentReview.reviewedDates);
+  return importResult.assignmentReview.requiredDates.filter((date) => !reviewed.has(date));
 }
 
 export function hasBrownGoldVerificationScheduleSet(

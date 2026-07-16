@@ -62,12 +62,14 @@ export default function ThemeToggle({
   schoolDefaultAppearance,
   schoolSlug,
   variant = "auto",
+  fixedAdminColors = false,
 }: {
   scope: ThemeScope;
   className?: string;
   schoolDefaultAppearance?: AppearancePreference;
   schoolSlug?: string;
   variant?: "auto" | "icon" | "segmented";
+  fixedAdminColors?: boolean;
 }) {
   const [theme, setTheme] = useState<Theme | null>(null);
   const [appearance, setAppearance] = useState<AppearancePreference>("system");
@@ -178,9 +180,14 @@ export default function ThemeToggle({
                 chooseAppearance(appearanceOptions[nextIndex].value);
               }}
               className={[
-                "rounded-full px-3 py-2 transition focus:outline-none focus:ring-2 focus:ring-[var(--school-primary,#d4a017)] focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-black",
+                "rounded-full px-3 py-2 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-black",
+                fixedAdminColors
+                  ? "focus:ring-[#D4A017]"
+                  : "focus:ring-[var(--school-primary,#d4a017)]",
                 selected
-                  ? "bg-[var(--school-primary,#d4a017)] text-[var(--school-primary-text,#ffffff)] shadow-sm"
+                  ? fixedAdminColors
+                    ? "bg-[#D4A017] text-white shadow-sm"
+                    : "bg-[var(--school-primary,#d4a017)] text-[var(--school-primary-text,#ffffff)] shadow-sm"
                   : "text-slate-600 hover:bg-slate-100 dark:text-neutral-200 dark:hover:bg-[#2f2f2f]",
               ].join(" ")}
             >

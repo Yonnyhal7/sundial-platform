@@ -23,6 +23,7 @@ import {
 } from "@/lib/calendarWizard/openAiCalendarAnalyzerUtils";
 import { AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS } from "@/lib/calendarWizard/aiImportTimeouts";
 import { getSchoolForSetup } from "@/lib/schools";
+import { extractPdfVectorCalendar } from "@/lib/calendarWizard/pdfVectorCalendarExtraction.server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -539,3 +540,10 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
 }
+
+// Non-HTTP production smoke hook. The benchmark script loads the built route module and calls
+// this property, ensuring it exercises the exact Turbopack output deployed for this handler.
+// Next only exposes POST over HTTP; this property is not a route method.
+Object.assign(POST, {
+  __runBuiltVectorBenchmark: extractPdfVectorCalendar,
+});

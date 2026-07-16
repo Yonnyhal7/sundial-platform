@@ -1,9 +1,8 @@
 import "server-only";
 
-import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { MAX_CALENDAR_IMPORT_PAGES } from "./aiPdfValidation";
 import { ensurePdfjsNodeCanvasPolyfills } from "./pdfVectorCalendarExtraction.server";
+import { loadPdfjsWorkerDataUrlForRuntime } from "./pdfjsWorker.server";
 
 export const MAX_EXTRACTED_CALENDAR_TEXT_CHARS = 55_000;
 
@@ -14,8 +13,6 @@ export type ExtractedCalendarText = {
   extractedLineCount: number;
   truncated: boolean;
 };
-
-const require = createRequire(import.meta.url);
 
 const CALENDAR_RELEVANT_LINE_PATTERN =
   /\b(january|february|march|april|may|june|july|august|september|october|november|december|mon|tue|wed|thu|fri|sat|sun|holiday|no school|minimum|rally|finals?|semester|instruction|begins?|brown|gold|day|schedule|break|teacher|work|inservice|testing|early release|\d{1,2}[/-]\d{1,2}|\d{4})\b/i;
@@ -110,8 +107,7 @@ export async function extractCalendarPdfText(file: File): Promise<ExtractedCalen
   try {
     ensurePdfjsNodeCanvasPolyfills();
     const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const worker = await readFile(require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs"));
-    GlobalWorkerOptions.workerSrc = `data:text/javascript;base64,${worker.toString("base64")}`;
+    GlobalWorkerOptions.workerSrc = await loadPdfjsWorkerDataUrlForRuntime();
     document = await getDocument({ data, isEvalSupported: false, useSystemFonts: true }).promise;
     const totalPages = document.numPages;
 

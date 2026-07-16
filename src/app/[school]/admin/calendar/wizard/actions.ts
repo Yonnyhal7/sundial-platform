@@ -18,6 +18,12 @@ import {
   type CalendarWizardStoredData,
 } from "@/lib/calendarWizard/draftPersistence";
 import { generateSchoolYearCalendar } from "@/lib/calendarWizard/generateSchoolYearCalendar";
+import { computeAssignmentDigest } from "@/lib/calendarWizard/assignmentDigest";
+import { canonicalScheduleName } from "@/lib/calendarWizard/scheduleIdentity";
+import {
+  buildAiPreviewConfig,
+  getUnreviewedRequiredAssignmentDates,
+} from "@/lib/calendarWizard/aiImportPreview";
 import { mapGeneratedCalendarDaysToRows } from "@/lib/calendarWizard/persistence";
 import {
   classifyCalendarWarnings,
@@ -102,6 +108,7 @@ export type CreateAiCalendarFromDraftActionInput = {
   replaceExisting?: boolean;
   expectedDraftUpdatedAt?: string | null;
   launchContext?: CalendarWizardLaunchContext | null;
+  previewAssignmentDigest?: string;
 };
 
 export type CalendarWizardDraftActionResult =
@@ -778,6 +785,13 @@ export async function createAiCalendarFromDraftAction(
         "This draft does not include an AI calendar import. Continue manually or upload the PDF again."
       );
     }
+    const unreviewedRequiredDates = getUnreviewedRequiredAssignmentDates(importResult);
+    if (unreviewedRequiredDates.length > 0) {
+      return validationError(
+        "Verify the first 10 inferred rotation assignments before creating the calendar.",
+        { calendar: `${unreviewedRequiredDates.length} inferred assignments still need explicit review.` }
+      );
+    }
 
     const aiWarningClassification = classifyCalendarWarnings(
       importResult.warnings,
@@ -856,6 +870,84 @@ export async function createAiCalendarFromDraftAction(
     }
 
     const generated = generateSchoolYearCalendar(config);
+
+    const persistedScheduleNames = new Map<string, string>();
+    const existingScheduleNames = new Map<string, string>();
+    for (const schedule of existingSchedules || []) {
+      persistedScheduleNames.set(schedule.id, schedule.schedule_name);
+      existingScheduleNames.set(schedule.id, schedule.schedule_name);
+    }
+    for (const detected of importResult.detectedSchedules) {
+      const persistedId = plan.tempToScheduleId[detected.tempId];
+      if (persistedId) persistedScheduleNames.set(persistedId, detected.detectedName);
+    }
+    const creationPayloadAssignmentDigest = await computeAssignmentDigest(
+      generated.days,
+      (scheduleId) => persistedScheduleNames.get(scheduleId)
+    );
+    const previewScheduleNames = new Map(
+      importResult.detectedSchedules.map((schedule) => [schedule.tempId, schedule.detectedName])
+    );
+    for (const resolution of aiImport.resolutions || []) {
+      previewScheduleNames.set(
+        resolution.tempId,
+        resolution.matchedExistingScheduleId
+          ? existingScheduleNames.get(resolution.matchedExistingScheduleId) || resolution.detectedName
+          : resolution.reviewedName?.trim() || resolution.detectedName
+      );
+    }
+    const serverPreview = generateSchoolYearCalendar(buildAiPreviewConfig(importResult));
+    const serverPreviewAssignmentDigest = await computeAssignmentDigest(
+      serverPreview.days,
+      (scheduleId) => previewScheduleNames.get(scheduleId)
+    );
+    const clientPreviewAssignmentDigest = input.previewAssignmentDigest;
+    const matches = serverPreviewAssignmentDigest === creationPayloadAssignmentDigest &&
+      (!clientPreviewAssignmentDigest || clientPreviewAssignmentDigest === serverPreviewAssignmentDigest);
+    console.info("AI calendar assignment digest diagnostic", {
+      analysisAttemptId: aiImport.analysisAttemptId,
+      previewAssignmentDigest: serverPreviewAssignmentDigest,
+      clientPreviewAssignmentDigest,
+      creationPayloadAssignmentDigest,
+      matches,
+    });
+    if (!matches) {
+      return validationError(
+        "The calendar preview changed before creation. Review the latest assignments and try again.",
+        { calendar: "Preview and creation assignment digests do not match." }
+      );
+    }
+
+    const vectorByDate = new Map(
+      (importResult.deterministicAssignments || []).map((assignment) => [assignment.date, assignment])
+    );
+    const explicitByDate = new Map(
+      importResult.specialDays.flatMap((day) => day.startDate === day.endDate ? [[day.startDate, day] as const] : [])
+    );
+    for (const day of generated.days.filter((item) => item.isSchoolDay).slice(0, 10)) {
+      const vector = vectorByDate.get(day.date);
+      const explicit = explicitByDate.get(day.date);
+      const finalScheduleCanonicalKey = day.scheduleId
+        ? canonicalScheduleName(persistedScheduleNames.get(day.scheduleId) || day.scheduleId)
+        : null;
+      const vectorKey = vector ? canonicalScheduleName(vector.scheduleName) : null;
+      const wasOverwritten = Boolean(vectorKey && finalScheduleCanonicalKey !== vectorKey);
+      console.info("AI calendar assignment provenance", {
+        date: day.date,
+        finalScheduleCanonicalKey,
+        assignmentSource: explicit?.assignmentSource || "pattern",
+        analysisAttemptId: aiImport.analysisAttemptId,
+        existingCalendarRead: false,
+        patternSource: importResult.deterministicExtraction?.status === "succeeded"
+          ? "pdf_vector_fill"
+          : importResult.assignmentReview
+            ? "ai_inference_reviewed"
+            : "ai_inference",
+        vectorAssignmentPresent: Boolean(vector),
+        wasOverwritten,
+        overwriteSource: wasOverwritten ? explicit?.assignmentSource || "pattern" : null,
+      });
+    }
 
     if (generated.summary.unassignedInstructionalDayCount > 0) {
       return validationError(

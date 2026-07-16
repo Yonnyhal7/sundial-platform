@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
     proxyClientMaxBodySize: "25mb",
   },
   outputFileTracingIncludes: {
-    "/api/admin/[school]/calendar/ai-import": [
+    "/api/admin/\\[school\\]/calendar/ai-import": [
       "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
     ],
   },

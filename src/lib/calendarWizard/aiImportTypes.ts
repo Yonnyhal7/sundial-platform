@@ -163,6 +163,15 @@ export type AiCalendarImportResult = {
     source: "pdf_vector_fill" | "explicit_text" | "administrator" | "unresolved";
     confidence: number;
   };
+  deterministicExtraction?: {
+    status: "succeeded" | "fallback_required";
+    reasonCodes: string[];
+  };
+  assignmentReview?: {
+    reasonCode: "color_rotation_vector_unavailable";
+    requiredDates: string[];
+    reviewedDates: string[];
+  };
 };
 
 export type DetectedScheduleResolutionStatus =
@@ -208,6 +217,7 @@ export type AiImportDraftMetadata = {
   cacheAnalyzedAt?: string;
   cacheStrategy?: "text-gpt5-mini" | "pdf-gpt5";
   analysisVersion?: string;
+  analysisAttemptId?: string;
   unresolvedRequiredScheduleIds?: string[];
   removedSchedules?: Array<{
     tempId: string;

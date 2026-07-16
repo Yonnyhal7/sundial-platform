@@ -1,19 +1,7 @@
 import "server-only";
 
-import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { MAX_CALENDAR_IMPORT_PAGES } from "./aiPdfValidation";
-
-const require = createRequire(import.meta.url);
-let workerDataUrl: string | null = null;
-
-async function getPdfjsWorkerDataUrl() {
-  if (workerDataUrl) return workerDataUrl;
-  const workerPath = require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
-  const source = await readFile(workerPath);
-  workerDataUrl = `data:text/javascript;base64,${source.toString("base64")}`;
-  return workerDataUrl;
-}
+import { loadPdfjsWorkerDataUrlForRuntime } from "./pdfjsWorker.server";
 
 export type PdfVectorAssignment = {
   date: string;
@@ -340,7 +328,7 @@ export async function extractPdfVectorCalendar(file: File): Promise<PdfVectorCal
   // Read the traced package worker and convert it to an in-memory URL: fake-worker startup no
   // longer depends on a generated `.next/server/chunks/pdf.worker.mjs` path.
   const { getDocument, OPS, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  GlobalWorkerOptions.workerSrc = await getPdfjsWorkerDataUrl();
+  GlobalWorkerOptions.workerSrc = await loadPdfjsWorkerDataUrlForRuntime();
   const loadingTask = getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, useSystemFonts: true });
   const document = await loadingTask.promise;
   const texts: PositionedText[] = [];

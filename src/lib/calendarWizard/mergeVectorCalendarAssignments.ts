@@ -111,6 +111,8 @@ export function mergeVectorCalendarAssignments(
       source: "pdf_vector_fill",
       confidence: first.confidence,
     } : { date: firstDate, scheduleName: null, source: "unresolved", confidence: 0 },
+    deterministicExtraction: { status: "succeeded", reasonCodes: [] },
+    assignmentReview: undefined,
     warnings,
   };
 }

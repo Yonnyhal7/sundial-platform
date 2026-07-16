@@ -8,6 +8,7 @@ import {
 import {
   getAiImportValidationReasonCode,
   summarizeAiImportValidationErrors,
+  type AiCalendarImportResult,
   type AiImportWarning,
 } from "./aiImportTypes";
 import {
@@ -49,6 +50,8 @@ import {
   type CalendarAnalyzerResult,
 } from "./openAiCalendarAnalyzerUtils";
 import type { AiImportServerStage } from "./aiImportProgress";
+import { buildAiPreviewConfig } from "./aiImportPreview";
+import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
 import {
   AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS,
   AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS,
@@ -65,6 +68,61 @@ type OpenAiResponseUsage = {
 };
 
 type AnalysisStrategy = "text-gpt5-mini" | "pdf-gpt5";
+
+export function requireColorRotationFallbackReview(
+  importResult: AiCalendarImportResult,
+  reasonCodes: string[]
+) {
+  const names = importResult.detectedSchedules.map((schedule) =>
+    `${schedule.detectedName} ${schedule.normalizedName}`.toLowerCase()
+  );
+  if (!names.some((name) => name.includes("brown")) || !names.some((name) => name.includes("gold"))) {
+    return importResult;
+  }
+
+  const preview = generateSchoolYearCalendar(buildAiPreviewConfig(importResult));
+  const requiredDates = preview.days
+    .filter((day) => day.isSchoolDay)
+    .slice(0, 10)
+    .map((day) => day.date);
+  const warning = {
+    code: "color_rotation_verification_required",
+    severity: "review" as const,
+    message: "The PDF appears to use a color-coded rotation, but deterministic color extraction was unavailable. Verify the first 10 instructional assignments before creating the calendar.",
+  };
+
+  return {
+    ...importResult,
+    pattern: { ...importResult.pattern, confidence: "review" as const },
+    specialDays: importResult.specialDays.map((day) => day.scheduleTempId
+      ? {
+          ...day,
+          confidence: "review" as const,
+          assignmentSource: "ai_inference" as const,
+          assignmentConfidence: Math.min(day.assignmentConfidence ?? 0.5, 0.5),
+        }
+      : day),
+    firstInstructionalAssignment: {
+      date: importResult.schoolYear.startDate,
+      scheduleName: null,
+      source: "unresolved" as const,
+      confidence: 0,
+    },
+    deterministicExtraction: {
+      status: "fallback_required" as const,
+      reasonCodes: reasonCodes.length ? reasonCodes : ["pdf_vector_extraction_failed"],
+    },
+    assignmentReview: {
+      reasonCode: "color_rotation_vector_unavailable" as const,
+      requiredDates,
+      reviewedDates: [],
+    },
+    warnings: [
+      ...importResult.warnings.filter((item) => item.code !== warning.code),
+      warning,
+    ],
+  };
+}
 type AnalyzerStageCallback = (
   stage: AiImportServerStage,
   strategy?: AnalysisStrategy
@@ -948,6 +1006,7 @@ export async function analyzeCalendarPdf(
   let extracted: ExtractedCalendarText | null = null;
   let quality: CalendarTextQuality | null = null;
   let vectorResult: PdfVectorCalendarResult | null = null;
+  let vectorFailureReasonCodes: string[] = [];
 
   try {
     await options.onStageChange?.("extracting_text", "text-gpt5-mini");
@@ -963,6 +1022,7 @@ export async function analyzeCalendarPdf(
     extracted = textExtraction.value;
     if (vectorExtraction.status === "fulfilled") {
       vectorResult = vectorExtraction.value;
+      vectorFailureReasonCodes = vectorResult.supported ? [] : vectorResult.reasonCodes;
       logPipelineDiagnostic("pdf_vector_extraction_finished", {
         supported: vectorResult.supported,
         confidence: vectorResult.confidence,
@@ -972,6 +1032,11 @@ export async function analyzeCalendarPdf(
         durationMs: vectorResult.durationMs,
       });
     } else {
+      vectorFailureReasonCodes = [
+        vectorExtraction.reason instanceof Error && "reasonCode" in vectorExtraction.reason
+          ? String((vectorExtraction.reason as { reasonCode?: unknown }).reasonCode)
+          : "pdf_vector_extraction_failed",
+      ];
       logPipelineDiagnostic("pdf_vector_extraction_failed", {
         category: vectorExtraction.reason instanceof Error ? vectorExtraction.reason.name : "unknown",
         message: vectorExtraction.reason instanceof Error ? vectorExtraction.reason.message : String(vectorExtraction.reason),
@@ -1142,5 +1207,15 @@ export async function analyzeCalendarPdf(
       durationMs: Date.now() - startedAt,
     }
   );
+  if (pdfResult.status === "success" && !vectorResult?.supported) {
+    return {
+      ...pdfResult,
+      outcome: "reviewable",
+      importResult: requireColorRotationFallbackReview(
+        pdfResult.importResult,
+        vectorFailureReasonCodes
+      ),
+    };
+  }
   return pdfResult;
 }

@@ -30,11 +30,13 @@ import {
   type AiImportStatusResponse,
 } from "@/lib/calendarWizard/aiImportClient";
 import { AI_CALENDAR_ANALYSIS_VERSION } from "@/lib/calendarWizard/aiCalendarAnalysisVersion";
+import { computeAssignmentDigest } from "@/lib/calendarWizard/assignmentDigest";
 import {
   buildAiPreviewConfig,
   getBrownGoldVerificationConflicts,
   getBrownGoldVerificationRows,
   getDeterministicAssignmentConflicts,
+  getUnreviewedRequiredAssignmentDates,
   hasBrownGoldVerificationScheduleSet,
   updateAiImportPreviewDay,
 } from "@/lib/calendarWizard/aiImportPreview";
@@ -776,6 +778,10 @@ function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[
             analysisVersion:
               typeof record.aiImport.analysisVersion === "string"
                 ? record.aiImport.analysisVersion
+                : undefined,
+            analysisAttemptId:
+              typeof record.aiImport.analysisAttemptId === "string"
+                ? record.aiImport.analysisAttemptId
                 : undefined,
             unresolvedRequiredScheduleIds: Array.isArray(
               record.aiImport.unresolvedRequiredScheduleIds
@@ -1608,10 +1614,27 @@ export default function ScheduleWizardClient({
         return;
       }
 
+      const previewImportResult = draft.aiImport?.result;
+      if (!previewImportResult) {
+        throw new Error("AI import result is unavailable.");
+      }
+      const previewScheduleMap = buildAiPreviewScheduleMap(
+        schedules,
+        draft.aiImport?.resolutions || []
+      );
+      const previewGenerated = generateSchoolYearCalendar(
+        buildAiPreviewConfig(previewImportResult)
+      );
+      const previewAssignmentDigest = await computeAssignmentDigest(
+        previewGenerated.days,
+        (scheduleId) => previewScheduleMap.get(scheduleId)?.name
+      );
+
       const result = await createAiCalendarFromDraftAction(schoolSlug, {
         replaceExisting,
         expectedDraftUpdatedAt: saved.draft.updated_at,
         launchContext,
+        previewAssignmentDigest,
       });
 
       if (result.status === "success") {
@@ -2128,6 +2151,7 @@ function AiCalendarImportCard({
     }
 
     setSelectedFile(file);
+    updateDraft((previousDraft) => clearAiImportMetadata(previousDraft));
     setStatus("file_selected");
     setMessage(`${file.name} selected.`);
   }
@@ -2330,6 +2354,7 @@ function AiCalendarImportCard({
           cacheAnalyzedAt,
           cacheStrategy,
           analysisVersion: result.cache?.version,
+          analysisAttemptId: attemptId,
           banner:
             cacheBanner ||
             (result.outcome === "repaired"
@@ -3146,6 +3171,8 @@ function AiImportReview({
     previewResult,
     previewScheduleMap
   );
+  const unreviewedRequiredAssignmentDates =
+    getUnreviewedRequiredAssignmentDates(importResult);
   const unresolvedPreviewDays = previewResult.days.filter((day) =>
     day.warningCodes.includes("instructional_day_missing_schedule")
   );
@@ -3153,6 +3180,7 @@ function AiImportReview({
     warningReadiness.canCreateCalendar &&
     brownGoldConflicts.length === 0 &&
     deterministicConflicts.length === 0 &&
+    unreviewedRequiredAssignmentDates.length === 0 &&
     unresolvedPreviewDays.length === 0;
   const matchedCount = resolutions.filter((resolution) => resolution.matchedExistingScheduleId).length;
   const newScheduleCount = schedulesNeedingTimes.length;
@@ -3262,6 +3290,8 @@ function AiImportReview({
         <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
           {scheduleNameErrors.length > 0
             ? "Resolve duplicate or invalid schedule names before creating the calendar."
+            : unreviewedRequiredAssignmentDates.length > 0
+              ? `Verify the first ${unreviewedRequiredAssignmentDates.length} remaining color-rotation assignments in the calendar preview before creating the calendar.`
             : "Fix blocking calendar issues before creating the calendar."}
         </p>
       )}
@@ -3780,6 +3810,8 @@ function AiImportedCalendarPreview({
     result,
     scheduleMap
   );
+  const unreviewedRequiredAssignmentDates =
+    getUnreviewedRequiredAssignmentDates(importResult);
   const lowConfidenceCount = [
     importResult.schoolYear,
     importResult.pattern,
@@ -3820,7 +3852,7 @@ function AiImportedCalendarPreview({
         <MetricCard label="Low confidence" value={String(lowConfidenceCount)} />
       </div>
 
-      {(brownGoldConflicts.length > 0 || deterministicConflicts.length > 0 || unresolvedDays.length > 0) && (
+      {(brownGoldConflicts.length > 0 || deterministicConflicts.length > 0 || unresolvedDays.length > 0 || unreviewedRequiredAssignmentDates.length > 0) && (
         <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
           <p className="font-bold">Fix these preview issues before creating the calendar:</p>
           <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -3832,6 +3864,11 @@ function AiImportedCalendarPreview({
             {deterministicConflicts.map((conflict) => (
               <li key={`vector-${conflict.date}`}>
                 {formatDateForDisplay(conflict.date)} should be {conflict.expected} from the PDF color, but preview shows {conflict.actual}.
+              </li>
+            ))}
+            {unreviewedRequiredAssignmentDates.slice(0, 10).map((date) => (
+              <li key={`review-${date}`}>
+                {formatDateForDisplay(date)} came from AI inference because PDF color extraction failed. Select the date, verify its schedule, and save it.
               </li>
             ))}
             {unresolvedDays.slice(0, 8).map((day) => (
