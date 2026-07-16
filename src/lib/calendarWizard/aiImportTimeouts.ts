@@ -4,6 +4,9 @@ export const MAX_OPENAI_CALENDAR_TIMEOUT_MS = 300_000;
 export const AI_IMPORT_CLIENT_TIMEOUT_BUFFER_MS = 30_000;
 export const DEFAULT_AI_IMPORT_CLIENT_TIMEOUT_MS =
   DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS + AI_IMPORT_CLIENT_TIMEOUT_BUFFER_MS;
+export const AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS = 270_000;
+export const AI_IMPORT_ROUTE_RESPONSE_RESERVE_MS = 30_000;
+export const AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS = 155_000;
 
 export function parsePositiveInteger(value: string | null | undefined) {
   if (!value?.trim()) return null;
@@ -37,4 +40,17 @@ export function getAiImportClientTimeoutMs(
     minimumClientTimeoutMs,
     parsedOverride || 0
   );
+}
+
+export function hasAiImportPdfFallbackBudget(
+  elapsedMs: number,
+  {
+    routeBudgetMs = AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS,
+    minimumFallbackBudgetMs = AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS,
+  }: {
+    routeBudgetMs?: number;
+    minimumFallbackBudgetMs?: number;
+  } = {}
+) {
+  return elapsedMs <= routeBudgetMs - minimumFallbackBudgetMs;
 }

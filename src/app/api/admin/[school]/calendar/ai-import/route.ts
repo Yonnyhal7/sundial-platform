@@ -20,6 +20,7 @@ import {
   getOpenAiCalendarTextModel,
   logOpenAiCalendarEnvironmentDiagnostic,
 } from "@/lib/calendarWizard/openAiCalendarAnalyzerUtils";
+import { AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS } from "@/lib/calendarWizard/aiImportTimeouts";
 import { getSchoolForSetup } from "@/lib/schools";
 
 export const runtime = "nodejs";
@@ -28,6 +29,27 @@ export const maxDuration = 300;
 type RouteContext = {
   params: Promise<{ school: string }>;
 };
+
+class AiImportRouteDeadlineError extends Error {
+  constructor() {
+    super("AI calendar import route exceeded its processing deadline.");
+    this.name = "AiImportRouteDeadlineError";
+  }
+}
+
+function createAiImportRouteDeadline() {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const promise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new AiImportRouteDeadlineError()), AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS);
+  });
+
+  return {
+    promise,
+    clear() {
+      if (timeout) clearTimeout(timeout);
+    },
+  };
+}
 
 function json(result: AnalyzeCalendarPdfResult, init?: ResponseInit) {
   return NextResponse.json(result, init);
@@ -298,9 +320,45 @@ export async function POST(request: Request, context: RouteContext) {
     };
     await setStage("upload_received");
     await setStage("hashing_pdf");
-    const result = await dedupeCalendarAnalysis(pipelineKey, () =>
-      analyzeCalendarPdf(upload, { onStageChange: setStage, requestId })
-    );
+    const routeDeadline = createAiImportRouteDeadline();
+    let result: AnalyzeCalendarPdfResult;
+    try {
+      result = await Promise.race([
+        dedupeCalendarAnalysis(pipelineKey, () =>
+          analyzeCalendarPdf(upload, { onStageChange: setStage, requestId })
+        ),
+        routeDeadline.promise,
+      ]);
+    } catch (error) {
+      if (error instanceof AiImportRouteDeadlineError) {
+        for (const cacheKey of cacheKeys.preferred) {
+          await recordCalendarAnalysisFailure(cacheKey, "openai_timeout");
+        }
+        logAiImportRouteDiagnostic({
+          level: "warn",
+          event: "analyzer_timeout_failed",
+          requestId,
+          school,
+          durationMs: Date.now() - startedAt,
+          status: "analysis_failed",
+          reasonCode: "openai_timeout",
+          fileSize: upload.size,
+          fileType: upload.type || "unknown",
+        });
+        return respond(
+          {
+            status: "analysis_failed",
+            message: "The calendar analysis took too long to complete. Retry, or continue manually.",
+            retryable: true,
+            reasonCode: "openai_timeout",
+          },
+          { status: 504 }
+        );
+      }
+      throw error;
+    } finally {
+      routeDeadline.clear();
+    }
     const resultCacheKey =
       result.status === "success" && result.analysisStrategy === AI_CALENDAR_TEXT_STRATEGY
         ? cacheKeys.byStrategy[AI_CALENDAR_TEXT_STRATEGY]

@@ -51,6 +51,12 @@ import {
   buildCalendarImportResponsesRequest,
   buildCalendarImportTextResponsesRequest,
 } from "./openAiCalendarRequest";
+import {
+  AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS,
+  AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS,
+  AI_IMPORT_ROUTE_RESPONSE_RESERVE_MS,
+  hasAiImportPdfFallbackBudget,
+} from "./aiImportTimeouts";
 
 function detected(tempId: string, name: string): AiDetectedSchedule {
   return {
@@ -678,6 +684,18 @@ describe("OpenAI calendar analyzer behavior", () => {
     expect(parseOpenAiCalendarTimeoutMs(undefined)).toBe(DEFAULT_OPENAI_CALENDAR_TIMEOUT_MS);
   });
 
+  it("keeps the route import budget below Vercel max duration", () => {
+    expect(AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS).toBe(270_000);
+    expect(AI_IMPORT_ROUTE_RESPONSE_RESERVE_MS).toBe(30_000);
+    expect(AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS + AI_IMPORT_ROUTE_RESPONSE_RESERVE_MS).toBe(300_000);
+    expect(AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS).toBe(155_000);
+  });
+
+  it("allows PDF fallback only when the minimum fallback budget remains", () => {
+    expect(hasAiImportPdfFallbackBudget(115_000)).toBe(true);
+    expect(hasAiImportPdfFallbackBudget(115_001)).toBe(false);
+  });
+
   it("accepts a valid application timeout override", () => {
     expect(parseOpenAiCalendarTimeoutMs("120000")).toBe(120_000);
   });
@@ -713,9 +731,10 @@ describe("OpenAI calendar analyzer behavior", () => {
 
     expect(result).toMatchObject({
       status: "analysis_failed",
-      message: "Calendar analysis took longer than expected. Please try again or continue manually.",
+      message: "The calendar analysis took too long to complete. Retry, or continue manually.",
+      retryable: true,
+      reasonCode: "openai_timeout",
     });
-    expect("retryable" in result).toBe(false);
     expect(shouldRetryOpenAiError(new OpenAiCalendarApplicationTimeoutError(180_000), 0)).toBe(false);
   });
 

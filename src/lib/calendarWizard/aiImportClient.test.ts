@@ -4,6 +4,7 @@ import {
   AiImportClientTimeoutError,
   createAiImportClientTimeoutController,
   getConfiguredAiImportClientTimeoutMs,
+  getAiImportTerminalFailureMessage,
   isRecoverableAiImportInterruption,
   mapAiImportClientError,
   parseAiImportResponse,
@@ -203,6 +204,18 @@ describe("AI import client response handling", () => {
     );
     timeout.clear();
     vi.useRealTimers();
+  });
+
+  it("uses terminal timeout copy for confirmed OpenAI and stale-job failures", () => {
+    expect(getAiImportTerminalFailureMessage("openai_timeout")).toBe(
+      "The calendar analysis took too long to complete. Retry, or continue manually."
+    );
+    expect(getAiImportTerminalFailureMessage("analysis_job_stale")).toBe(
+      "The calendar analysis took too long to complete. Retry, or continue manually."
+    );
+    expect(getAiImportTerminalFailureMessage("client_timeout")).toBe(
+      "The calendar analysis took too long to complete. Retry, or continue manually."
+    );
   });
 
   it("accepts a successful late response before the client timeout", async () => {

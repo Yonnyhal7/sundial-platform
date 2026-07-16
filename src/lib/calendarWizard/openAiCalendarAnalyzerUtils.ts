@@ -71,12 +71,15 @@ export type AiCalendarImportProcessingPhase =
 
 export type AiCalendarImportFailureReasonCode =
   | OpenAiCalendarConfigurationReasonCode
+  | "openai_timeout"
+  | "analysis_job_stale"
   | "ai_schema_validation_failed"
   | "schema_validation_failed"
   | "normalization_failed"
   | "draft_save_failed"
   | "review_generation_failed"
   | "calendar_validation_failed"
+  | "visual_information_required"
   | "missing_required_schedule"
   | "invalid_date_range"
   | "invalid_schedule_reference"
@@ -181,11 +184,26 @@ export function createOpenAiCalendarTimeoutController(timeoutMs: number) {
   let timedOut = false;
   const timeout = setTimeout(() => {
     timedOut = true;
+    console.warn("AI calendar import diagnostic", {
+      event: "analyzer_abort_requested",
+      timeoutMs,
+    });
     controller.abort(new OpenAiCalendarApplicationTimeoutError(timeoutMs));
+    console.warn("AI calendar import diagnostic", {
+      event: "analyzer_abort_confirmed",
+      timeoutMs,
+      signalAborted: controller.signal.aborted,
+    });
   }, timeoutMs);
+
+  console.info("AI calendar import diagnostic", {
+    event: "analyzer_timeout_started",
+    timeoutMs,
+  });
 
   return {
     controller,
+    timeoutMs,
     clear() {
       clearTimeout(timeout);
     },
@@ -289,7 +307,9 @@ export function mapOpenAiError(error: unknown): CalendarAnalyzerResult {
   if (error instanceof OpenAiCalendarApplicationTimeoutError) {
     return {
       status: "analysis_failed",
-      message: "Calendar analysis took longer than expected. Please try again or continue manually.",
+      message: "The calendar analysis took too long to complete. Retry, or continue manually.",
+      retryable: true,
+      reasonCode: "openai_timeout",
     };
   }
 

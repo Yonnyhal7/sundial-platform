@@ -14,6 +14,7 @@ import {
 import {
   calculatePdfSha256,
   createAiImportClientTimeoutController,
+  getAiImportTerminalFailureMessage,
   isRecoverableAiImportInterruption,
   mapAiImportClientError,
   parseAiImportResponse,
@@ -2105,8 +2106,7 @@ function AiCalendarImportCard({
           });
           const failure: AnalyzeCalendarPdfResult = {
             status: "analysis_failed",
-            message:
-              "Sundial could not analyze this PDF yet. Please retry, or continue manually.",
+            message: getAiImportTerminalFailureMessage(statusResult.reasonCode),
             retryable: true,
             reasonCode: statusResult.reasonCode || "confirmed_analysis_failed",
           };
@@ -2150,17 +2150,62 @@ function AiCalendarImportCard({
       event: "polling_expired",
       school: schoolSlug,
     });
+    try {
+      console.info("AI calendar import diagnostic", {
+        event: "final_status_lookup",
+        school: schoolSlug,
+      });
+      const query = new URLSearchParams({
+        pdfHash: pending.pdfHash,
+        startedAt: String(pending.startedAt),
+      });
+      const response = await fetch(
+        `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/status?${query.toString()}`
+      );
+      const statusResult = await parseAiImportStatusResponse(response);
+
+      if (statusResult.status === "ready") {
+        const result = await fetchCachedImportResult(pending);
+        setActionResult(result);
+        if (result.status === "success") {
+          await handleSuccessfulAiImportResult({
+            result,
+            requestId: pending.requestId || null,
+            fileName: pending.fileName,
+          });
+          return;
+        }
+      }
+
+      if (statusResult.status === "failed" || statusResult.status === "expired") {
+        const failure: AnalyzeCalendarPdfResult = {
+          status: "analysis_failed",
+          message: getAiImportTerminalFailureMessage(statusResult.reasonCode),
+          retryable: true,
+          reasonCode: statusResult.reasonCode || statusResult.status,
+        };
+        setActionResult(failure);
+        setStatus("failed");
+        setMessage(failure.message);
+        setIsPolling(false);
+        clearPendingAiImport();
+        return;
+      }
+    } catch {
+      // Fall through to the terminal client-timeout message below.
+    }
+
     const failure: AnalyzeCalendarPdfResult = {
       status: "analysis_failed",
-      message:
-        "Sundial is still finishing the calendar analysis. Keep this page open a little longer or refresh shortly to check again.",
+      message: getAiImportTerminalFailureMessage("client_timeout"),
       retryable: true,
-      reasonCode: "polling_expired",
+      reasonCode: "client_timeout",
     };
     setActionResult(failure);
     setStatus("failed");
     setMessage(failure.message);
     setIsPolling(false);
+    clearPendingAiImport();
   }
 
   async function analyzeSelectedFile(analyzeAgain = false) {

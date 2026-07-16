@@ -6,6 +6,12 @@ export type CalendarTextQualityReasonCode =
   | "likely_scanned_pdf"
   | "likely_visual_calendar_grid"
   | "likely_color_legend_dependency"
+  | "visual_schedule_legend"
+  | "color_encoded_date_assignments"
+  | "schedule_names_without_text_mapping"
+  | "calendar_grid_requires_visual_analysis"
+  | "visual_information_required"
+  | "text_path_safe"
   | "text_usable";
 
 export type CalendarTextQuality = {
@@ -25,10 +31,43 @@ const YEAR_RANGE_PATTERN = /\b20\d{2}\s*[-–]\s*(?:20)?\d{2}\b/g;
 const CALENDAR_TERM_PATTERN =
   /\b(holiday|no school|minimum day|rally|finals?|semester|instruction begins?|brown day|gold day|break|teacher work|inservice|testing|early release|schedule)\b/gi;
 const VISUAL_PATTERN =
-  /\b(color|legend|shading|shaded|highlighted|circle|icon|symbol|gray|grey|blue|green|red|orange|purple)\b/gi;
+  /\b(color|legend|key|shading|shaded|highlighted|highlight|circle|icon|symbol|swatch|fill|filled|gray|grey|blue|green|red|orange|purple)\b/gi;
+const SCHEDULE_TEMPLATE_PATTERN =
+  /\b(brown day|gold day|finals?|all[-\s]?periods?|minimum day|rally|testing|regular day|block day|late start|early release)\b/gi;
+const LEGEND_PATTERN =
+  /\b(calendar\s+)?(legend|key)\b|(?:brown|gold|finals?|all[-\s]?periods?)\s*(?:=|:|-|–|—)\s*/gi;
+const DATE_CELL_NUMBER_PATTERN = /\b(?:[1-9]|[12]\d|3[01])\b/g;
 
 function countMatches(text: string, pattern: RegExp) {
   return [...text.matchAll(pattern)].length;
+}
+
+function distinctScheduleTemplates(text: string) {
+  return new Set(
+    [...text.matchAll(SCHEDULE_TEMPLATE_PATTERN)]
+      .map((match) => match[0].toLowerCase().replace(/[-\s]+/g, " ").trim())
+      .map((value) => value.replace(/^final$/, "finals"))
+  );
+}
+
+function countDatedScheduleMappingLines(lines: string[]) {
+  return lines.filter((line) => {
+    const hasScheduleName = SCHEDULE_TEMPLATE_PATTERN.test(line);
+    SCHEDULE_TEMPLATE_PATTERN.lastIndex = 0;
+    if (!hasScheduleName) return false;
+
+    const monthMatches = [...line.matchAll(MONTH_PATTERN)].length;
+    MONTH_PATTERN.lastIndex = 0;
+    const dateMatches = [...line.matchAll(DATE_PATTERN)].length;
+    MONTH_PATTERN.lastIndex = 0;
+    DATE_PATTERN.lastIndex = 0;
+    const dayNumberMatches = [...line.matchAll(DATE_CELL_NUMBER_PATTERN)].length;
+    DATE_CELL_NUMBER_PATTERN.lastIndex = 0;
+    const compactEnoughForTextMapping =
+      line.length <= 180 && monthMatches <= 2 && dayNumberMatches <= 6;
+
+    return compactEnoughForTextMapping && (monthMatches > 0 || dateMatches > 0);
+  }).length;
 }
 
 export function evaluateCalendarTextQuality({
@@ -50,6 +89,11 @@ export function evaluateCalendarTextQuality({
   const yearRangeCount = countMatches(normalizedText, YEAR_RANGE_PATTERN);
   const calendarTermCount = countMatches(normalizedText, CALENDAR_TERM_PATTERN);
   const visualSignalCount = countMatches(normalizedText, VISUAL_PATTERN);
+  const legendSignalCount = countMatches(normalizedText, LEGEND_PATTERN);
+  const dateCellNumberCount = countMatches(normalizedText, DATE_CELL_NUMBER_PATTERN);
+  const scheduleTemplates = distinctScheduleTemplates(normalizedText);
+  const scheduleTemplateCount = scheduleTemplates.size;
+  const datedScheduleMappingLineCount = countDatedScheduleMappingLines(lines);
   const reasonCodes: CalendarTextQualityReasonCode[] = [];
   let score = 0;
 
@@ -73,17 +117,42 @@ export function evaluateCalendarTextQuality({
   }
 
   const lineDensity = pageCount > 0 ? extractedLineCount / pageCount : extractedLineCount;
+  const likelyCalendarGrid =
+    monthCount >= 8 ||
+    weekdayCount >= 10 ||
+    dateCellNumberCount >= 45 ||
+    (monthCount >= 4 && dateCellNumberCount >= 25);
+  const hasScheduleLegend =
+    scheduleTemplateCount >= 2 &&
+    (legendSignalCount > 0 ||
+      /\b(?:brown|gold|finals?|all[-\s]?periods?)\b[\s\S]{0,80}\b(?:legend|key)\b/i.test(normalizedText) ||
+      /\b(?:legend|key)\b[\s\S]{0,160}\b(?:brown|gold|finals?|all[-\s]?periods?)\b/i.test(normalizedText));
+  const scheduleNamesWithoutTextMapping =
+    scheduleTemplateCount >= 2 &&
+    datedScheduleMappingLineCount < Math.min(4, scheduleTemplateCount + 1);
+  const colorEncodedDateAssignments =
+    scheduleTemplateCount >= 2 &&
+    visualSignalCount >= 3 &&
+    scheduleNamesWithoutTextMapping;
   const likelyVisualLayoutDependency =
+    colorEncodedDateAssignments ||
+    (hasScheduleLegend && scheduleNamesWithoutTextMapping) ||
+    (likelyCalendarGrid && scheduleNamesWithoutTextMapping) ||
     visualSignalCount >= 5 ||
     (monthCount >= 8 && dateCount < 8 && lineDensity < 26) ||
     /\b(brown|gold)\b/i.test(normalizedText) && visualSignalCount >= 2;
 
   if (likelyVisualLayoutDependency) {
-    reasonCodes.push(
-      visualSignalCount >= 5
-        ? "likely_color_legend_dependency"
-        : "likely_visual_calendar_grid"
-    );
+    if (hasScheduleLegend) reasonCodes.push("visual_schedule_legend");
+    if (colorEncodedDateAssignments) reasonCodes.push("color_encoded_date_assignments");
+    if (scheduleNamesWithoutTextMapping) {
+      reasonCodes.push("schedule_names_without_text_mapping");
+    }
+    if (likelyCalendarGrid) reasonCodes.push("calendar_grid_requires_visual_analysis");
+    if (visualSignalCount >= 5) reasonCodes.push("likely_color_legend_dependency");
+    if (reasonCodes.length === 0 || (monthCount >= 8 && dateCount < 8 && lineDensity < 26)) {
+      reasonCodes.push("likely_visual_calendar_grid");
+    }
   }
 
   score += Math.min(25, extractedCharacterCount / 120);
@@ -107,7 +176,7 @@ export function evaluateCalendarTextQuality({
   return {
     usable,
     score: safeScore,
-    reasonCodes: usable ? ["text_usable"] : [...new Set(reasonCodes)],
+    reasonCodes: usable ? ["text_path_safe", "text_usable"] : [...new Set(reasonCodes)],
     likelyVisualLayoutDependency,
     extractedCharacterCount,
     extractedLineCount,

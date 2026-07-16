@@ -203,6 +203,7 @@ export type AnalyzeCalendarPdfResult =
       status: "success";
       importResult: AiCalendarImportResult;
       outcome?: "successful" | "repaired" | "reviewable";
+      analysisStrategy?: "text-gpt5-mini" | "pdf-gpt5";
     }
   | {
       status:

@@ -45,6 +45,11 @@ import {
   type CalendarAnalyzerResult,
 } from "./openAiCalendarAnalyzerUtils";
 import type { AiImportServerStage } from "./aiImportProgress";
+import {
+  AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS,
+  AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS,
+  hasAiImportPdfFallbackBudget,
+} from "./aiImportTimeouts";
 
 export { DEFAULT_OPENAI_CALENDAR_MODEL };
 
@@ -59,6 +64,7 @@ type AnalyzerStageCallback = (
   stage: AiImportServerStage,
   strategy?: AnalysisStrategy
 ) => void | Promise<void>;
+type AnalyzerDeadlineController = ReturnType<typeof createOpenAiCalendarTimeoutController>;
 
 function getOpenAiClient(apiKey: string) {
   logOpenAiCalendarEnvironmentDiagnostic("before_openai_client_create");
@@ -111,6 +117,39 @@ function logPipelineDiagnostic(
     event,
     ...payload,
   });
+}
+
+function abortReason(signal: AbortSignal) {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new OpenAiCalendarApplicationTimeoutError(0);
+}
+
+async function withAbortSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) throw abortReason(signal);
+
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      signal.addEventListener("abort", () => reject(abortReason(signal)), {
+        once: true,
+      });
+    }),
+  ]);
+}
+
+function startStageHeartbeat(
+  onStageChange: AnalyzerStageCallback | undefined,
+  stage: AiImportServerStage,
+  strategy: AnalysisStrategy
+) {
+  if (!onStageChange) return () => {};
+
+  const interval = setInterval(() => {
+    void onStageChange(stage, strategy);
+  }, 25_000);
+
+  return () => clearInterval(interval);
 }
 
 function summarizeFinalValidationIssues({
@@ -174,6 +213,7 @@ async function normalizeValidateAndRepair({
   fileUploadSucceeded,
   responsesApiCallBegan,
   onStageChange,
+  skipTextScheduleRepair,
 }: {
   client: OpenAI;
   model: string;
@@ -186,6 +226,7 @@ async function normalizeValidateAndRepair({
   fileUploadSucceeded: boolean;
   responsesApiCallBegan: boolean;
   onStageChange?: AnalyzerStageCallback;
+  skipTextScheduleRepair?: boolean;
 }): Promise<CalendarAnalyzerResult> {
   let normalized: ReturnType<typeof normalizeAiCalendarExtraction>;
 
@@ -227,6 +268,32 @@ async function normalizeValidateAndRepair({
 
   let repaired = false;
   if (!normalized.success) {
+    const reasonCode = getAiImportValidationReasonCode(normalized.validationErrors);
+    if (
+      skipTextScheduleRepair &&
+      strategy === "text-gpt5-mini" &&
+      reasonCode === "missing_required_schedule"
+    ) {
+      logPipelineDiagnostic("text_analysis_visual_information_required", {
+        model,
+        strategy,
+        requestId,
+        phase: "schema_validation",
+        reasonCode: "visual_information_required",
+        validationIssues: summarizeFinalValidationIssues({
+          validationErrors: summarizeAiImportValidationErrors(normalized.validationErrors),
+        }),
+        durationMs: Date.now() - startedAt,
+      });
+      return {
+        status: "analysis_failed",
+        message:
+          "This calendar uses visual schedule assignments. Sundial is switching to a deeper review.",
+        retryable: true,
+        reasonCode: "visual_information_required",
+      };
+    }
+
     await onStageChange?.(
       strategy === "text-gpt5-mini" ? "repairing_text_result" : "repairing_pdf_result",
       strategy
@@ -247,11 +314,19 @@ async function normalizeValidateAndRepair({
       validationIssueCount: repairIssues.length,
       durationMs: Date.now() - startedAt,
     });
-    const { data: repairResponse, request_id: repairRequestId } = await client.responses
-      .create(buildCalendarImportRepairRequest(model, raw, repairIssues), {
-        signal,
-      })
-      .withResponse();
+    const stopHeartbeat = startStageHeartbeat(
+      onStageChange,
+      strategy === "text-gpt5-mini" ? "repairing_text_result" : "repairing_pdf_result",
+      strategy
+    );
+    const { data: repairResponse, request_id: repairRequestId } = await withAbortSignal(
+      client.responses
+        .create(buildCalendarImportRepairRequest(model, raw, repairIssues), {
+          signal,
+        })
+        .withResponse(),
+      signal
+    ).finally(stopHeartbeat);
     const repairedRaw = parseStructuredOutput(repairResponse.output_text);
     if (repairedRaw) {
       const targetedRepair = applyTargetedRepairs(
@@ -341,11 +416,19 @@ async function normalizeValidateAndRepair({
       validationIssueCount: repairIssues.length,
       durationMs: Date.now() - startedAt,
     });
-    const { data: repairResponse, request_id: repairRequestId } = await client.responses
-      .create(buildCalendarImportRepairRequest(model, raw, repairIssues), {
-        signal,
-      })
-      .withResponse();
+    const stopHeartbeat = startStageHeartbeat(
+      onStageChange,
+      strategy === "text-gpt5-mini" ? "repairing_text_result" : "repairing_pdf_result",
+      strategy
+    );
+    const { data: repairResponse, request_id: repairRequestId } = await withAbortSignal(
+      client.responses
+        .create(buildCalendarImportRepairRequest(model, raw, repairIssues), {
+          signal,
+        })
+        .withResponse(),
+      signal
+    ).finally(stopHeartbeat);
     const repairedRaw = parseStructuredOutput(repairResponse.output_text);
     if (repairedRaw) {
       normalized = normalizeAiCalendarExtraction(repairedRaw, {
@@ -433,22 +516,20 @@ async function analyzeCalendarText({
   client,
   extracted,
   model,
-  timeoutMs,
+  deadline,
   startedAt,
   onStageChange,
 }: {
   client: OpenAI;
   extracted: ExtractedCalendarText;
   model: string;
-  timeoutMs: number;
+  deadline: AnalyzerDeadlineController;
   startedAt: number;
   onStageChange?: AnalyzerStageCallback;
 }): Promise<CalendarAnalyzerResult> {
   let responsesApiCallBegan = false;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const timeoutController = createOpenAiCalendarTimeoutController(timeoutMs);
-
     try {
       await onStageChange?.("analyzing_text", "text-gpt5-mini");
       logPipelineDiagnostic("text_analysis_started", {
@@ -461,11 +542,19 @@ async function analyzeCalendarText({
       });
       responsesApiCallBegan = true;
       logOpenAiCalendarEnvironmentDiagnostic("before_responses_api_call");
-      const { data: response, request_id: requestId } = await client.responses
-        .create(buildCalendarImportTextResponsesRequest(model, extracted.text), {
-          signal: timeoutController.controller.signal,
-        })
-        .withResponse();
+      const stopHeartbeat = startStageHeartbeat(
+        onStageChange,
+        "analyzing_text",
+        "text-gpt5-mini"
+      );
+      const { data: response, request_id: requestId } = await withAbortSignal(
+        client.responses
+          .create(buildCalendarImportTextResponsesRequest(model, extracted.text), {
+            signal: deadline.controller.signal,
+          })
+          .withResponse(),
+        deadline.controller.signal
+      ).finally(stopHeartbeat);
 
       if (openAiResponseIncomplete(response) || openAiResponseHasRefusal(response)) {
         return {
@@ -501,11 +590,12 @@ async function analyzeCalendarText({
         usage: response.usage,
         requestId,
         startedAt,
-        signal: timeoutController.controller.signal,
+        signal: deadline.controller.signal,
         strategy: "text-gpt5-mini",
         fileUploadSucceeded: false,
         responsesApiCallBegan,
         onStageChange,
+        skipTextScheduleRepair: true,
       });
 
       logPipelineDiagnostic("text_analysis_finished", {
@@ -521,11 +611,11 @@ async function analyzeCalendarText({
       });
       return result;
     } catch (error) {
-      const handledError = timeoutController.timedOut
-        ? new OpenAiCalendarApplicationTimeoutError(timeoutMs)
+      const handledError = deadline.timedOut
+        ? new OpenAiCalendarApplicationTimeoutError(deadline.timeoutMs)
         : error;
 
-      if (!timeoutController.timedOut && shouldRetryOpenAiError(error, attempt)) {
+      if (!deadline.timedOut && shouldRetryOpenAiError(error, attempt)) {
         console.warn(
           "AI calendar import text-path transient error; retrying",
           buildOpenAiErrorDiagnostics(handledError, {
@@ -551,8 +641,6 @@ async function analyzeCalendarText({
         })
       );
       return mapOpenAiError(handledError);
-    } finally {
-      timeoutController.clear();
     }
   }
 
@@ -567,16 +655,18 @@ async function analyzeCalendarPdfFallback({
   client,
   file,
   model,
-  timeoutMs,
+  deadline,
   startedAt,
   onStageChange,
+  directVisualStrategy = false,
 }: {
   client: OpenAI;
   file: File;
   model: string;
-  timeoutMs: number;
+  deadline: AnalyzerDeadlineController;
   startedAt: number;
   onStageChange?: AnalyzerStageCallback;
+  directVisualStrategy?: boolean;
 }): Promise<CalendarAnalyzerResult> {
   let stage: OpenAiCalendarAnalysisStage = "preparing_file";
   let fileUploadSucceeded = false;
@@ -592,13 +682,14 @@ async function analyzeCalendarPdfFallback({
   let openAiFileId: string | null = null;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const timeoutController = createOpenAiCalendarTimeoutController(timeoutMs);
-
     try {
-      await onStageChange?.("falling_back_to_pdf", "pdf-gpt5");
+      if (!directVisualStrategy) {
+        await onStageChange?.("falling_back_to_pdf", "pdf-gpt5");
+      }
       logPipelineDiagnostic("pdf_fallback_started", {
         model,
         strategy: "pdf-gpt5",
+        directVisualStrategy,
         durationMs: Date.now() - startedAt,
       });
       logOpenAiCalendarDiagnostic("info", "openai_attempt_started", {
@@ -611,12 +702,15 @@ async function analyzeCalendarPdfFallback({
 
       stage = "uploading_file";
       await onStageChange?.("uploading_pdf_to_ai", "pdf-gpt5");
-      const uploaded = await client.files.create(
-        {
-          file: uploadableFile,
-          purpose: "user_data",
-        },
-        { signal: timeoutController.controller.signal }
+      const uploaded = await withAbortSignal(
+        client.files.create(
+          {
+            file: uploadableFile,
+            purpose: "user_data",
+          },
+          { signal: deadline.controller.signal }
+        ),
+        deadline.controller.signal
       );
       openAiFileId = uploaded.id;
       fileUploadSucceeded = true;
@@ -633,12 +727,20 @@ async function analyzeCalendarPdfFallback({
       responsesApiCallBegan = true;
       await onStageChange?.("analyzing_pdf", "pdf-gpt5");
       logOpenAiCalendarEnvironmentDiagnostic("before_responses_api_call");
-      const { data: response, request_id: requestId } = await client.responses
-        .create(
-          buildCalendarImportResponsesRequest(model, uploaded.id),
-          { signal: timeoutController.controller.signal }
-        )
-        .withResponse();
+      const stopHeartbeat = startStageHeartbeat(
+        onStageChange,
+        "analyzing_pdf",
+        "pdf-gpt5"
+      );
+      const { data: response, request_id: requestId } = await withAbortSignal(
+        client.responses
+          .create(
+            buildCalendarImportResponsesRequest(model, uploaded.id),
+            { signal: deadline.controller.signal }
+          )
+          .withResponse(),
+        deadline.controller.signal
+      ).finally(stopHeartbeat);
 
       stage = "reading_response";
       if (openAiResponseIncomplete(response) || openAiResponseHasRefusal(response)) {
@@ -674,7 +776,7 @@ async function analyzeCalendarPdfFallback({
         usage: response.usage,
         requestId,
         startedAt,
-        signal: timeoutController.controller.signal,
+        signal: deadline.controller.signal,
         strategy: "pdf-gpt5",
         fileUploadSucceeded,
         responsesApiCallBegan,
@@ -695,11 +797,11 @@ async function analyzeCalendarPdfFallback({
 
       return result;
     } catch (error) {
-      const handledError = timeoutController.timedOut
-        ? new OpenAiCalendarApplicationTimeoutError(timeoutMs)
+      const handledError = deadline.timedOut
+        ? new OpenAiCalendarApplicationTimeoutError(deadline.timeoutMs)
         : error;
 
-      if (!timeoutController.timedOut && shouldRetryOpenAiError(error, attempt)) {
+      if (!deadline.timedOut && shouldRetryOpenAiError(error, attempt)) {
         console.warn(
           "AI calendar import OpenAI transient error; retrying",
           buildOpenAiErrorDiagnostics(handledError, {
@@ -726,7 +828,6 @@ async function analyzeCalendarPdfFallback({
       );
       return mapOpenAiError(handledError);
     } finally {
-      timeoutController.clear();
       if (openAiFileId) {
         try {
           await client.files.delete(openAiFileId);
@@ -760,8 +861,29 @@ function shouldFallbackAfterTextResult(result: CalendarAnalyzerResult) {
       "invalid_date_range",
       "invalid_schedule_reference",
       "malformed_calendar_structure",
+      "visual_information_required",
     ].includes(result.reasonCode)
   );
+}
+
+function hasEnoughBudgetForPdfFallback(startedAt: number) {
+  return hasAiImportPdfFallbackBudget(Date.now() - startedAt);
+}
+
+function insufficientFallbackBudgetResult(startedAt: number): CalendarAnalyzerResult {
+  logPipelineDiagnostic("pdf_fallback_skipped_insufficient_budget", {
+    elapsedMs: Date.now() - startedAt,
+    routeBudgetMs: AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS,
+    minimumFallbackBudgetMs: AI_IMPORT_MIN_PDF_FALLBACK_BUDGET_MS,
+    reasonCode: "openai_timeout",
+  });
+
+  return {
+    status: "analysis_failed",
+    message: "The calendar analysis took too long to complete. Retry, or continue manually.",
+    retryable: true,
+    reasonCode: "openai_timeout",
+  };
 }
 
 export async function analyzeCalendarPdf(
@@ -788,11 +910,13 @@ export async function analyzeCalendarPdf(
   const client = getOpenAiClient(configuration.apiKey);
   const timeoutMs = configuration.timeoutMs;
   const startedAt = Date.now();
+  const deadline = createOpenAiCalendarTimeoutController(timeoutMs);
   const textModel = getOpenAiCalendarTextModel();
   const pdfModel = getOpenAiCalendarPdfModel();
   let extracted: ExtractedCalendarText | null = null;
   let quality: CalendarTextQuality | null = null;
 
+  try {
   try {
     await options.onStageChange?.("extracting_text", "text-gpt5-mini");
     logPipelineDiagnostic("pdf_text_extraction_started", {
@@ -823,12 +947,14 @@ export async function analyzeCalendarPdf(
     });
   }
 
+  const directVisualStrategy = Boolean(extracted && quality?.likelyVisualLayoutDependency);
+
   if (extracted && quality?.usable) {
     const textResult = await analyzeCalendarText({
       client,
       extracted,
       model: textModel,
-      timeoutMs,
+      deadline,
       startedAt,
       onStageChange: options.onStageChange,
     });
@@ -847,13 +973,41 @@ export async function analyzeCalendarPdf(
       return textResult;
     }
 
+    if (!hasEnoughBudgetForPdfFallback(startedAt)) {
+      return insufficientFallbackBudgetResult(startedAt);
+    }
+
     logPipelineDiagnostic("pdf_fallback_started", {
       strategy: "pdf-gpt5",
       model: pdfModel,
-      fallbackReasonCode: textResult.reasonCode,
+      fallbackReasonCode:
+        textResult.reasonCode === "visual_information_required"
+          ? "visual_information_required"
+          : textResult.reasonCode,
+      durationMs: Date.now() - startedAt,
+    });
+  } else if (directVisualStrategy) {
+    if (!hasEnoughBudgetForPdfFallback(startedAt)) {
+      return insufficientFallbackBudgetResult(startedAt);
+    }
+
+    logPipelineDiagnostic("pdf_visual_analysis_selected", {
+      strategy: "pdf-gpt5",
+      model: pdfModel,
+      fallbackReasonCode: quality?.reasonCodes.includes("visual_schedule_legend")
+        ? "visual_schedule_legend"
+        : quality?.reasonCodes.includes("schedule_names_without_text_mapping")
+          ? "visual_schedule_legend"
+          : quality?.reasonCodes[0] || "visual_schedule_legend",
+      textQualityScore: quality?.score,
+      textQualityReasonCodes: quality?.reasonCodes,
       durationMs: Date.now() - startedAt,
     });
   } else {
+    if (!hasEnoughBudgetForPdfFallback(startedAt)) {
+      return insufficientFallbackBudgetResult(startedAt);
+    }
+
     logPipelineDiagnostic("pdf_fallback_started", {
       strategy: "pdf-gpt5",
       model: pdfModel,
@@ -866,9 +1020,10 @@ export async function analyzeCalendarPdf(
     client,
     file,
     model: pdfModel,
-    timeoutMs,
+    deadline,
     startedAt,
     onStageChange: options.onStageChange,
+    directVisualStrategy,
   });
   logPipelineDiagnostic(
     pdfResult.status === "success" ? "import_ready" : "import_confirmed_failed",
@@ -881,4 +1036,7 @@ export async function analyzeCalendarPdf(
     }
   );
   return pdfResult;
+  } finally {
+    deadline.clear();
+  }
 }

@@ -40,6 +40,7 @@ vi.mock("@/lib/calendarWizard/aiCalendarAnalysisCache.server", () => ({
   AI_CALENDAR_PROMPT_SCHEMA_VERSION: "calendar-v2",
   AI_CALENDAR_PDF_STRATEGY: "pdf-gpt5",
   AI_CALENDAR_TEXT_STRATEGY: "text-gpt5-mini",
+  AI_CALENDAR_STALE_DEADLINE_GRACE_MS: 15_000,
   readCalendarAnalysisCache: mocks.readCalendarAnalysisCache,
   readCalendarAnalysisCacheEntry: mocks.readCalendarAnalysisCacheEntry,
   readCalendarAnalysisStage: mocks.readCalendarAnalysisStage,
@@ -196,17 +197,22 @@ describe("AI import API route", () => {
   it("returns timeout analysis failures distinctly", async () => {
     mocks.analyzeCalendarPdf.mockResolvedValue({
       status: "analysis_failed",
-      message: "Calendar analysis took longer than expected. Please try again or continue manually.",
+      message: "The calendar analysis took too long to complete. Retry, or continue manually.",
+      reasonCode: "openai_timeout",
+      retryable: true,
     });
 
     const response = await post();
     const body = await response.json();
 
     expect(response.status).toBe(422);
-    expect(body.message).toContain("longer than expected");
+    expect(body).toMatchObject({
+      reasonCode: "openai_timeout",
+      retryable: true,
+    });
     expect(mocks.recordCalendarAnalysisFailure).toHaveBeenCalledWith(
       expect.objectContaining({ schoolId: "school-1" }),
-      "analysis_failed"
+      "openai_timeout"
     );
   });
 
@@ -351,6 +357,24 @@ describe("AI import API route", () => {
       stage: "confirmed_failed",
       strategy: "pdf-gpt5",
     });
+  });
+
+  it("treats missing active state beyond the server deadline as stale", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-16T00:04:00.000Z"));
+
+    const response = await GET_STATUS(
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&startedAt=1784160000000"),
+      { params: Promise.resolve({ school: "test" }) }
+    );
+    const body = await response.json();
+
+    expect(body).toEqual({
+      status: "failed",
+      reasonCode: "analysis_job_stale",
+      stage: "confirmed_failed",
+    });
+    vi.useRealTimers();
   });
 
   it("reports confirmed failures from the server status path", async () => {

@@ -9,13 +9,15 @@ import {
   isAiImportServerStage,
   type AiImportServerStage,
 } from "./aiImportProgress";
+import { getOpenAiCalendarTimeoutMs } from "./openAiCalendarAnalyzerUtils";
 
 export const AI_CALENDAR_PROMPT_SCHEMA_VERSION = "calendar-v2";
 export const AI_CALENDAR_TEXT_STRATEGY = "text-gpt5-mini";
 export const AI_CALENDAR_PDF_STRATEGY = "pdf-gpt5";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 15 * 60 * 1000;
-export const AI_CALENDAR_STALE_PENDING_MS = 15 * 60 * 1000;
+export const AI_CALENDAR_STALE_HEARTBEAT_MS = 45_000;
+export const AI_CALENDAR_STALE_DEADLINE_GRACE_MS = 15_000;
 
 export type CalendarAnalysisCacheKey = {
   schoolId: string;
@@ -49,6 +51,7 @@ export type CalendarAnalysisStageSnapshot = {
   requestId?: string;
   reasonCode?: string;
   updatedAt: number;
+  lastHeartbeatAt?: number;
 };
 
 export async function readCalendarAnalysisCacheEntry(
@@ -102,6 +105,7 @@ export async function writeCalendarAnalysisCache(key: CalendarAnalysisCacheKey, 
     reason_code: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    last_heartbeat_at: null,
     finished_at: new Date().toISOString(),
   }, { onConflict: "school_id,pdf_sha256,analysis_strategy,model,prompt_schema_version" });
   recentFailures.delete(keyString(key));
@@ -155,9 +159,11 @@ export async function setCalendarAnalysisStage(
 ) {
   const id = keyString(key);
   const previousStage = currentStages.get(id)?.stage;
+  const isHeartbeat = previousStage === stage && stage !== "ready" && stage !== "confirmed_failed";
   const status =
     stage === "ready" ? "ready" : stage === "confirmed_failed" ? "failed" : "pending";
   const finishedAt = status === "pending" ? null : new Date().toISOString();
+  const nowMs = Date.now();
 
   currentStages.set(id, {
     stage,
@@ -165,14 +171,15 @@ export async function setCalendarAnalysisStage(
     strategy: context.strategy || key.strategy,
     requestId: context.requestId,
     reasonCode: context.reasonCode,
-    updatedAt: Date.now(),
+    updatedAt: nowMs,
+    lastHeartbeatAt: status === "pending" ? nowMs : undefined,
   });
   if (status === "pending") {
     recentFailures.delete(id);
   }
 
   console.info("AI calendar import diagnostic", {
-    event: "stage_changed",
+    event: isHeartbeat ? "heartbeat_updated" : "stage_changed",
     previousStage,
     currentStage: stage,
     strategy: context.strategy || key.strategy,
@@ -183,24 +190,52 @@ export async function setCalendarAnalysisStage(
 
   const supabase = await createSupabaseServerClient();
   const now = new Date().toISOString();
-  const { error } = await supabase.from("ai_calendar_analysis_cache").upsert(
-    {
-      school_id: key.schoolId,
-      pdf_sha256: key.pdfHash,
-      analysis_strategy: key.strategy,
-      model: key.model,
-      prompt_schema_version: key.version,
-      status,
-      current_stage: stage,
-      stage_strategy: context.strategy || key.strategy,
-      request_id: context.requestId,
-      reason_code: context.reasonCode || null,
-      created_at: now,
-      updated_at: now,
-      finished_at: finishedAt,
-    },
-    { onConflict: "school_id,pdf_sha256,analysis_strategy,model,prompt_schema_version" }
-  );
+  const stagePatch = {
+    status,
+    current_stage: stage,
+    stage_strategy: context.strategy || key.strategy,
+    request_id: context.requestId,
+    reason_code: context.reasonCode || null,
+    updated_at: now,
+    last_heartbeat_at: status === "pending" ? now : null,
+    finished_at: finishedAt,
+  };
+  const { data: updated, error } = await supabase
+    .from("ai_calendar_analysis_cache")
+    .update(stagePatch)
+    .eq("school_id", key.schoolId)
+    .eq("pdf_sha256", key.pdfHash)
+    .eq("analysis_strategy", key.strategy)
+    .eq("model", key.model)
+    .eq("prompt_schema_version", key.version)
+    .select("school_id")
+    .maybeSingle();
+
+  if (!error && !updated) {
+    const { error: insertError } = await supabase
+      .from("ai_calendar_analysis_cache")
+      .insert({
+        school_id: key.schoolId,
+        pdf_sha256: key.pdfHash,
+        analysis_strategy: key.strategy,
+        model: key.model,
+        prompt_schema_version: key.version,
+        created_at: now,
+        ...stagePatch,
+      });
+
+    if (insertError) {
+      console.warn("AI calendar import diagnostic", {
+        event: "stage_persist_failed",
+        currentStage: stage,
+        strategy: context.strategy || key.strategy,
+        requestId: context.requestId,
+        cacheKey: `${key.schoolId}:${key.pdfHash}:${key.strategy}:${key.version}`,
+        reasonCode: insertError.code,
+      });
+    }
+    return;
+  }
 
   if (error) {
     console.warn("AI calendar import diagnostic", {
@@ -225,7 +260,7 @@ export async function readCalendarAnalysisStage(
   const supabase = await createSupabaseServerClient();
   let query = supabase
     .from("ai_calendar_analysis_cache")
-    .select("status, current_stage, stage_strategy, request_id, reason_code, updated_at")
+    .select("status, current_stage, stage_strategy, request_id, reason_code, updated_at, last_heartbeat_at")
     .eq("school_id", key.schoolId)
     .eq("pdf_sha256", key.pdfHash)
     .eq("analysis_strategy", key.strategy)
@@ -254,15 +289,56 @@ export async function readCalendarAnalysisStage(
     requestId: data.request_id || undefined,
     reasonCode: data.reason_code || undefined,
     updatedAt: new Date(data.updated_at).getTime(),
+    lastHeartbeatAt: data.last_heartbeat_at
+      ? new Date(data.last_heartbeat_at).getTime()
+      : undefined,
   };
 }
 
 export async function markStaleCalendarAnalysisIfNeeded(
   key: CalendarAnalysisCacheKey,
-  staleAfterMs = AI_CALENDAR_STALE_PENDING_MS
+  options: {
+    analyzerDeadlineMs?: number;
+    heartbeatStaleMs?: number;
+    deadlineGraceMs?: number;
+  } = {}
 ): Promise<CalendarAnalysisStageSnapshot | null> {
   const supabase = await createSupabaseServerClient();
-  const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
+  const analyzerDeadlineMs = options.analyzerDeadlineMs ?? getOpenAiCalendarTimeoutMs();
+  const heartbeatStaleMs = options.heartbeatStaleMs ?? AI_CALENDAR_STALE_HEARTBEAT_MS;
+  const deadlineGraceMs = options.deadlineGraceMs ?? AI_CALENDAR_STALE_DEADLINE_GRACE_MS;
+  const { data: current, error: readError } = await supabase
+    .from("ai_calendar_analysis_cache")
+    .select("status, current_stage, stage_strategy, request_id, reason_code, updated_at, created_at, last_heartbeat_at")
+    .eq("school_id", key.schoolId)
+    .eq("pdf_sha256", key.pdfHash)
+    .eq("analysis_strategy", key.strategy)
+    .eq("model", key.model)
+    .eq("prompt_schema_version", key.version)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (
+    readError ||
+    !current ||
+    !isAiImportServerStage(current.current_stage) ||
+    current.status !== "pending"
+  ) {
+    return null;
+  }
+
+  const nowMs = Date.now();
+  const heartbeatAt = new Date(
+    current.last_heartbeat_at || current.updated_at
+  ).getTime();
+  const createdAt = new Date(current.created_at || current.updated_at).getTime();
+  const heartbeatIsStale = nowMs - heartbeatAt >= heartbeatStaleMs;
+  const deadlineExpired = nowMs - createdAt >= analyzerDeadlineMs + deadlineGraceMs;
+
+  if (!heartbeatIsStale || !deadlineExpired) {
+    return null;
+  }
+
   const { data, error } = await supabase
     .from("ai_calendar_analysis_cache")
     .update({
@@ -278,8 +354,7 @@ export async function markStaleCalendarAnalysisIfNeeded(
     .eq("model", key.model)
     .eq("prompt_schema_version", key.version)
     .eq("status", "pending")
-    .lt("updated_at", cutoff)
-    .select("status, current_stage, stage_strategy, request_id, reason_code, updated_at")
+    .select("status, current_stage, stage_strategy, request_id, reason_code, updated_at, last_heartbeat_at")
     .maybeSingle();
 
   if (error || !data || !isAiImportServerStage(data.current_stage)) {
@@ -291,6 +366,17 @@ export async function markStaleCalendarAnalysisIfNeeded(
     failedAt: Date.now(),
   });
 
+  console.warn("AI calendar import diagnostic", {
+    event: "stale_job_detected",
+    currentStage: data.current_stage,
+    strategy: data.stage_strategy || key.strategy,
+    requestId: data.request_id || undefined,
+    reasonCode: data.reason_code || "analysis_job_stale",
+    heartbeatAgeMs: nowMs - heartbeatAt,
+    totalAgeMs: nowMs - createdAt,
+    analyzerDeadlineMs,
+  });
+
   return {
     stage: data.current_stage,
     status: "failed",
@@ -298,5 +384,8 @@ export async function markStaleCalendarAnalysisIfNeeded(
     requestId: data.request_id || undefined,
     reasonCode: data.reason_code || "analysis_job_stale",
     updatedAt: new Date(data.updated_at).getTime(),
+    lastHeartbeatAt: data.last_heartbeat_at
+      ? new Date(data.last_heartbeat_at).getTime()
+      : undefined,
   };
 }

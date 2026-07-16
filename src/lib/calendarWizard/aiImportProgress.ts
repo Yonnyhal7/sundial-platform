@@ -83,8 +83,8 @@ export const AI_IMPORT_STAGE_DETAILS: Record<AiImportServerStage, AiImportProgre
   },
   falling_back_to_pdf: {
     id: "falling_back_to_pdf",
-    label: "Performing deeper PDF review",
-    description: "This calendar relies on visual layout. Sundial is performing a deeper review.",
+    label: "Switching to deeper review",
+    description: "This calendar uses visual schedule assignments. Sundial is switching to a deeper review.",
     progress: 68,
     indeterminate: false,
   },

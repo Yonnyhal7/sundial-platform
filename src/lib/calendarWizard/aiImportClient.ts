@@ -146,6 +146,18 @@ export function isRecoverableAiImportInterruption(
   );
 }
 
+export function getAiImportTerminalFailureMessage(reasonCode?: string) {
+  if (
+    reasonCode === "openai_timeout" ||
+    reasonCode === "analysis_job_stale" ||
+    reasonCode === "client_timeout"
+  ) {
+    return "The calendar analysis took too long to complete. Retry, or continue manually.";
+  }
+
+  return "Sundial could not analyze this PDF yet. Please retry, or continue manually.";
+}
+
 function isAbortLikeError(error: unknown) {
   return (
     error instanceof AiImportClientTimeoutError ||

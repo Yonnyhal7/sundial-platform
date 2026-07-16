@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  AI_CALENDAR_STALE_DEADLINE_GRACE_MS,
   getCalendarAnalysisFailure,
   getCalendarAnalysisStage,
   hasPendingCalendarAnalysis,
@@ -11,6 +12,7 @@ import {
   logAiImportStatusDiagnostic,
   resolveAiImportStatusAccess,
 } from "@/lib/calendarWizard/aiImportStatus.server";
+import { getOpenAiCalendarTimeoutMs } from "@/lib/calendarWizard/openAiCalendarAnalyzerUtils";
 
 export const runtime = "nodejs";
 
@@ -155,16 +157,20 @@ export async function GET(request: Request, context: RouteContext) {
     });
   }
 
-  if (access.startedAt && Date.now() - access.startedAt > 15 * 60 * 1000) {
+  if (
+    access.startedAt &&
+    Date.now() - access.startedAt >
+      getOpenAiCalendarTimeoutMs() + AI_CALENDAR_STALE_DEADLINE_GRACE_MS
+  ) {
     logAiImportStatusDiagnostic({
-      event: "polling_expired",
+      event: "stale_job_detected",
       school,
       durationMs: Date.now() - startedAt,
-      reasonCode: "expired",
+      reasonCode: "analysis_job_stale",
     });
     return NextResponse.json({
-      status: "expired",
-      reasonCode: "expired",
+      status: "failed",
+      reasonCode: "analysis_job_stale",
       stage: "confirmed_failed",
     });
   }
