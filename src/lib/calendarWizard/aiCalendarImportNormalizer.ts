@@ -1,5 +1,6 @@
 import {
   compareDateStrings,
+  eachDateInRange,
   formatDateString,
   isDateString,
 } from "./dateUtils";
@@ -11,6 +12,9 @@ import {
   type AiCalendarPageRole,
   type AiCalendarImportResult,
   type AiDetectedScheduleCategory,
+  type AiDetectedNoSchoolRange,
+  type AiDetectedInformationalDate,
+  type AiImportAutomaticResolution,
   type AiImportConfidence,
   type AiImportEvidence,
   type AiImportValidationResult,
@@ -279,6 +283,136 @@ function dateRangeKey(item: { startDate: string; endDate: string; label: string 
   return `${item.startDate}|${item.endDate || ""}|${item.label.toLowerCase()}`;
 }
 
+function isExplicitNoSchoolLabel(value: string) {
+  return /\b(no school|no classes|non[-\s]?student|student[-\s]?free|holiday|holidays|recess|break|closed|closure|district closed|inservice|teacher work|staff development)\b/i.test(
+    value
+  );
+}
+
+function isTermEndingLabel(value: string) {
+  return /\b((fall|spring|winter)?\s*(term|quarter|semester)\s+ends?|last instructional day)\b/i.test(
+    value
+  );
+}
+
+function shouldReclassifyNoSchoolAsInformational(range: {
+  label: string;
+  type?: string;
+}) {
+  const labelText = `${range.label || ""} ${range.type || ""}`.trim();
+  return isTermEndingLabel(labelText) && !isExplicitNoSchoolLabel(labelText);
+}
+
+function pushUniqueResolution(
+  resolutions: AiImportAutomaticResolution[],
+  resolution: AiImportAutomaticResolution
+) {
+  const key = [
+    resolution.code,
+    resolution.dateRange?.startDate,
+    resolution.dateRange?.endDate,
+    resolution.labelsPreserved?.join("|"),
+  ].join("::");
+
+  if (
+    resolutions.some(
+      (item) =>
+        [
+          item.code,
+          item.dateRange?.startDate,
+          item.dateRange?.endDate,
+          item.labelsPreserved?.join("|"),
+        ].join("::") === key
+    )
+  ) {
+    return;
+  }
+
+  resolutions.push(resolution);
+}
+
+function mergeNoSchoolCoverage(
+  ranges: AiDetectedNoSchoolRange[],
+  automaticResolutions: AiImportAutomaticResolution[],
+  preservedInformationalDates: AiDetectedInformationalDate[]
+) {
+  const sorted = [...ranges].sort((a, b) => {
+    const startComparison = compareDateStrings(a.startDate, b.startDate);
+    if (startComparison !== 0) return startComparison;
+    return compareDateStrings(a.endDate, b.endDate);
+  });
+  const merged: Array<{
+    range: AiDetectedNoSchoolRange;
+    labels: string[];
+    ids: string[];
+    merged: boolean;
+  }> = [];
+
+  for (const range of sorted) {
+    const current = merged[merged.length - 1];
+
+    if (
+      current &&
+      isDateString(current.range.startDate) &&
+      isDateString(current.range.endDate) &&
+      isDateString(range.startDate) &&
+      isDateString(range.endDate) &&
+      compareDateStrings(range.startDate, current.range.endDate) <= 0
+    ) {
+      const nextEndDate =
+        compareDateStrings(range.endDate, current.range.endDate) > 0
+          ? range.endDate
+          : current.range.endDate;
+
+      current.range.endDate = nextEndDate;
+      current.range.evidence = current.range.evidence || range.evidence;
+      current.merged = true;
+      if (!current.labels.includes(range.label)) {
+        current.labels.push(range.label);
+      }
+      if (!current.ids.includes(range.id)) {
+        current.ids.push(range.id);
+      }
+      for (const date of eachDateInRange(range.startDate, range.endDate)) {
+        preservedInformationalDates.push({
+          id: `${range.id}-annotation-${date}`,
+          date,
+          label: range.label,
+          confidence: range.confidence,
+          evidence: range.evidence,
+        });
+      }
+      continue;
+    }
+
+    merged.push({
+      range: { ...range },
+      labels: [range.label],
+      ids: [range.id],
+      merged: false,
+    });
+  }
+
+  for (const group of merged) {
+    if (!group.merged) continue;
+    pushUniqueResolution(automaticResolutions, {
+      code: "no_school_ranges_merged",
+      title: "No-school ranges combined",
+      message: `${group.range.label} contains or overlaps ${group.labels.length - 1} named ${
+        group.labels.length === 2 ? "holiday" : "holidays"
+      }. Sundial combined the no-school dates and preserved the labels.`,
+      dateRange: {
+        startDate: group.range.startDate,
+        endDate: group.range.endDate,
+      },
+      labelsPreserved: group.labels,
+      originalIds: group.ids,
+    });
+  }
+
+  return merged.map((group) => group.range);
+}
+
 const studentCalendarPageRoles = new Set<AiCalendarPageRole>([
   "student_attendance_calendar",
   "school_schedule_calendar",
@@ -518,7 +652,9 @@ export function normalizeAiCalendarExtraction(
     warnings
   );
 
-  const noSchoolRanges = dedupeByKey(
+  const automaticResolutions: AiImportAutomaticResolution[] = [];
+  const preservedNoSchoolLabelDates: AiDetectedInformationalDate[] = [];
+  const normalizedNoSchoolCandidates = dedupeByKey(
     rawNoSchoolRanges.map((range, index) => ({
       id: trimRequired(range.id, makeId("ai-no-school", range.label, index)),
       startDate: normalizeDateValue(range.startDate),
@@ -533,6 +669,36 @@ export function normalizeAiCalendarExtraction(
     })),
     dateRangeKey,
     warnings
+  );
+  const reclassifiedInformationalDates: AiDetectedInformationalDate[] = [];
+  const noSchoolRanges = mergeNoSchoolCoverage(
+    normalizedNoSchoolCandidates.filter((range) => {
+      if (!shouldReclassifyNoSchoolAsInformational(range)) {
+        return true;
+      }
+
+      reclassifiedInformationalDates.push({
+        id: `${range.id}-info`,
+        date: range.startDate,
+        label: range.label,
+        confidence: range.confidence,
+        evidence: range.evidence,
+      });
+      pushUniqueResolution(automaticResolutions, {
+        code: "term_end_reclassified",
+        title: "Term-ending date kept instructional",
+        message: `${range.label} looks like an instructional term-ending date, not a no-school day. Sundial kept it as an informational calendar label.`,
+        dateRange: {
+          startDate: range.startDate,
+          endDate: range.endDate,
+        },
+        labelsPreserved: [range.label],
+        originalIds: [range.id],
+      });
+      return false;
+    }),
+    automaticResolutions,
+    preservedNoSchoolLabelDates
   ).sort((a, b) => compareDateStrings(a.startDate, b.startDate));
 
   const specialDays = dedupeByKey(
@@ -555,13 +721,17 @@ export function normalizeAiCalendarExtraction(
   ).sort((a, b) => compareDateStrings(a.startDate, b.startDate));
 
   const informationalDates = dedupeByKey(
-    rawInformationalDates.map((date, index) => ({
-      id: trimRequired(date.id, makeId("ai-info", date.label, index)),
-      date: normalizeDateValue(date.date),
-      label: trimRequired(date.label, "Important Date"),
-      confidence: normalizeConfidence(date.confidence),
-      evidence: evidence(date.evidence),
-    })),
+    [
+      ...rawInformationalDates.map((date, index) => ({
+        id: trimRequired(date.id, makeId("ai-info", date.label, index)),
+        date: normalizeDateValue(date.date),
+        label: trimRequired(date.label, "Important Date"),
+        confidence: normalizeConfidence(date.confidence),
+        evidence: evidence(date.evidence),
+      })),
+      ...reclassifiedInformationalDates,
+      ...preservedNoSchoolLabelDates,
+    ],
     (date) => `${date.date}|${date.label.toLowerCase()}`,
     warnings
   ).sort((a, b) => compareDateStrings(a.date, b.date));
@@ -659,6 +829,7 @@ export function normalizeAiCalendarExtraction(
     specialDays,
     informationalDates,
     warnings,
+    automaticResolutions,
   };
 
   if (

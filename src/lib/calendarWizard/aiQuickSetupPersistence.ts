@@ -98,7 +98,6 @@ export type CalendarWarningClassification = {
 const blockingGeneratorWarningCodes = new Set<CalendarGenerationWarningCode>([
   "start_date_after_end_date",
   "no_operating_weekdays",
-  "overlapping_no_school_ranges",
   "overlapping_special_days",
   "special_day_overlaps_no_school",
   "instructional_day_missing_schedule",
@@ -110,6 +109,7 @@ const blockingGeneratorWarningCodes = new Set<CalendarGenerationWarningCode>([
 const reviewOnlyWarningCodes = new Set([
   "duplicate_import_item_removed",
   "instructional_day_count_mismatch",
+  "overlapping_no_school_ranges",
   "schedule_resolution_required",
   "special_day_outside_school_year",
   "unknown_pattern_schedule_reference",

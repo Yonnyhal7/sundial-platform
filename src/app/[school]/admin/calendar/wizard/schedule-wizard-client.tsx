@@ -281,6 +281,25 @@ function formatDateRange(startDate: string, endDate?: string) {
   return `${formatDateForDisplay(startDate)} - ${formatDateForDisplay(endDate)}`;
 }
 
+function formatCacheAnalyzedAt(value?: string) {
+  if (!value) return "previously";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "previously";
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function cacheStrategyLabel(strategy?: string) {
+  if (strategy === "text-gpt5-mini") return "Fast text analysis";
+  if (strategy === "pdf-gpt5") return "Visual PDF analysis";
+  return "Calendar analysis";
+}
+
 function normalizeDraftRangeEnd<T extends { startDate: string; endDate?: string | null }>(
   range: T
 ) {
@@ -603,6 +622,25 @@ function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[
             banner:
               typeof record.aiImport.banner === "string"
                 ? record.aiImport.banner
+                : undefined,
+            pdfHash:
+              typeof record.aiImport.pdfHash === "string" &&
+              /^[0-9a-f]{64}$/i.test(record.aiImport.pdfHash)
+                ? record.aiImport.pdfHash
+                : undefined,
+            cacheHit: record.aiImport.cacheHit === true,
+            cacheAnalyzedAt:
+              typeof record.aiImport.cacheAnalyzedAt === "string"
+                ? record.aiImport.cacheAnalyzedAt
+                : undefined,
+            cacheStrategy:
+              record.aiImport.cacheStrategy === "text-gpt5-mini" ||
+              record.aiImport.cacheStrategy === "pdf-gpt5"
+                ? record.aiImport.cacheStrategy
+                : undefined,
+            analysisVersion:
+              typeof record.aiImport.analysisVersion === "string"
+                ? record.aiImport.analysisVersion
                 : undefined,
             unresolvedRequiredScheduleIds: Array.isArray(
               record.aiImport.unresolvedRequiredScheduleIds
@@ -1087,6 +1125,26 @@ export default function ScheduleWizardClient({
     return result;
   }
 
+  async function invalidateAiImportCache(
+    pdfHash: string | undefined,
+    reason: string
+  ) {
+    if (!pdfHash) return;
+
+    try {
+      await fetch(
+        `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/invalidate`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ pdfHash, reason }),
+        }
+      );
+    } catch {
+      // Draft reset should not be blocked by a transient invalidation request.
+    }
+  }
+
   useEffect(() => {
     window.setTimeout(() => {
       // Slug-only keys can outlive a deleted school and leak into a future
@@ -1291,6 +1349,7 @@ export default function ScheduleWizardClient({
     }
 
     setDraftSaveStatus("saving");
+    await invalidateAiImportCache(draft.aiImport?.pdfHash, "administrator_reset");
     const result = await deleteCalendarWizardDraft(schoolSlug, draftType);
     if (result.status !== "success") {
       setDraftSaveStatus("error");
@@ -1587,6 +1646,7 @@ export default function ScheduleWizardClient({
               onCreateCalendar={openAiCreateModal}
               updateDraft={updateDraft}
               setCurrentStep={setCurrentStep}
+              onInvalidateAiCache={invalidateAiImportCache}
             />
           ) : currentStep === "school-year" && (
             <div className="space-y-7">
@@ -1798,6 +1858,7 @@ function AiCalendarImportCard({
   onCreateCalendar,
   updateDraft,
   setCurrentStep,
+  onInvalidateAiCache,
 }: {
   schoolSlug: string;
   schedules: WizardScheduleSummary[];
@@ -1807,6 +1868,7 @@ function AiCalendarImportCard({
   onCreateCalendar: () => Promise<void>;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
   setCurrentStep: (step: WizardStep) => void;
+  onInvalidateAiCache: (pdfHash: string | undefined, reason: string) => Promise<void>;
 }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [status, setStatus] = useState<AiImportReviewState>(
@@ -1913,10 +1975,12 @@ function AiCalendarImportCard({
     result,
     requestId,
     fileName,
+    pdfHash,
   }: {
     result: Extract<AnalyzeCalendarPdfResult, { status: "success" }>;
     requestId: string | null;
     fileName?: string;
+    pdfHash?: string;
   }) {
     const schemaValidation = validateAiCalendarImportResult(result.importResult);
     if (!schemaValidation.success) {
@@ -1991,6 +2055,14 @@ function AiCalendarImportCard({
     }
 
     setStatus("review");
+    const cacheHit = result.cache?.hit === true;
+    const cacheAnalyzedAt = result.cache?.analyzedAt;
+    const cacheStrategy = result.cache?.strategy || result.analysisStrategy;
+    const cacheBanner = cacheHit
+      ? `Using a previously completed calendar analysis from ${formatCacheAnalyzedAt(
+          cacheAnalyzedAt
+        )}. Strategy: ${cacheStrategyLabel(cacheStrategy)}.`
+      : null;
     setMessage(
       nextState === "complete_with_warnings"
         ? "Analysis completed with warnings. Review before creating your calendar."
@@ -2006,12 +2078,18 @@ function AiCalendarImportCard({
           resolutions: matchedResolutions,
           warnings: result.importResult.warnings,
           warningResolutions,
+          pdfHash,
+          cacheHit,
+          cacheAnalyzedAt,
+          cacheStrategy,
+          analysisVersion: result.cache?.version,
           banner:
-            result.outcome === "repaired"
+            cacheBanner ||
+            (result.outcome === "repaired"
               ? "Sundial corrected a formatting issue and completed the analysis."
               : result.outcome === "reviewable"
                 ? "Sundial read the calendar, but one item needs your review."
-                : "Calendar analysis complete.",
+                : "Calendar analysis complete."),
         },
       }));
       clearPendingAiImport();
@@ -2088,6 +2166,7 @@ function AiCalendarImportCard({
               result,
               requestId: pending.requestId || null,
               fileName: pending.fileName,
+              pdfHash: pending.pdfHash,
             });
             return;
           }
@@ -2172,6 +2251,7 @@ function AiCalendarImportCard({
             result,
             requestId: pending.requestId || null,
             fileName: pending.fileName,
+            pdfHash: pending.pdfHash,
           });
           return;
         }
@@ -2224,6 +2304,7 @@ function AiCalendarImportCard({
 
     const formData = new FormData();
     formData.append("calendarPdf", selectedFile);
+    formData.append("cacheMode", analyzeAgain ? "bypass" : "default");
     if (analyzeAgain) formData.append("analyzeAgain", "true");
 
     try {
@@ -2270,6 +2351,7 @@ function AiCalendarImportCard({
         result,
         requestId,
         fileName: selectedFile.name,
+        pdfHash: pendingImport?.pdfHash,
       });
     } catch (error) {
       const result = mapAiImportClientError(error);
@@ -2489,7 +2571,8 @@ function AiCalendarImportCard({
     });
   }
 
-  function startAiReviewOver() {
+  async function startAiReviewOver(reason = "administrator_reset") {
+    await onInvalidateAiCache(draft.aiImport?.pdfHash, reason);
     setSelectedFile(null);
     setStatus("idle");
     setMessage("");
@@ -2497,6 +2580,28 @@ function AiCalendarImportCard({
     setProgress(0);
     setElapsedSeconds(0);
     updateDraft((previousDraft) => clearAiImportMetadata(previousDraft));
+  }
+
+  async function rejectAnalysis() {
+    if (
+      !window.confirm(
+        "Reject this AI analysis and run a fresh import the next time this PDF is uploaded?"
+      )
+    ) {
+      return;
+    }
+
+    await startAiReviewOver("user_rejected_result");
+  }
+
+  function analyzeAgainFromReview() {
+    if (!selectedFile) {
+      setMessage("Choose the same PDF again, then select Analyze Again.");
+      setStatus("file_selected");
+      return;
+    }
+
+    void analyzeSelectedFile(true);
   }
 
   return (
@@ -2594,6 +2699,12 @@ function AiCalendarImportCard({
       {importResult && draft.aiImport?.state === "review" && (
         <AiImportReview
           importResult={importResult}
+          cacheMetadata={{
+            cacheHit: draft.aiImport.cacheHit,
+            cacheAnalyzedAt: draft.aiImport.cacheAnalyzedAt,
+            cacheStrategy: draft.aiImport.cacheStrategy,
+            analysisVersion: draft.aiImport.analysisVersion,
+          }}
           resolutions={resolutions}
           schedules={schedules}
           onAddTimesNow={onAddTimesNow}
@@ -2608,6 +2719,8 @@ function AiCalendarImportCard({
           onContinueManually={continueManually}
           onAdvancedEdit={applyImport}
           onStartOver={startAiReviewOver}
+          onAnalyzeAgain={analyzeAgainFromReview}
+          onRejectAnalysis={rejectAnalysis}
         />
       )}
     </div>
@@ -2616,6 +2729,7 @@ function AiCalendarImportCard({
 
 function AiImportReview({
   importResult,
+  cacheMetadata,
   resolutions,
   schedules,
   onAddTimesNow,
@@ -2630,8 +2744,16 @@ function AiImportReview({
   onContinueManually,
   onAdvancedEdit,
   onStartOver,
+  onAnalyzeAgain,
+  onRejectAnalysis,
 }: {
   importResult: AiCalendarImportResult;
+  cacheMetadata?: {
+    cacheHit?: boolean;
+    cacheAnalyzedAt?: string;
+    cacheStrategy?: "text-gpt5-mini" | "pdf-gpt5";
+    analysisVersion?: string;
+  };
   resolutions: DetectedScheduleResolution[];
   schedules: WizardScheduleSummary[];
   onAddTimesNow: (tempId: string, detectedName: string) => Promise<void>;
@@ -2651,7 +2773,9 @@ function AiImportReview({
   onCreateCalendar: () => Promise<void>;
   onContinueManually: () => void;
   onAdvancedEdit: () => void;
-  onStartOver: () => void;
+  onStartOver: () => void | Promise<void>;
+  onAnalyzeAgain: () => void;
+  onRejectAnalysis: () => void | Promise<void>;
 }) {
   const [removalTarget, setRemovalTarget] = useState<{
     tempId: string;
@@ -2730,7 +2854,13 @@ function AiImportReview({
           <button type="button" onClick={onContinueManually} className={secondaryButtonClass}>
             Continue Manually
           </button>
-          <button type="button" onClick={onStartOver} className={subtleButtonClass}>
+          <button type="button" onClick={onAnalyzeAgain} className={secondaryButtonClass}>
+            Analyze Again
+          </button>
+          <button type="button" onClick={() => void onRejectAnalysis()} className={subtleButtonClass}>
+            Reject Analysis
+          </button>
+          <button type="button" onClick={() => void onStartOver()} className={subtleButtonClass}>
             Start Over
           </button>
           <button type="button" onClick={onCreateCalendar} disabled={!canCreateCalendar} className={sundialPrimaryButtonClass("px-5")}>
@@ -2738,6 +2868,17 @@ function AiImportReview({
           </button>
         </div>
       </div>
+
+      {cacheMetadata?.cacheHit && (
+        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+          <p>Using a previously completed calendar analysis.</p>
+          <p className="mt-1 text-xs uppercase tracking-wide">
+            Analyzed {formatCacheAnalyzedAt(cacheMetadata.cacheAnalyzedAt)} ·{" "}
+            {cacheStrategyLabel(cacheMetadata.cacheStrategy)}
+            {cacheMetadata.analysisVersion ? ` · ${cacheMetadata.analysisVersion}` : ""}
+          </p>
+        </div>
+      )}
 
       <div className="mt-5 grid gap-3 md:grid-cols-6">
         <MetricCard
@@ -3020,6 +3161,41 @@ function AiImportReview({
           {readiness.percentComplete}% ready for Phase C creation.
         </p>
       </ReviewPanel>
+
+      {importResult.automaticResolutions && importResult.automaticResolutions.length > 0 && (
+        <ReviewPanel title="Automatically resolved" className="mt-4">
+          <div className="space-y-3">
+            {importResult.automaticResolutions.map((resolution, index) => (
+              <details
+                key={`${resolution.code}-${index}`}
+                className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100"
+              >
+                <summary className="cursor-pointer font-bold">
+                  {resolution.title}
+                </summary>
+                <p className="mt-2 font-semibold">{resolution.message}</p>
+                {resolution.labelsPreserved && resolution.labelsPreserved.length > 0 && (
+                  <p className="mt-2 text-xs font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+                    Labels preserved: {resolution.labelsPreserved.join(", ")}
+                  </p>
+                )}
+                {resolution.dateRange && (
+                  <p className="mt-1 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                    {formatDateRange(
+                      resolution.dateRange.startDate,
+                      resolution.dateRange.endDate
+                    )}
+                  </p>
+                )}
+              </details>
+            ))}
+          </div>
+          <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            You can undo these corrections by editing the affected no-school or
+            informational dates before creating the calendar.
+          </p>
+        </ReviewPanel>
+      )}
 
       {importResult.warnings.length > 0 && (
         <ReviewPanel title="Warnings" className="mt-4">

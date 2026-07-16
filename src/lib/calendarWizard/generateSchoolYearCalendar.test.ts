@@ -368,6 +368,32 @@ describe("generateSchoolYearCalendar", () => {
     );
   });
 
+  it("allows informational special labels to coexist with no-school dates", () => {
+    const result = generateSchoolYearCalendar(
+      baseConfig({
+        noSchoolRanges: [{ startDate: "2026-08-11", label: "Holiday" }],
+        specialDays: [
+          {
+            startDate: "2026-08-11",
+            scheduleId: null,
+            label: "District Office Closed",
+            isInstructional: false,
+          },
+        ],
+      })
+    );
+
+    expect(day(result, "2026-08-11")).toMatchObject({
+      isSchoolDay: false,
+      scheduleId: null,
+      baseScheduleId: null,
+      labels: ["Holiday", "District Office Closed"],
+    });
+    expect(result.warnings.map((warning) => warning.code)).not.toContain(
+      "special_day_overlaps_no_school"
+    );
+  });
+
   it("keeps informational labels without altering the schedule", () => {
     const result = generateSchoolYearCalendar(
       baseConfig({

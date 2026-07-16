@@ -10,8 +10,9 @@ import {
   type AiImportServerStage,
 } from "./aiImportProgress";
 import { getOpenAiCalendarTimeoutMs } from "./openAiCalendarAnalyzerUtils";
+import { AI_CALENDAR_ANALYSIS_VERSION } from "./aiCalendarAnalysisVersion";
 
-export const AI_CALENDAR_PROMPT_SCHEMA_VERSION = "calendar-v2";
+export const AI_CALENDAR_PROMPT_SCHEMA_VERSION = AI_CALENDAR_ANALYSIS_VERSION;
 export const AI_CALENDAR_TEXT_STRATEGY = "text-gpt5-mini";
 export const AI_CALENDAR_PDF_STRATEGY = "pdf-gpt5";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -42,6 +43,9 @@ const keyString = (key: CalendarAnalysisCacheKey) =>
 export type CalendarAnalysisCacheEntry = {
   result: AiCalendarImportResult;
   createdAt: string;
+  strategy: string;
+  model: string;
+  version: string;
 };
 
 export type CalendarAnalysisStageSnapshot = {
@@ -67,6 +71,8 @@ export async function readCalendarAnalysisCacheEntry(
     .eq("analysis_strategy", key.strategy)
     .eq("model", key.model)
     .eq("prompt_schema_version", key.version)
+    .eq("analysis_version", key.version)
+    .is("invalidated_at", null)
     .gte("created_at", new Date(Date.now() - CACHE_TTL_MS).toISOString());
 
   if (options.minCreatedAt) {
@@ -78,7 +84,13 @@ export async function readCalendarAnalysisCacheEntry(
   if (error || !data || data.status !== "ready" || !data.result) return null;
   const validation = validateAiCalendarImportResult(data.result);
   return validation.success
-    ? { result: validation.data, createdAt: data.created_at }
+    ? {
+        result: validation.data,
+        createdAt: data.created_at,
+        strategy: key.strategy,
+        model: key.model,
+        version: key.version,
+      }
     : null;
 }
 
@@ -98,6 +110,7 @@ export async function writeCalendarAnalysisCache(key: CalendarAnalysisCacheKey, 
     analysis_strategy: key.strategy,
     model: key.model,
     prompt_schema_version: key.version,
+    analysis_version: key.version,
     result,
     status: "ready",
     current_stage: "ready",
@@ -107,8 +120,58 @@ export async function writeCalendarAnalysisCache(key: CalendarAnalysisCacheKey, 
     updated_at: new Date().toISOString(),
     last_heartbeat_at: null,
     finished_at: new Date().toISOString(),
+    invalidated_at: null,
+    invalidated_by: null,
+    invalidation_reason: null,
   }, { onConflict: "school_id,pdf_sha256,analysis_strategy,model,prompt_schema_version" });
   recentFailures.delete(keyString(key));
+}
+
+export async function invalidateCalendarAnalysisCache(
+  keys: CalendarAnalysisCacheKey[],
+  reason: string
+) {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const invalidatedAt = new Date().toISOString();
+
+  await Promise.all(
+    keys.map(async (key) => {
+      const { error } = await supabase
+        .from("ai_calendar_analysis_cache")
+        .update({
+          invalidated_at: invalidatedAt,
+          invalidated_by: user?.id || null,
+          invalidation_reason: reason,
+          status: "failed",
+          current_stage: "confirmed_failed",
+          reason_code: reason,
+          updated_at: invalidatedAt,
+          finished_at: invalidatedAt,
+        })
+        .eq("school_id", key.schoolId)
+        .eq("pdf_sha256", key.pdfHash)
+        .eq("analysis_strategy", key.strategy)
+        .eq("model", key.model)
+        .eq("prompt_schema_version", key.version)
+        .eq("analysis_version", key.version)
+        .is("invalidated_at", null);
+
+      if (error) {
+        console.warn("AI calendar import diagnostic", {
+          event: "cache_invalidation_failed",
+          strategy: key.strategy,
+          reasonCode: error.code,
+        });
+        return;
+      }
+
+      recentFailures.delete(keyString(key));
+      currentStages.delete(keyString(key));
+    })
+  );
 }
 
 export async function dedupeCalendarAnalysis<T>(key: CalendarAnalysisCacheKey, analyze: () => Promise<T>): Promise<T> {
@@ -208,21 +271,27 @@ export async function setCalendarAnalysisStage(
     .eq("analysis_strategy", key.strategy)
     .eq("model", key.model)
     .eq("prompt_schema_version", key.version)
+    .eq("analysis_version", key.version)
+    .is("invalidated_at", null)
     .select("school_id")
     .maybeSingle();
 
   if (!error && !updated) {
     const { error: insertError } = await supabase
       .from("ai_calendar_analysis_cache")
-      .insert({
+      .upsert({
         school_id: key.schoolId,
         pdf_sha256: key.pdfHash,
         analysis_strategy: key.strategy,
         model: key.model,
         prompt_schema_version: key.version,
+        analysis_version: key.version,
         created_at: now,
+        invalidated_at: null,
+        invalidated_by: null,
+        invalidation_reason: null,
         ...stagePatch,
-      });
+      }, { onConflict: "school_id,pdf_sha256,analysis_strategy,model,prompt_schema_version" });
 
     if (insertError) {
       console.warn("AI calendar import diagnostic", {
@@ -266,6 +335,8 @@ export async function readCalendarAnalysisStage(
     .eq("analysis_strategy", key.strategy)
     .eq("model", key.model)
     .eq("prompt_schema_version", key.version)
+    .eq("analysis_version", key.version)
+    .is("invalidated_at", null)
     .gte("updated_at", new Date(Date.now() - FAILURE_TTL_MS).toISOString());
 
   if (options.minUpdatedAt) {
@@ -315,6 +386,8 @@ export async function markStaleCalendarAnalysisIfNeeded(
     .eq("analysis_strategy", key.strategy)
     .eq("model", key.model)
     .eq("prompt_schema_version", key.version)
+    .eq("analysis_version", key.version)
+    .is("invalidated_at", null)
     .eq("status", "pending")
     .maybeSingle();
 
@@ -353,6 +426,8 @@ export async function markStaleCalendarAnalysisIfNeeded(
     .eq("analysis_strategy", key.strategy)
     .eq("model", key.model)
     .eq("prompt_schema_version", key.version)
+    .eq("analysis_version", key.version)
+    .is("invalidated_at", null)
     .eq("status", "pending")
     .select("status, current_stage, stage_strategy, request_id, reason_code, updated_at, last_heartbeat_at")
     .maybeSingle();

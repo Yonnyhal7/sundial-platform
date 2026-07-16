@@ -316,6 +316,181 @@ describe("AI calendar import normalization", () => {
     }
   });
 
+  it("merges nested no-school holidays into canonical coverage and preserves labels", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        firstInstructionalDate: "2026-08-12",
+        lastInstructionalDate: "2027-05-28",
+        noSchoolRanges: [
+          {
+            id: "christmas-recess",
+            startDate: "2026-12-21",
+            endDate: "2027-01-01",
+            label: "Christmas Recess",
+            type: "Recess",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "admission-day",
+            startDate: "2026-12-23",
+            endDate: null,
+            label: "Admission Day",
+            type: "Holiday",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "christmas-holidays",
+            startDate: "2026-12-24",
+            endDate: "2026-12-25",
+            label: "Christmas Holidays",
+            type: "Holiday",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "new-years-day",
+            startDate: "2027-01-01",
+            endDate: null,
+            label: "New Year's Day",
+            type: "Holiday",
+            confidence: "high",
+            evidence: null,
+          },
+        ],
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.importResult.noSchoolRanges).toHaveLength(1);
+      expect(normalized.importResult.noSchoolRanges[0]).toMatchObject({
+        id: "christmas-recess",
+        startDate: "2026-12-21",
+        endDate: "2027-01-01",
+        label: "Christmas Recess",
+      });
+      expect(normalized.importResult.informationalDates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            date: "2026-12-23",
+            label: "Admission Day",
+          }),
+          expect.objectContaining({
+            date: "2026-12-24",
+            label: "Christmas Holidays",
+          }),
+          expect.objectContaining({
+            date: "2026-12-25",
+            label: "Christmas Holidays",
+          }),
+          expect.objectContaining({
+            date: "2027-01-01",
+            label: "New Year's Day",
+          }),
+        ])
+      );
+      expect(normalized.importResult.automaticResolutions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "no_school_ranges_merged",
+            labelsPreserved: expect.arrayContaining([
+              "Christmas Recess",
+              "Admission Day",
+              "Christmas Holidays",
+              "New Year's Day",
+            ]),
+          }),
+        ])
+      );
+      expect(normalized.importResult.warnings).not.toContainEqual(
+        expect.objectContaining({ code: "overlapping_no_school_ranges" })
+      );
+    }
+  });
+
+  it("merges partially overlapping no-school ranges into one coverage range", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        noSchoolRanges: [
+          {
+            id: "spring-break-a",
+            startDate: "2027-03-22",
+            endDate: "2027-03-26",
+            label: "Easter Recess",
+            type: "Recess",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "spring-break-b",
+            startDate: "2027-03-26",
+            endDate: "2027-03-29",
+            label: "District Closed",
+            type: "Closure",
+            confidence: "high",
+            evidence: null,
+          },
+        ],
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.importResult.noSchoolRanges).toHaveLength(1);
+      expect(normalized.importResult.noSchoolRanges[0]).toMatchObject({
+        startDate: "2027-03-22",
+        endDate: "2027-03-29",
+        label: "Easter Recess",
+      });
+      expect(normalized.importResult.automaticResolutions).toContainEqual(
+        expect.objectContaining({
+          code: "no_school_ranges_merged",
+          labelsPreserved: ["Easter Recess", "District Closed"],
+        })
+      );
+    }
+  });
+
+  it("reclassifies term-ending labels as informational unless no-school is explicit", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        noSchoolRanges: [
+          {
+            id: "fall-term-ends",
+            startDate: "2026-12-18",
+            endDate: null,
+            label: "Fall Term Ends",
+            type: "Important Date",
+            confidence: "high",
+            evidence: null,
+          },
+        ],
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.importResult.noSchoolRanges).toHaveLength(0);
+      expect(normalized.importResult.informationalDates).toContainEqual(
+        expect.objectContaining({
+          date: "2026-12-18",
+          label: "Fall Term Ends",
+        })
+      );
+      expect(normalized.importResult.automaticResolutions).toContainEqual(
+        expect.objectContaining({
+          code: "term_end_reclassified",
+          labelsPreserved: ["Fall Term Ends"],
+        })
+      );
+    }
+  });
+
   it("sorts imported dates chronologically", () => {
     const normalized = normalizeAiCalendarExtraction(
       rawExtraction({

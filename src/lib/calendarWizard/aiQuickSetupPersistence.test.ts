@@ -690,6 +690,21 @@ describe("AI quick setup persistence planning", () => {
     expect(classification.reviewWarnings).toHaveLength(1);
   });
 
+  it("keeps overlapping no-school ranges as review-only after normalization", () => {
+    const warnings: CalendarGenerationWarning[] = [
+      {
+        code: "overlapping_no_school_ranges",
+        message: "Two no-school ranges overlap.",
+        sourceIds: ["christmas-recess", "christmas-holiday"],
+      },
+    ];
+
+    const classification = classifyCalendarWarnings(warnings);
+
+    expect(classification.blockingWarnings).toHaveLength(0);
+    expect(classification.reviewWarnings).toHaveLength(1);
+  });
+
   it("allows calendar creation when only review warnings remain", () => {
     const readiness = getAiCreateCalendarReadiness({
       warnings: [

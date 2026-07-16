@@ -374,7 +374,11 @@ export function generateSchoolYearCalendar(
     if (noSchoolEntries.length > 0) {
       addLabels(labels, noSchoolEntries.map((entry) => entry.label));
 
-      if (specialEntries.length > 0) {
+      const conflictingSpecialEntries = specialEntries.filter(
+        (entry) => entry.isInstructional || Boolean(entry.scheduleId)
+      );
+
+      if (conflictingSpecialEntries.length > 0) {
         const code = "special_day_overlaps_no_school";
         warningCodes.push(code);
         addWarning(
@@ -383,9 +387,15 @@ export function generateSchoolYearCalendar(
           "A special school day overlaps a no-school day. The date remains no school.",
           {
             dates: [date],
-            sourceIds: [...sources.noSchoolRangeIds, ...sources.specialDayIds],
+            sourceIds: [
+              ...sources.noSchoolRangeIds,
+              ...conflictingSpecialEntries.map((entry) => entry.id),
+            ],
           }
         );
+      }
+
+      if (specialEntries.length > 0) {
         addLabels(labels, specialEntries.map((entry) => entry.label));
       }
 

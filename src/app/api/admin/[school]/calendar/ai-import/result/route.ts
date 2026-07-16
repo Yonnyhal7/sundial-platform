@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { readCalendarAnalysisCache } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
+import {
+  AI_CALENDAR_PDF_STRATEGY,
+  AI_CALENDAR_TEXT_STRATEGY,
+  readCalendarAnalysisCacheEntry,
+} from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
 import {
   logAiImportStatusDiagnostic,
   resolveAiImportStatusAccess,
@@ -28,7 +32,7 @@ export async function GET(request: Request, context: RouteContext) {
 
   let result = null;
   for (const cacheKey of access.cacheKeys) {
-    result = await readCalendarAnalysisCache(cacheKey, {
+    result = await readCalendarAnalysisCacheEntry(cacheKey, {
       minCreatedAt: access.startedAt || undefined,
     });
     if (result) break;
@@ -51,7 +55,20 @@ export async function GET(request: Request, context: RouteContext) {
   });
   return NextResponse.json({
     status: "success",
-    importResult: result,
+    importResult: result.result,
     outcome: "successful",
+    analysisStrategy:
+      result.strategy === AI_CALENDAR_TEXT_STRATEGY
+        ? AI_CALENDAR_TEXT_STRATEGY
+        : AI_CALENDAR_PDF_STRATEGY,
+    cache: {
+      hit: true,
+      analyzedAt: result.createdAt,
+      strategy:
+        result.strategy === AI_CALENDAR_TEXT_STRATEGY
+          ? AI_CALENDAR_TEXT_STRATEGY
+          : AI_CALENDAR_PDF_STRATEGY,
+      version: result.version,
+    },
   });
 }

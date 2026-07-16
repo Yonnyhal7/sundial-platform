@@ -20,7 +20,7 @@ const cacheKey: CalendarAnalysisCacheKey = {
   pdfHash: "a".repeat(64),
   strategy: "pdf-gpt5",
   model: "gpt-5",
-  version: "calendar-v2",
+  version: "calendar-v3",
 };
 
 function mockSupabaseCacheRow(row: Record<string, unknown> | null) {
@@ -35,6 +35,7 @@ function mockSupabaseCacheRow(row: Record<string, unknown> | null) {
   const builder = {
     select: vi.fn(() => builder),
     eq: vi.fn(() => builder),
+    is: vi.fn(() => builder),
     maybeSingle: vi.fn(async () => {
       if (!row) return { data: null, error: null };
       if (state.mode === "update") {

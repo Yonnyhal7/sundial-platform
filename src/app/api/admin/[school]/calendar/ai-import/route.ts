@@ -8,7 +8,8 @@ import {
   AI_CALENDAR_PROMPT_SCHEMA_VERSION,
   AI_CALENDAR_TEXT_STRATEGY,
   dedupeCalendarAnalysis,
-  readCalendarAnalysisCache,
+  invalidateCalendarAnalysisCache,
+  readCalendarAnalysisCacheEntry,
   recordCalendarAnalysisFailure,
   setCalendarAnalysisStage,
   writeCalendarAnalysisCache,
@@ -29,6 +30,8 @@ export const maxDuration = 300;
 type RouteContext = {
   params: Promise<{ school: string }>;
 };
+
+type AiImportCacheMode = "default" | "bypass" | "invalidate_and_analyze";
 
 class AiImportRouteDeadlineError extends Error {
   constructor() {
@@ -124,6 +127,19 @@ function getCacheKeys({
       [AI_CALENDAR_TEXT_STRATEGY]: textKey,
     },
   };
+}
+
+function parseCacheMode(formData: FormData): AiImportCacheMode {
+  const cacheMode = formData.get("cacheMode");
+  if (
+    cacheMode === "default" ||
+    cacheMode === "bypass" ||
+    cacheMode === "invalidate_and_analyze"
+  ) {
+    return cacheMode;
+  }
+
+  return formData.get("analyzeAgain") === "true" ? "bypass" : "default";
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -272,8 +288,23 @@ export async function POST(request: Request, context: RouteContext) {
       .map((byte) => byte.toString(16).padStart(2, "0"))
       .join("");
     const cacheKeys = getCacheKeys({ schoolId: schoolData.id, pdfHash });
-    const analyzeAgain = formData.get("analyzeAgain") === "true";
-    if (!analyzeAgain) {
+    const cacheMode = parseCacheMode(formData);
+
+    if (cacheMode === "invalidate_and_analyze") {
+      await invalidateCalendarAnalysisCache(
+        cacheKeys.preferred,
+        "user_requested_reanalysis"
+      );
+      logAiImportRouteDiagnostic({
+        event: "cache_invalidated",
+        requestId,
+        school,
+        durationMs: Date.now() - startedAt,
+        reasonCode: "user_requested_reanalysis",
+      });
+    }
+
+    if (cacheMode === "default") {
       for (const cacheKey of cacheKeys.preferred) {
         await setCalendarAnalysisStage(cacheKey, "checking_cache", {
           requestId,
@@ -281,7 +312,7 @@ export async function POST(request: Request, context: RouteContext) {
         });
       }
       for (const cacheKey of cacheKeys.preferred) {
-        const cached = await readCalendarAnalysisCache(cacheKey);
+        const cached = await readCalendarAnalysisCacheEntry(cacheKey);
         if (cached) {
           logAiImportRouteDiagnostic({
             event: "cache_hit",
@@ -290,7 +321,24 @@ export async function POST(request: Request, context: RouteContext) {
             durationMs: Date.now() - startedAt,
             status: "success",
           });
-          return respond({ status: "success", importResult: cached, outcome: "successful" });
+          return respond({
+            status: "success",
+            importResult: cached.result,
+            outcome: "successful",
+            analysisStrategy:
+              cached.strategy === AI_CALENDAR_TEXT_STRATEGY
+                ? AI_CALENDAR_TEXT_STRATEGY
+                : AI_CALENDAR_PDF_STRATEGY,
+            cache: {
+              hit: true,
+              analyzedAt: cached.createdAt,
+              strategy:
+                cached.strategy === AI_CALENDAR_TEXT_STRATEGY
+                  ? AI_CALENDAR_TEXT_STRATEGY
+                  : AI_CALENDAR_PDF_STRATEGY,
+              version: cached.version,
+            },
+          });
         }
       }
     }

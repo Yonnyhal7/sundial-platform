@@ -95,6 +95,21 @@ export type AiImportWarning = {
   severity: "info" | "review" | "blocking";
 };
 
+export type AiImportAutomaticResolution = {
+  code:
+    | "no_school_ranges_merged"
+    | "term_end_reclassified"
+    | "informational_label_preserved";
+  title: string;
+  message: string;
+  dateRange?: {
+    startDate: string;
+    endDate: string;
+  };
+  labelsPreserved?: string[];
+  originalIds?: string[];
+};
+
 export type AiImportWarningResolution = {
   code: string;
   status: "unreviewed" | "accepted_suggestion" | "kept_original" | "edited_manually" | "acknowledged";
@@ -126,6 +141,7 @@ export type AiCalendarImportResult = {
   specialDays: AiDetectedSpecialDay[];
   informationalDates: AiDetectedInformationalDate[];
   warnings: AiImportWarning[];
+  automaticResolutions?: AiImportAutomaticResolution[];
 };
 
 export type DetectedScheduleResolutionStatus =
@@ -166,6 +182,11 @@ export type AiImportDraftMetadata = {
   resolutions: DetectedScheduleResolution[];
   appliedAt?: string;
   banner?: string;
+  pdfHash?: string;
+  cacheHit?: boolean;
+  cacheAnalyzedAt?: string;
+  cacheStrategy?: "text-gpt5-mini" | "pdf-gpt5";
+  analysisVersion?: string;
   unresolvedRequiredScheduleIds?: string[];
   removedSchedules?: Array<{
     tempId: string;
@@ -204,6 +225,12 @@ export type AnalyzeCalendarPdfResult =
       importResult: AiCalendarImportResult;
       outcome?: "successful" | "repaired" | "reviewable";
       analysisStrategy?: "text-gpt5-mini" | "pdf-gpt5";
+      cache?: {
+        hit: boolean;
+        analyzedAt?: string;
+        strategy?: "text-gpt5-mini" | "pdf-gpt5";
+        version?: string;
+      };
     }
   | {
       status:

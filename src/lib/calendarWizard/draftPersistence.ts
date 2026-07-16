@@ -140,6 +140,23 @@ function normalizeAiImport(aiImport: unknown): AiImportDraftMetadata | null {
     resolutions: Array.isArray(stripped.resolutions) ? stripped.resolutions : [],
     appliedAt: typeof stripped.appliedAt === "string" ? stripped.appliedAt : undefined,
     banner: typeof stripped.banner === "string" ? stripped.banner : undefined,
+    pdfHash:
+      typeof stripped.pdfHash === "string" && /^[0-9a-f]{64}$/i.test(stripped.pdfHash)
+        ? stripped.pdfHash
+        : undefined,
+    cacheHit: stripped.cacheHit === true,
+    cacheAnalyzedAt:
+      typeof stripped.cacheAnalyzedAt === "string"
+        ? stripped.cacheAnalyzedAt
+        : undefined,
+    cacheStrategy:
+      stripped.cacheStrategy === "text-gpt5-mini" || stripped.cacheStrategy === "pdf-gpt5"
+        ? stripped.cacheStrategy
+        : undefined,
+    analysisVersion:
+      typeof stripped.analysisVersion === "string"
+        ? stripped.analysisVersion
+        : undefined,
     unresolvedRequiredScheduleIds: Array.isArray(stripped.unresolvedRequiredScheduleIds)
       ? stripped.unresolvedRequiredScheduleIds.filter(
           (id): id is string => typeof id === "string"
