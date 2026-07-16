@@ -3,6 +3,7 @@ import {
   getCalendarAnalysisFailure,
   getCalendarAnalysisStage,
   hasPendingCalendarAnalysis,
+  markStaleCalendarAnalysisIfNeeded,
   readCalendarAnalysisStage,
   readCalendarAnalysisCacheEntry,
 } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
@@ -83,6 +84,27 @@ export async function GET(request: Request, context: RouteContext) {
       status: "failed",
       reasonCode: failure.reasonCode,
       stage: "confirmed_failed",
+    });
+  }
+
+  const staleStage = (
+    await Promise.all(
+      access.cacheKeys.map((cacheKey) => markStaleCalendarAnalysisIfNeeded(cacheKey))
+    )
+  ).find(Boolean);
+
+  if (staleStage) {
+    logAiImportStatusDiagnostic({
+      event: "confirmed_analysis_failed",
+      school,
+      durationMs: Date.now() - startedAt,
+      reasonCode: staleStage.reasonCode,
+    });
+    return NextResponse.json({
+      status: "failed",
+      reasonCode: staleStage.reasonCode,
+      stage: "confirmed_failed",
+      strategy: staleStage.strategy,
     });
   }
 

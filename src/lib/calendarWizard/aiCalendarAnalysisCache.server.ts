@@ -15,6 +15,7 @@ export const AI_CALENDAR_TEXT_STRATEGY = "text-gpt5-mini";
 export const AI_CALENDAR_PDF_STRATEGY = "pdf-gpt5";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 15 * 60 * 1000;
+export const AI_CALENDAR_STALE_PENDING_MS = 15 * 60 * 1000;
 
 export type CalendarAnalysisCacheKey = {
   schoolId: string;
@@ -101,6 +102,7 @@ export async function writeCalendarAnalysisCache(key: CalendarAnalysisCacheKey, 
     reason_code: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    finished_at: new Date().toISOString(),
   }, { onConflict: "school_id,pdf_sha256,analysis_strategy,model,prompt_schema_version" });
   recentFailures.delete(keyString(key));
 }
@@ -155,6 +157,7 @@ export async function setCalendarAnalysisStage(
   const previousStage = currentStages.get(id)?.stage;
   const status =
     stage === "ready" ? "ready" : stage === "confirmed_failed" ? "failed" : "pending";
+  const finishedAt = status === "pending" ? null : new Date().toISOString();
 
   currentStages.set(id, {
     stage,
@@ -164,6 +167,9 @@ export async function setCalendarAnalysisStage(
     reasonCode: context.reasonCode,
     updatedAt: Date.now(),
   });
+  if (status === "pending") {
+    recentFailures.delete(id);
+  }
 
   console.info("AI calendar import diagnostic", {
     event: "stage_changed",
@@ -191,6 +197,7 @@ export async function setCalendarAnalysisStage(
       reason_code: context.reasonCode || null,
       created_at: now,
       updated_at: now,
+      finished_at: finishedAt,
     },
     { onConflict: "school_id,pdf_sha256,analysis_strategy,model,prompt_schema_version" }
   );
@@ -246,6 +253,50 @@ export async function readCalendarAnalysisStage(
     strategy: data.stage_strategy || key.strategy,
     requestId: data.request_id || undefined,
     reasonCode: data.reason_code || undefined,
+    updatedAt: new Date(data.updated_at).getTime(),
+  };
+}
+
+export async function markStaleCalendarAnalysisIfNeeded(
+  key: CalendarAnalysisCacheKey,
+  staleAfterMs = AI_CALENDAR_STALE_PENDING_MS
+): Promise<CalendarAnalysisStageSnapshot | null> {
+  const supabase = await createSupabaseServerClient();
+  const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
+  const { data, error } = await supabase
+    .from("ai_calendar_analysis_cache")
+    .update({
+      status: "failed",
+      current_stage: "confirmed_failed",
+      reason_code: "analysis_job_stale",
+      finished_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("school_id", key.schoolId)
+    .eq("pdf_sha256", key.pdfHash)
+    .eq("analysis_strategy", key.strategy)
+    .eq("model", key.model)
+    .eq("prompt_schema_version", key.version)
+    .eq("status", "pending")
+    .lt("updated_at", cutoff)
+    .select("status, current_stage, stage_strategy, request_id, reason_code, updated_at")
+    .maybeSingle();
+
+  if (error || !data || !isAiImportServerStage(data.current_stage)) {
+    return null;
+  }
+
+  recentFailures.set(keyString(key), {
+    reasonCode: data.reason_code || "analysis_job_stale",
+    failedAt: Date.now(),
+  });
+
+  return {
+    stage: data.current_stage,
+    status: "failed",
+    strategy: data.stage_strategy || key.strategy,
+    requestId: data.request_id || undefined,
+    reasonCode: data.reason_code || "analysis_job_stale",
     updatedAt: new Date(data.updated_at).getTime(),
   };
 }

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   hasPendingCalendarAnalysis: vi.fn(),
   getCalendarAnalysisFailure: vi.fn(),
   getCalendarAnalysisStage: vi.fn(),
+  markStaleCalendarAnalysisIfNeeded: vi.fn(),
   recordCalendarAnalysisFailure: vi.fn(),
   setCalendarAnalysisStage: vi.fn(),
   validateCalendarPdfFile: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock("@/lib/calendarWizard/aiCalendarAnalysisCache.server", () => ({
   hasPendingCalendarAnalysis: mocks.hasPendingCalendarAnalysis,
   getCalendarAnalysisFailure: mocks.getCalendarAnalysisFailure,
   getCalendarAnalysisStage: mocks.getCalendarAnalysisStage,
+  markStaleCalendarAnalysisIfNeeded: mocks.markStaleCalendarAnalysisIfNeeded,
   recordCalendarAnalysisFailure: mocks.recordCalendarAnalysisFailure,
   setCalendarAnalysisStage: mocks.setCalendarAnalysisStage,
   dedupeCalendarAnalysis: (_key: unknown, analyze: () => Promise<unknown>) => analyze(),
@@ -94,6 +96,7 @@ describe("AI import API route", () => {
     mocks.hasPendingCalendarAnalysis.mockReturnValue(false);
     mocks.getCalendarAnalysisFailure.mockReturnValue(null);
     mocks.getCalendarAnalysisStage.mockReturnValue(null);
+    mocks.markStaleCalendarAnalysisIfNeeded.mockResolvedValue(null);
     mocks.validateCalendarPdfFile.mockResolvedValue({ valid: true });
     mocks.analyzeCalendarPdf.mockResolvedValue({
       status: "success",
@@ -323,6 +326,29 @@ describe("AI import API route", () => {
     expect(body).toEqual({
       status: "pending",
       stage: "analyzing_pdf",
+      strategy: "pdf-gpt5",
+    });
+  });
+
+  it("marks stale pending jobs as failed during status polling", async () => {
+    mocks.markStaleCalendarAnalysisIfNeeded.mockResolvedValue({
+      status: "failed",
+      stage: "confirmed_failed",
+      strategy: "pdf-gpt5",
+      reasonCode: "analysis_job_stale",
+      updatedAt: Date.now(),
+    });
+
+    const response = await GET_STATUS(
+      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/status?pdfHash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+      { params: Promise.resolve({ school: "test" }) }
+    );
+    const body = await response.json();
+
+    expect(body).toEqual({
+      status: "failed",
+      reasonCode: "analysis_job_stale",
+      stage: "confirmed_failed",
       strategy: "pdf-gpt5",
     });
   });

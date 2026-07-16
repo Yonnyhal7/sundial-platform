@@ -1,6 +1,5 @@
 import "server-only";
 
-import { PDFParse } from "pdf-parse";
 import { MAX_CALENDAR_IMPORT_PAGES } from "./aiPdfValidation";
 
 export const MAX_EXTRACTED_CALENDAR_TEXT_CHARS = 55_000;
@@ -12,6 +11,46 @@ export type ExtractedCalendarText = {
   extractedLineCount: number;
   truncated: boolean;
 };
+
+type PdfParseConstructor = new (options: {
+  data: Uint8Array;
+  CanvasFactory?: unknown;
+}) => {
+  getInfo: () => Promise<{ total?: number }>;
+  getText: () => Promise<{
+    total?: number;
+    pages: Array<{ text?: string }>;
+  }>;
+  destroy: () => Promise<void>;
+};
+
+async function loadPdfParser() {
+  try {
+    const { CanvasFactory } = await import("pdf-parse/worker");
+    const { PDFParse } = await import("pdf-parse");
+
+    console.info("AI calendar import diagnostic", {
+      event: "pdf_parser_startup",
+      pdfParserAvailable: Boolean(PDFParse),
+      canvasFactoryAvailable: Boolean(CanvasFactory),
+      runtime: "nodejs",
+    });
+
+    return {
+      CanvasFactory,
+      PDFParse: PDFParse as PdfParseConstructor,
+    };
+  } catch (error) {
+    console.warn("AI calendar import diagnostic", {
+      event: "pdf_parser_startup",
+      pdfParserAvailable: false,
+      canvasFactoryAvailable: false,
+      runtime: "nodejs",
+      category: error instanceof Error ? error.name : "unknown",
+    });
+    throw error;
+  }
+}
 
 const CALENDAR_RELEVANT_LINE_PATTERN =
   /\b(january|february|march|april|may|june|july|august|september|october|november|december|mon|tue|wed|thu|fri|sat|sun|holiday|no school|minimum|rally|finals?|semester|instruction|begins?|brown|gold|day|schedule|break|teacher|work|inservice|testing|early release|\d{1,2}[/-]\d{1,2}|\d{4})\b/i;
@@ -101,9 +140,11 @@ function limitExtractedText(text: string) {
 export async function extractCalendarPdfText(file: File): Promise<ExtractedCalendarText> {
   const startedAt = Date.now();
   const data = new Uint8Array(await file.arrayBuffer());
-  const parser = new PDFParse({ data });
+  let parser: InstanceType<PdfParseConstructor> | null = null;
 
   try {
+    const { CanvasFactory, PDFParse } = await loadPdfParser();
+    parser = new PDFParse({ data, CanvasFactory });
     const [info, result] = await Promise.all([
       parser.getInfo().catch(() => null),
       parser.getText(),
@@ -139,7 +180,15 @@ export async function extractCalendarPdfText(file: File): Promise<ExtractedCalen
       extractedLineCount: lineCount,
       truncated: limited.truncated,
     };
+  } catch (error) {
+    console.warn("AI calendar import diagnostic", {
+      event: "pdf_text_extraction_failed",
+      reasonCode: "local_pdf_parser_failed",
+      category: error instanceof Error ? error.name : "unknown",
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
   } finally {
-    await parser.destroy();
+    await parser?.destroy();
   }
 }

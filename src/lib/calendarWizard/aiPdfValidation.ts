@@ -1,5 +1,3 @@
-import { PDFParse } from "pdf-parse";
-
 export const MAX_CALENDAR_PDF_BYTES = 20 * 1024 * 1024;
 export const MAX_CALENDAR_IMPORT_PAGES = 36;
 
@@ -34,6 +32,13 @@ export function hasPdfSignature(bytes: ArrayBuffer | Uint8Array) {
   );
 }
 
+export function estimatePdfPageCount(bytes: ArrayBuffer | Uint8Array) {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const sample = new TextDecoder("latin1").decode(view);
+  const matches = sample.match(/\/Type\s*\/Page\b/g);
+  return matches?.length || null;
+}
+
 export async function validateCalendarPdfFile(file: File): Promise<PdfValidationResult> {
   const metadata = validateCalendarPdfFileMetadata(file);
   if (!metadata.valid) return metadata;
@@ -46,23 +51,20 @@ export async function validateCalendarPdfFile(file: File): Promise<PdfValidation
     };
   }
 
-  const parser = new PDFParse({ data: new Uint8Array(await file.arrayBuffer()) });
-
-  try {
-    const info = await parser.getInfo();
-    if (info.total > MAX_CALENDAR_IMPORT_PAGES) {
-      return {
-        valid: false,
-        message: `Please upload a PDF calendar with ${MAX_CALENDAR_IMPORT_PAGES} pages or fewer.`,
-      };
-    }
-  } catch {
+  const bytes = await file.arrayBuffer();
+  if (!hasPdfSignature(bytes)) {
     return {
       valid: false,
       message: "This file does not appear to be a valid PDF.",
     };
-  } finally {
-    await parser.destroy();
+  }
+
+  const estimatedPageCount = estimatePdfPageCount(bytes);
+  if (estimatedPageCount && estimatedPageCount > MAX_CALENDAR_IMPORT_PAGES) {
+    return {
+      valid: false,
+      message: `Please upload a PDF calendar with ${MAX_CALENDAR_IMPORT_PAGES} pages or fewer.`,
+    };
   }
 
   return { valid: true };

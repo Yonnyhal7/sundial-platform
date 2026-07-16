@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyClientMaxBodySize: "25mb",
   },
+  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
   images: {
     remotePatterns: [
       {
