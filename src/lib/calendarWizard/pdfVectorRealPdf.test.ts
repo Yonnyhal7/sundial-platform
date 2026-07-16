@@ -102,4 +102,31 @@ describe("extractPdfVectorCalendar against a genuine PDF", () => {
       expect(rect.color).toMatch(/^#[0-9a-f]{6}$/);
     }
   });
+
+  it("polyfills DOMMatrix/Path2D/ImageData when they are unavailable (no native canvas package)", async () => {
+    // Node has none of these globals natively, and pdfjs-dist's Node build only gets them
+    // from the optional "@napi-rs/canvas" native package. In a deployment where that
+    // package's platform binary isn't bundled (e.g. a serverless function built for a
+    // different OS/arch than it was installed on), these stay undefined and pdfjs-dist's
+    // own top-level `new DOMMatrix()` throws a ReferenceError on import. This test proves
+    // our polyfill covers that case directly, independent of whether the native package
+    // actually works in whatever environment the test happens to run in.
+    const { ensurePdfjsNodeCanvasPolyfills } = await import("./pdfVectorCalendarExtraction.server");
+    const g = globalThis as unknown as Record<"DOMMatrix" | "Path2D" | "ImageData", unknown>;
+    const originals = { DOMMatrix: g.DOMMatrix, Path2D: g.Path2D, ImageData: g.ImageData };
+    delete g.DOMMatrix;
+    delete g.Path2D;
+    delete g.ImageData;
+
+    try {
+      ensurePdfjsNodeCanvasPolyfills();
+      expect(() => new (g.DOMMatrix as new () => unknown)()).not.toThrow();
+      expect(() => new (g.Path2D as new () => unknown)()).not.toThrow();
+      expect(() => new (g.ImageData as new () => unknown)()).not.toThrow();
+    } finally {
+      g.DOMMatrix = originals.DOMMatrix;
+      g.Path2D = originals.Path2D;
+      g.ImageData = originals.ImageData;
+    }
+  });
 });

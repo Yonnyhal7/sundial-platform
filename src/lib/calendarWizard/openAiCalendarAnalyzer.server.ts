@@ -974,6 +974,7 @@ export async function analyzeCalendarPdf(
     } else {
       logPipelineDiagnostic("pdf_vector_extraction_failed", {
         category: vectorExtraction.reason instanceof Error ? vectorExtraction.reason.name : "unknown",
+        message: vectorExtraction.reason instanceof Error ? vectorExtraction.reason.message : String(vectorExtraction.reason),
         durationMs: Date.now() - startedAt,
       });
     }

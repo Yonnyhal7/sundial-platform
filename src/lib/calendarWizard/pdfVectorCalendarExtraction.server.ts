@@ -284,8 +284,32 @@ export function matchVectorCalendarStructure(texts: PositionedText[], rectangles
   };
 }
 
+/**
+ * pdfjs-dist's Node build unconditionally constructs a DOMMatrix (and references
+ * Path2D/ImageData) at module load time for its canvas-rendering support, even though
+ * getTextContent()/getOperatorList() never render anything. It tries to source these from
+ * the optional native "@napi-rs/canvas" package first; if that package's platform binary
+ * isn't available in a given deployment (bundling native addons for serverless is fragile),
+ * it just warns and leaves the globals undefined — which then crashes the import itself with
+ * a ReferenceError. We only ever read operator-list data, never render, so a non-functional
+ * stub is enough: nothing in our code path invokes DOMMatrix/Path2D/ImageData methods.
+ */
+export function ensurePdfjsNodeCanvasPolyfills() {
+  const g = globalThis as unknown as Record<string, unknown>;
+  if (!g.DOMMatrix) {
+    g.DOMMatrix = class DOMMatrixPolyfill {};
+  }
+  if (!g.Path2D) {
+    g.Path2D = class Path2DPolyfill {};
+  }
+  if (!g.ImageData) {
+    g.ImageData = class ImageDataPolyfill {};
+  }
+}
+
 export async function extractPdfVectorCalendar(file: File): Promise<PdfVectorCalendarResult> {
   const startedAt = Date.now();
+  ensurePdfjsNodeCanvasPolyfills();
   const { getDocument, OPS } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const loadingTask = getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, useSystemFonts: true });
   const document = await loadingTask.promise;
