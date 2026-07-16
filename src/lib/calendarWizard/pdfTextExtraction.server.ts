@@ -12,10 +12,7 @@ export type ExtractedCalendarText = {
   truncated: boolean;
 };
 
-type PdfParseConstructor = new (options: {
-  data: Uint8Array;
-  CanvasFactory?: unknown;
-}) => {
+type PdfParseInstance = {
   getInfo: () => Promise<{ total?: number }>;
   getText: () => Promise<{
     total?: number;
@@ -23,22 +20,27 @@ type PdfParseConstructor = new (options: {
   }>;
   destroy: () => Promise<void>;
 };
+type PDFParseConstructor = {
+  new (options: { data: Uint8Array }): PdfParseInstance;
+  setWorker: (workerSrc?: string) => string;
+};
 
 async function loadPdfParser() {
   try {
-    const { CanvasFactory } = await import("pdf-parse/worker");
+    const { getPath } = await import("pdf-parse/worker");
     const { PDFParse } = await import("pdf-parse");
+    const workerPath = getPath();
+    (PDFParse as unknown as PDFParseConstructor).setWorker(workerPath);
 
     console.info("AI calendar import diagnostic", {
       event: "pdf_parser_startup",
       pdfParserAvailable: Boolean(PDFParse),
-      canvasFactoryAvailable: Boolean(CanvasFactory),
+      canvasFactoryAvailable: Boolean(getPath),
       runtime: "nodejs",
     });
 
     return {
-      CanvasFactory,
-      PDFParse: PDFParse as PdfParseConstructor,
+      PDFParse: PDFParse as unknown as PDFParseConstructor,
     };
   } catch (error) {
     console.warn("AI calendar import diagnostic", {
@@ -140,15 +142,13 @@ function limitExtractedText(text: string) {
 export async function extractCalendarPdfText(file: File): Promise<ExtractedCalendarText> {
   const startedAt = Date.now();
   const data = new Uint8Array(await file.arrayBuffer());
-  let parser: InstanceType<PdfParseConstructor> | null = null;
+  let parser: PdfParseInstance | null = null;
 
   try {
-    const { CanvasFactory, PDFParse } = await loadPdfParser();
-    parser = new PDFParse({ data, CanvasFactory });
-    const [info, result] = await Promise.all([
-      parser.getInfo().catch(() => null),
-      parser.getText(),
-    ]);
+    const { PDFParse } = await loadPdfParser();
+    parser = new PDFParse({ data });
+    const info = await parser.getInfo().catch(() => null);
+    const result = await parser.getText();
     const totalPages = info?.total || result.total || result.pages.length;
 
     if (totalPages > MAX_CALENDAR_IMPORT_PAGES) {

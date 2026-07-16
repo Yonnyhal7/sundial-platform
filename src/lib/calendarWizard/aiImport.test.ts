@@ -107,6 +107,14 @@ function rawExtraction(overrides: Partial<RawAiCalendarExtraction> = {}): RawAiC
     operatingWeekdays: [1, 2, 3, 4, 5],
     expectedInstructionalDayCount: 5,
     schoolYearConfidence: "high",
+    pageClassifications: [
+      {
+        page: 1,
+        role: "student_attendance_calendar",
+        confidence: "high",
+        evidence: { sourceText: "Student Attendance Calendar", page: 1, explanation: "Title" },
+      },
+    ],
     detectedSchedules: [
       {
         tempId: "regular",
@@ -419,6 +427,74 @@ describe("AI calendar import normalization", () => {
       );
     }
   });
+
+  it("excludes personnel appendix dates from the student calendar", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        pageClassifications: [
+          {
+            page: 1,
+            role: "student_attendance_calendar",
+            confidence: "high",
+            evidence: { sourceText: "Student Attendance Calendar", page: 1, explanation: "Title" },
+          },
+          {
+            page: 2,
+            role: "personnel_holidays",
+            confidence: "high",
+            evidence: { sourceText: "Classified Personnel Holidays", page: 2, explanation: "Title" },
+          },
+        ],
+        noSchoolRanges: [
+          {
+            id: "labor-day",
+            startDate: "2026-09-07",
+            endDate: "2026-09-07",
+            label: "Labor Day",
+            type: "holiday",
+            confidence: "high",
+            evidence: { sourceText: "Labor Day", page: 1, explanation: "Student calendar" },
+          },
+          {
+            id: "staff-holiday",
+            startDate: "2027-07-05",
+            endDate: "2027-07-05",
+            label: "Classified Staff Holiday",
+            type: "holiday",
+            confidence: "high",
+            evidence: { sourceText: "Classified Holiday", page: 2, explanation: "Personnel calendar" },
+          },
+        ],
+        specialSchoolDays: [
+          {
+            id: "staff-only",
+            startDate: "2027-06-18",
+            endDate: "2027-06-18",
+            label: "Staff Work Day",
+            type: "staff",
+            scheduleTempId: null,
+            isInstructional: false,
+            confidence: "high",
+            evidence: { sourceText: "Staff Work Day", page: 2, explanation: "Personnel calendar" },
+          },
+        ],
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.importResult.noSchoolRanges).toHaveLength(1);
+      expect(normalized.importResult.noSchoolRanges[0].id).toBe("labor-day");
+      expect(normalized.importResult.specialDays).toHaveLength(0);
+      expect(normalized.importResult.pageClassifications).toContainEqual(
+        expect.objectContaining({ page: 2, role: "personnel_holidays" })
+      );
+      expect(normalized.importResult.warnings).toContainEqual(
+        expect.objectContaining({ code: "out_of_scope_page_dates_removed" })
+      );
+    }
+  });
 });
 
 describe("OpenAI calendar analyzer behavior", () => {
@@ -440,6 +516,8 @@ describe("OpenAI calendar analyzer behavior", () => {
       },
     });
     expect(JSON.stringify(request)).toContain("file_123");
+    expect(JSON.stringify(request)).toContain("pageClassifications");
+    expect(request.instructions).toContain("personnel holiday pages");
     expect("temperature" in request).toBe(false);
   });
 
@@ -461,6 +539,8 @@ describe("OpenAI calendar analyzer behavior", () => {
       },
     });
     expect(JSON.stringify(request)).toContain("[PAGE 1]");
+    expect(JSON.stringify(request)).toContain("pageClassifications");
+    expect(request.instructions).toContain("classify each [PAGE n]");
     expect("temperature" in request).toBe(false);
   });
 

@@ -9,6 +9,21 @@ export type AiImportEvidence = {
   explanation?: string;
 };
 
+export type AiCalendarPageRole =
+  | "student_attendance_calendar"
+  | "school_schedule_calendar"
+  | "personnel_holidays"
+  | "staff_calendar"
+  | "informational_appendix"
+  | "unrelated";
+
+export type AiCalendarPageClassification = {
+  page: number;
+  role: AiCalendarPageRole;
+  confidence: AiImportConfidence;
+  evidence?: AiImportEvidence;
+};
+
 export type AiDetectedSchoolYear = {
   label?: string;
   startDate: string;
@@ -103,6 +118,7 @@ export type AiCalendarImportResult = {
     totalTokens?: number;
     durationMs?: number;
   };
+  pageClassifications?: AiCalendarPageClassification[];
   schoolYear: AiDetectedSchoolYear;
   detectedSchedules: AiDetectedSchedule[];
   pattern: AiDetectedPattern;

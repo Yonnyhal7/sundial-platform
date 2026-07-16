@@ -3,6 +3,10 @@ import { aiCalendarImportJsonSchema } from "./aiCalendarImportSchema";
 export const CALENDAR_EXTRACTION_INSTRUCTIONS = `
 You analyze school attendance calendars and bell-schedule calendars for a K-12 SaaS setup wizard.
 Use both extracted PDF text and visible page layout. Inspect legends, colors, brackets, shading, symbols, notes, and date-cell formatting.
+First classify each page or major section as one of: student_attendance_calendar, school_schedule_calendar, personnel_holidays, staff_calendar, informational_appendix, or unrelated.
+Only student_attendance_calendar and school_schedule_calendar pages may contribute instructional dates, no-school dates, schedule assignments, or student school-year boundaries.
+Ignore personnel holiday pages, staff-only calendars, unrelated appendices, and their dates. Do not merge staff/personnel dates into the student instructional calendar.
+Do not use dates outside the resolved student school-year scope unless they are explicitly identified as student calendar dates on a student/school calendar page.
 Distinguish instructional days from holidays, weekends, inservice days, teacher work days, recesses, and district closures.
 Identify recurring normal schedule patterns such as Brown/Gold, A/B, regular day, block day, minimum day, finals, all-periods, or schedule-by-weekday patterns.
 Treat named schedules such as Brown Day, Gold Day, Finals, All-Periods, Minimum Day, and Rally as valid detected schedules even when bell times are not printed.
@@ -18,6 +22,10 @@ export const CALENDAR_TEXT_EXTRACTION_INSTRUCTIONS = `
 You analyze extracted text from school attendance calendars and bell-schedule calendars for a K-12 SaaS setup wizard.
 The input was extracted from a PDF. Page order is preserved with [PAGE n] markers, but line order may be imperfect.
 Do not invent dates, schedule assignments, school-year ranges, or no-school days.
+First classify each [PAGE n] marker as one of: student_attendance_calendar, school_schedule_calendar, personnel_holidays, staff_calendar, informational_appendix, or unrelated.
+Only student_attendance_calendar and school_schedule_calendar pages may contribute instructional dates, no-school dates, schedule assignments, or student school-year boundaries.
+Ignore personnel holiday pages, staff-only calendars, unrelated appendices, and their dates. Do not merge staff/personnel dates into the student instructional calendar.
+Do not use dates outside the resolved student school-year scope unless they are explicitly identified as student calendar dates on a student/school calendar page.
 Do not infer a schedule assignment unless the text supports it.
 Return compact calendar setup data only: school year dates, first and last instructional days, normal patterns, schedule template names, no-school ranges, special dates, informational dates, finals, rallies, minimum days, confidence values, and review warnings.
 Preserve schedule names as written when possible, including Brown Day, Gold Day, Finals, All-Periods, Minimum Day, Rally, or similar labels.

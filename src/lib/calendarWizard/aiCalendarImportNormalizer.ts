@@ -7,6 +7,8 @@ import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
 import { normalizeScheduleNameForMatching } from "./aiScheduleMatching";
 import {
   validateAiCalendarImportResult,
+  type AiCalendarPageClassification,
+  type AiCalendarPageRole,
   type AiCalendarImportResult,
   type AiDetectedScheduleCategory,
   type AiImportConfidence,
@@ -26,6 +28,12 @@ export type RawAiCalendarExtraction = {
   operatingWeekdays: Weekday[];
   expectedInstructionalDayCount: number | null;
   schoolYearConfidence: AiImportConfidence;
+  pageClassifications: Array<{
+    page: number;
+    role: AiCalendarPageRole;
+    confidence: AiImportConfidence;
+    evidence: RawEvidence | null;
+  }>;
   detectedSchedules: Array<{
     tempId: string;
     name: string;
@@ -146,6 +154,23 @@ function normalizeRawContract(value: unknown): RawAiCalendarExtraction {
     operatingWeekdays: normalizeWeekdays(raw.operatingWeekdays),
     expectedInstructionalDayCount: normalizeInteger(raw.expectedInstructionalDayCount),
     schoolYearConfidence: normalizeConfidence(raw.schoolYearConfidence),
+    pageClassifications: records(raw.pageClassifications).map((item) => ({
+      page: normalizeInteger(item.page) || 0,
+      role: enumValue(
+        item.role,
+        [
+          "student_attendance_calendar",
+          "school_schedule_calendar",
+          "personnel_holidays",
+          "staff_calendar",
+          "informational_appendix",
+          "unrelated",
+        ] as const,
+        "unrelated"
+      ),
+      confidence: normalizeConfidence(item.confidence),
+      evidence: normalizeEvidence(item.evidence),
+    })),
     detectedSchedules: records(raw.detectedSchedules).map((item) => ({
       tempId: typeof item.tempId === "string" ? item.tempId : "",
       name: typeof item.name === "string" ? item.name : "",
@@ -252,6 +277,79 @@ function normalizeRangeEnd(startDate: string, endDate: string | null | undefined
 
 function dateRangeKey(item: { startDate: string; endDate: string; label: string }) {
   return `${item.startDate}|${item.endDate || ""}|${item.label.toLowerCase()}`;
+}
+
+const studentCalendarPageRoles = new Set<AiCalendarPageRole>([
+  "student_attendance_calendar",
+  "school_schedule_calendar",
+]);
+
+const outOfScopePageRoles = new Set<AiCalendarPageRole>([
+  "personnel_holidays",
+  "staff_calendar",
+  "informational_appendix",
+  "unrelated",
+]);
+
+function normalizePageClassifications(
+  classifications: RawAiCalendarExtraction["pageClassifications"]
+): AiCalendarPageClassification[] {
+  const byPage = new Map<number, AiCalendarPageClassification>();
+  for (const classification of classifications) {
+    if (!classification.page || classification.page < 1) continue;
+    byPage.set(classification.page, {
+      page: classification.page,
+      role: classification.role,
+      confidence: normalizeConfidence(classification.confidence),
+      evidence: evidence(classification.evidence),
+    });
+  }
+  return [...byPage.values()].sort((a, b) => a.page - b.page);
+}
+
+function pageRoleMap(classifications: AiCalendarPageClassification[]) {
+  return new Map(classifications.map((classification) => [
+    classification.page,
+    classification.role,
+  ]));
+}
+
+function isOutOfScopeEvidence(
+  evidence: RawEvidence | null,
+  rolesByPage: Map<number, AiCalendarPageRole>
+) {
+  if (!evidence?.page) return false;
+  const role = rolesByPage.get(evidence.page);
+  return Boolean(role && outOfScopePageRoles.has(role));
+}
+
+function filterOutOfScopeItems<T extends { evidence: RawEvidence | null }>(
+  items: T[],
+  rolesByPage: Map<number, AiCalendarPageRole>,
+  warnings: AiImportWarning[],
+  itemType: string
+) {
+  const next: T[] = [];
+  let removedCount = 0;
+  for (const item of items) {
+    if (isOutOfScopeEvidence(item.evidence, rolesByPage)) {
+      removedCount += 1;
+      continue;
+    }
+    next.push(item);
+  }
+
+  if (removedCount > 0) {
+    warnings.push({
+      code: "out_of_scope_page_dates_removed",
+      severity: "review",
+      message: `Sundial ignored ${removedCount} ${itemType} ${
+        removedCount === 1 ? "item" : "items"
+      } from staff, personnel, appendix, or unrelated pages.`,
+    });
+  }
+
+  return next;
 }
 
 function makeId(prefix: string, value: string, index: number) {
@@ -373,10 +471,40 @@ export function normalizeAiCalendarExtraction(
     confidence: "review" as const,
     evidence: null,
   };
-  const rawNoSchoolRanges = asArray(raw.noSchoolRanges);
-  const rawSpecialSchoolDays = asArray(raw.specialSchoolDays);
-  const rawInformationalDates = asArray(raw.informationalDates);
   const warnings = asArray(raw.warnings);
+  const pageClassifications = normalizePageClassifications(raw.pageClassifications);
+  const rolesByPage = pageRoleMap(pageClassifications);
+  if (
+    pageClassifications.length > 0 &&
+    !pageClassifications.some((classification) =>
+      studentCalendarPageRoles.has(classification.role)
+    )
+  ) {
+    warnings.push({
+      code: "no_student_calendar_page_identified",
+      severity: "review",
+      message:
+        "Sundial could not confidently identify a student calendar page. Review imported dates before creating the calendar.",
+    });
+  }
+  const rawNoSchoolRanges = filterOutOfScopeItems(
+    asArray(raw.noSchoolRanges),
+    rolesByPage,
+    warnings,
+    "no-school"
+  );
+  const rawSpecialSchoolDays = filterOutOfScopeItems(
+    asArray(raw.specialSchoolDays),
+    rolesByPage,
+    warnings,
+    "special-day"
+  );
+  const rawInformationalDates = filterOutOfScopeItems(
+    asArray(raw.informationalDates),
+    rolesByPage,
+    warnings,
+    "informational"
+  );
   validateReferences(
     {
       ...raw,
@@ -510,6 +638,7 @@ export function normalizeAiCalendarExtraction(
     legendInterpretation: trimOptional(raw.legendInterpretation),
     extractionNotes: trimOptional(raw.extractionNotes),
     usage: options.usage,
+    pageClassifications,
     schoolYear: {
       label: trimOptional(raw.schoolYearLabel) || undefined,
       startDate: normalizeDateValue(raw.firstInstructionalDate),

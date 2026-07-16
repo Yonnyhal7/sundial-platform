@@ -8,6 +8,7 @@ import {
 import {
   getAiImportValidationReasonCode,
   summarizeAiImportValidationErrors,
+  type AiImportWarning,
 } from "./aiImportTypes";
 import {
   extractCalendarPdfText,
@@ -110,6 +111,55 @@ function logPipelineDiagnostic(
     event,
     ...payload,
   });
+}
+
+function summarizeFinalValidationIssues({
+  validationErrors = [],
+  warnings = [],
+}: {
+  validationErrors?: Array<{
+    path: string;
+    code: string;
+    expected: string;
+    received: string;
+    required: boolean;
+  }>;
+  warnings?: AiImportWarning[];
+}) {
+  const schemaIssues = validationErrors.map((error) => ({
+    phase: "schema_validation",
+    path: error.path,
+    code: error.code,
+    expectedRule: error.expected,
+    receivedPrimitiveType: error.received,
+    requiredOrOptional: error.required ? "required" : "optional",
+  }));
+  const warningIssues = warnings.map((warning) => ({
+    phase: "calendar_validation",
+    path: "warnings",
+    code: warning.code,
+    expectedRule: "no blocking calendar warnings",
+    receivedPrimitiveType: warning.severity,
+    requiredOrOptional: "required",
+  }));
+
+  return [...schemaIssues, ...warningIssues];
+}
+
+function blockingWarningsToRepairIssues(warnings: AiImportWarning[]) {
+  return warnings.map((warning) => ({
+    path:
+      warning.code === "special_day_outside_school_year"
+        ? "specialDays"
+        : warning.code === "school_year_dates_reversed"
+          ? "schoolYear"
+          : "calendar",
+    code: warning.code,
+    expected:
+      "student calendar dates only, excluding staff/personnel/unrelated page dates",
+    received: warning.severity,
+    required: true,
+  }));
 }
 
 async function normalizeValidateAndRepair({
@@ -253,6 +303,8 @@ async function normalizeValidateAndRepair({
       phase: "schema_validation",
       reasonCode,
       validationErrors,
+      issueCount: validationErrors.length,
+      validationIssues: summarizeFinalValidationIssues({ validationErrors }),
     });
     return {
       status: "analysis_failed",
@@ -262,7 +314,101 @@ async function normalizeValidateAndRepair({
     };
   }
 
-  if (normalized.importResult.warnings.some((warning) => warning.severity === "blocking")) {
+  let blockingWarnings = normalized.importResult.warnings.filter(
+    (warning) => warning.severity === "blocking"
+  );
+  if (blockingWarnings.length > 0) {
+    const repairIssues = blockingWarningsToRepairIssues(blockingWarnings);
+    await onStageChange?.(
+      strategy === "text-gpt5-mini" ? "repairing_text_result" : "repairing_pdf_result",
+      strategy
+    );
+    logPipelineDiagnostic("calendar_validation_failed", {
+      model,
+      strategy,
+      requestId,
+      phase: "calendar_validation",
+      reasonCode: "calendar_validation_failed",
+      issueCount: blockingWarnings.length,
+      validationIssues: summarizeFinalValidationIssues({ warnings: blockingWarnings }),
+      durationMs: Date.now() - startedAt,
+    });
+    logPipelineDiagnostic("repair_started", {
+      model,
+      strategy,
+      requestId,
+      phase: "calendar_validation",
+      validationIssueCount: repairIssues.length,
+      durationMs: Date.now() - startedAt,
+    });
+    const { data: repairResponse, request_id: repairRequestId } = await client.responses
+      .create(buildCalendarImportRepairRequest(model, raw, repairIssues), {
+        signal,
+      })
+      .withResponse();
+    const repairedRaw = parseStructuredOutput(repairResponse.output_text);
+    if (repairedRaw) {
+      normalized = normalizeAiCalendarExtraction(repairedRaw, {
+        source: "openai",
+        usage: {
+          model,
+          requestId: repairRequestId || requestId || undefined,
+          durationMs: Date.now() - startedAt,
+        },
+      });
+      if (normalized.success) {
+        repaired = true;
+        blockingWarnings = normalized.importResult.warnings.filter(
+          (warning) => warning.severity === "blocking"
+        );
+      }
+    }
+    logPipelineDiagnostic("repair_finished", {
+      model,
+      strategy,
+      requestId,
+      phase: "calendar_validation",
+      repairedIssueCount: blockingWarnings.length === 0 ? repairIssues.length : 0,
+      remainingIssueCount: blockingWarnings.length,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+
+  if (!normalized.success) {
+    const validationErrors = summarizeAiImportValidationErrors(
+      normalized.validationErrors
+    );
+    console.warn("AI calendar import validation failed", {
+      model,
+      requestId,
+      strategy,
+      durationMs: Date.now() - startedAt,
+      errorCount: normalized.errors.length,
+      phase: "calendar_validation_repair",
+      reasonCode: getAiImportValidationReasonCode(normalized.validationErrors),
+      validationErrors,
+      issueCount: validationErrors.length,
+      validationIssues: summarizeFinalValidationIssues({ validationErrors }),
+    });
+    return {
+      status: "analysis_failed",
+      message: "Sundial read the PDF, but one part of the calendar could not be validated. Retry, or continue manually.",
+      retryable: true,
+      reasonCode: getAiImportValidationReasonCode(normalized.validationErrors),
+    };
+  }
+
+  if (blockingWarnings.length > 0) {
+    console.warn("AI calendar import validation failed", {
+      model,
+      requestId,
+      strategy,
+      durationMs: Date.now() - startedAt,
+      phase: "calendar_validation",
+      reasonCode: "calendar_validation_failed",
+      issueCount: blockingWarnings.length,
+      validationIssues: summarizeFinalValidationIssues({ warnings: blockingWarnings }),
+    });
     return {
       status: "analysis_failed",
       message: "Sundial could not safely determine the school-year calendar from this PDF.",

@@ -13,6 +13,29 @@ export const aiCalendarImportJsonSchema = {
     },
     expectedInstructionalDayCount: { type: ["integer", "null"], minimum: 0 },
     schoolYearConfidence: { enum: ["high", "review", "uncertain"] },
+    pageClassifications: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          page: { type: "integer", minimum: 1 },
+          role: {
+            enum: [
+              "student_attendance_calendar",
+              "school_schedule_calendar",
+              "personnel_holidays",
+              "staff_calendar",
+              "informational_appendix",
+              "unrelated",
+            ],
+          },
+          confidence: { enum: ["high", "review", "uncertain"] },
+          evidence: { $ref: "#/$defs/evidence" },
+        },
+        required: ["page", "role", "confidence", "evidence"],
+      },
+    },
     detectedSchedules: {
       type: "array",
       items: {
@@ -139,6 +162,7 @@ export const aiCalendarImportJsonSchema = {
     "operatingWeekdays",
     "expectedInstructionalDayCount",
     "schoolYearConfidence",
+    "pageClassifications",
     "detectedSchedules",
     "normalPattern",
     "noSchoolRanges",
