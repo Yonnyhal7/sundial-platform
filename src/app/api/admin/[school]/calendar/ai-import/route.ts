@@ -9,7 +9,6 @@ import {
   AI_CALENDAR_TEXT_STRATEGY,
   dedupeCalendarAnalysis,
   invalidateCalendarAnalysisCache,
-  readCalendarAnalysisCacheEntry,
   recordCalendarAnalysisFailure,
   setCalendarAnalysisStage,
   writeCalendarAnalysisCache,
@@ -369,44 +368,10 @@ export async function POST(request: Request, context: RouteContext) {
       });
     }
 
-    if (cacheMode === "default") {
-      for (const cacheKey of cacheKeys.preferred) {
-        await setCalendarAnalysisStage(cacheKey, "checking_cache", {
-          requestId,
-          elapsedMs: Date.now() - startedAt,
-        });
-      }
-      for (const cacheKey of cacheKeys.preferred) {
-        const cached = await readCalendarAnalysisCacheEntry(cacheKey);
-        if (cached) {
-          logAiImportRouteDiagnostic({
-            event: "cache_hit",
-            requestId,
-            school,
-            durationMs: Date.now() - startedAt,
-            status: "success",
-          });
-          return respond({
-            status: "success",
-            importResult: cached.result,
-            outcome: "successful",
-            analysisStrategy:
-              cached.strategy === AI_CALENDAR_TEXT_STRATEGY
-                ? AI_CALENDAR_TEXT_STRATEGY
-                : AI_CALENDAR_PDF_STRATEGY,
-            cache: {
-              hit: true,
-              analyzedAt: cached.createdAt,
-              strategy:
-                cached.strategy === AI_CALENDAR_TEXT_STRATEGY
-                  ? AI_CALENDAR_TEXT_STRATEGY
-                  : AI_CALENDAR_PDF_STRATEGY,
-              version: cached.version,
-            },
-          });
-        }
-      }
-    }
+    // Every upload always analyzes fresh: a previously cached result is never served in
+    // place of a new analysis, even for the exact same PDF/strategy/model/version. The
+    // cache table below is still written to and still backs in-flight progress polling and
+    // refresh recovery for *this* attempt — it just never short-circuits a new one.
 
     logAiImportRouteDiagnostic({
       event: "analysis_started",

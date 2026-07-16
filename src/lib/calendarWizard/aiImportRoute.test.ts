@@ -153,7 +153,7 @@ describe("AI import API route", () => {
     );
   });
 
-  it("reuses a successful cache entry without another OpenAI call", async () => {
+  it("always analyzes fresh, even when a prior cache entry exists for this exact PDF", async () => {
     mocks.readCalendarAnalysisCacheEntry.mockResolvedValue({
       result: createMockAiCalendarImportResult(),
       createdAt: "2026-07-16T12:00:00.000Z",
@@ -165,16 +165,10 @@ describe("AI import API route", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      status: "success",
-      cache: {
-        hit: true,
-        analyzedAt: "2026-07-16T12:00:00.000Z",
-        strategy: "pdf-gpt5",
-        version: "calendar-v3",
-      },
-    });
-    expect(mocks.analyzeCalendarPdf).not.toHaveBeenCalled();
+    expect(body).toMatchObject({ status: "success" });
+    expect(body.cache).toBeUndefined();
+    expect(mocks.analyzeCalendarPdf).toHaveBeenCalledOnce();
+    expect(mocks.readCalendarAnalysisCacheEntry).not.toHaveBeenCalled();
   });
 
   it("bypasses a successful cache entry when Analyze Again is requested", async () => {
@@ -232,18 +226,6 @@ describe("AI import API route", () => {
     expect(mocks.writeCalendarAnalysisCache).toHaveBeenCalledWith(
       expect.objectContaining({ strategy: "text-gpt5-mini" }),
       expect.any(Object)
-    );
-  });
-
-  it("keys cache reads by school, schema version, and strategy", async () => {
-    await post();
-    expect(mocks.readCalendarAnalysisCacheEntry).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ schoolId: "school-1", version: "calendar-v3", strategy: "pdf-gpt5" })
-    );
-    expect(mocks.readCalendarAnalysisCacheEntry).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ schoolId: "school-1", version: "calendar-v3", strategy: "text-gpt5-mini" })
     );
   });
 
