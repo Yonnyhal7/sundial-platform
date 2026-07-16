@@ -21,8 +21,13 @@ import {
   parseAiImportStatusResponse,
 } from "@/lib/calendarWizard/aiImportClient";
 import {
+  buildAiPreviewConfig,
+  getBrownGoldVerificationConflicts,
+  getBrownGoldVerificationRows,
+  hasBrownGoldVerificationScheduleSet,
+} from "@/lib/calendarWizard/aiImportPreview";
+import {
   clearAiImportMetadata,
-  convertAiImportToWizardDraft,
   getAiImportReadinessSummary,
   getDetectedScheduleUsageCounts,
   getRequiredDetectedScheduleIds,
@@ -186,6 +191,7 @@ type PendingAiImport = {
   startedAt: number;
   requestId?: string;
 };
+type AiReviewMode = "review" | "advanced";
 
 const WIZARD_STEPS: Array<{ id: WizardStep; label: string }> = [
   { id: "school-year", label: "School Year" },
@@ -298,6 +304,34 @@ function cacheStrategyLabel(strategy?: string) {
   if (strategy === "text-gpt5-mini") return "Fast text analysis";
   if (strategy === "pdf-gpt5") return "Visual PDF analysis";
   return "Calendar analysis";
+}
+
+function buildAiPreviewScheduleMap(
+  schedules: WizardScheduleSummary[],
+  resolutions: DetectedScheduleResolution[]
+) {
+  const map = new Map(schedules.map((schedule) => [schedule.id, schedule]));
+  const schedulesById = new Map(schedules.map((schedule) => [schedule.id, schedule]));
+
+  for (const resolution of resolutions) {
+    if (resolution.status === "ignored") continue;
+    const matched = resolution.matchedExistingScheduleId
+      ? schedulesById.get(resolution.matchedExistingScheduleId)
+      : null;
+    map.set(resolution.tempId, {
+      id: resolution.tempId,
+      name: reviewedScheduleName(resolution),
+      type: matched?.type || null,
+      calendarColor: resolution.calendarColor || matched?.calendarColor || null,
+      active: true,
+      setupStatus: matched?.setupStatus || "needs_times",
+      periodCount: matched?.periodCount || 0,
+      firstStartTime: matched?.firstStartTime || null,
+      lastEndTime: matched?.lastEndTime || null,
+    });
+  }
+
+  return map;
 }
 
 function normalizeDraftRangeEnd<T extends { startDate: string; endDate?: string | null }>(
@@ -545,18 +579,6 @@ function parsePendingAiImport(value: string | null): PendingAiImport | null {
   } catch {
     return null;
   }
-}
-
-function hasMeaningfulManualProgress(draft: WizardDraft) {
-  return Boolean(
-    draft.schoolYear.label ||
-      draft.schoolYear.startDate ||
-      draft.schoolYear.endDate ||
-      draft.noSchoolRanges.length ||
-      draft.specialDays.length ||
-      draft.informationalDates.length ||
-      draft.completedSteps.length
-  );
 }
 
 function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[]) {
@@ -1645,7 +1667,6 @@ export default function ScheduleWizardClient({
               onImmediateSave={saveCurrentDraft}
               onCreateCalendar={openAiCreateModal}
               updateDraft={updateDraft}
-              setCurrentStep={setCurrentStep}
               onInvalidateAiCache={invalidateAiImportCache}
             />
           ) : currentStep === "school-year" && (
@@ -1857,7 +1878,6 @@ function AiCalendarImportCard({
   onImmediateSave,
   onCreateCalendar,
   updateDraft,
-  setCurrentStep,
   onInvalidateAiCache,
 }: {
   schoolSlug: string;
@@ -1867,7 +1887,6 @@ function AiCalendarImportCard({
   onImmediateSave: (draft: WizardDraft, step: WizardStep) => Promise<CalendarWizardDraftActionResult | null>;
   onCreateCalendar: () => Promise<void>;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
-  setCurrentStep: (step: WizardStep) => void;
   onInvalidateAiCache: (pdfHash: string | undefined, reason: string) => Promise<void>;
 }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -1883,6 +1902,7 @@ function AiCalendarImportCard({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [pollingFileName, setPollingFileName] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
+  const [reviewMode, setReviewMode] = useState<AiReviewMode>("review");
   const resumedPendingImportRef = useRef(false);
   const pollForImportResultRef = useRef<
     ((pending: PendingAiImport) => Promise<void>) | null
@@ -2406,25 +2426,9 @@ function AiCalendarImportCard({
 
   function applyImport() {
     if (!importResult) return;
-    if (
-      hasMeaningfulManualProgress(draft) &&
-      !window.confirm(
-        "Use this AI import? Your current wizard answers will be replaced by the imported draft, and you can review everything before generating."
-      )
-    ) {
-      return;
-    }
-    const conversion = convertAiImportToWizardDraft(
-      draft,
-      importResult,
-      resolutions,
-      draft.aiImport?.fileName
-    );
-    updateDraft(() => conversion.draft);
-    setStatus("applied");
-    setMessage("AI import added. Review the highlighted items before generating your calendar.");
-    setCurrentStep(conversion.earliestStep);
-    void onImmediateSave(conversion.draft, conversion.earliestStep);
+    setReviewMode("advanced");
+    setStatus("review");
+    setMessage("Advanced Edit is open. Your AI analysis and imported draft are preserved.");
   }
 
   function continueManually() {
@@ -2604,6 +2608,21 @@ function AiCalendarImportCard({
     void analyzeSelectedFile(true);
   }
 
+  function updateImportedResult(nextResult: AiCalendarImportResult) {
+    if (!draft.aiImport?.result) return;
+    const nextDraft = {
+      ...draft,
+      aiImport: {
+        ...draft.aiImport,
+        state: "review" as const,
+        result: nextResult,
+        banner: "Advanced edits saved to the imported calendar draft.",
+      },
+    };
+    updateDraft(() => nextDraft);
+    void onImmediateSave(nextDraft, "review");
+  }
+
   return (
     <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900/50 dark:bg-amber-950/20">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -2699,6 +2718,7 @@ function AiCalendarImportCard({
       {importResult && draft.aiImport?.state === "review" && (
         <AiImportReview
           importResult={importResult}
+          reviewMode={reviewMode}
           cacheMetadata={{
             cacheHit: draft.aiImport.cacheHit,
             cacheAnalyzedAt: draft.aiImport.cacheAnalyzedAt,
@@ -2718,6 +2738,13 @@ function AiCalendarImportCard({
           onCreateCalendar={onCreateCalendar}
           onContinueManually={continueManually}
           onAdvancedEdit={applyImport}
+          onBackToReview={() => setReviewMode("review")}
+          onSaveAdvancedEdit={() => {
+            void onImmediateSave(draft, "review");
+            setReviewMode("review");
+            setMessage("Advanced edits saved.");
+          }}
+          onImportResultChange={updateImportedResult}
           onStartOver={startAiReviewOver}
           onAnalyzeAgain={analyzeAgainFromReview}
           onRejectAnalysis={rejectAnalysis}
@@ -2729,6 +2756,7 @@ function AiCalendarImportCard({
 
 function AiImportReview({
   importResult,
+  reviewMode,
   cacheMetadata,
   resolutions,
   schedules,
@@ -2743,11 +2771,15 @@ function AiImportReview({
   onCreateCalendar,
   onContinueManually,
   onAdvancedEdit,
+  onBackToReview,
+  onSaveAdvancedEdit,
+  onImportResultChange,
   onStartOver,
   onAnalyzeAgain,
   onRejectAnalysis,
 }: {
   importResult: AiCalendarImportResult;
+  reviewMode: AiReviewMode;
   cacheMetadata?: {
     cacheHit?: boolean;
     cacheAnalyzedAt?: string;
@@ -2773,6 +2805,9 @@ function AiImportReview({
   onCreateCalendar: () => Promise<void>;
   onContinueManually: () => void;
   onAdvancedEdit: () => void;
+  onBackToReview: () => void;
+  onSaveAdvancedEdit: () => void;
+  onImportResultChange: (nextResult: AiCalendarImportResult) => void;
   onStartOver: () => void | Promise<void>;
   onAnalyzeAgain: () => void;
   onRejectAnalysis: () => void | Promise<void>;
@@ -2806,7 +2841,20 @@ function AiImportReview({
     warningResolutions,
     scheduleNameErrorCount: scheduleNameErrors.length,
   });
-  const canCreateCalendar = warningReadiness.canCreateCalendar;
+  const previewScheduleMap = buildAiPreviewScheduleMap(schedules, resolutions);
+  const previewConfig = buildAiPreviewConfig(importResult);
+  const previewResult = generateSchoolYearCalendar(previewConfig);
+  const brownGoldConflicts = getBrownGoldVerificationConflicts(
+    previewResult,
+    previewScheduleMap
+  );
+  const unresolvedPreviewDays = previewResult.days.filter((day) =>
+    day.warningCodes.includes("instructional_day_missing_schedule")
+  );
+  const canCreateCalendar =
+    warningReadiness.canCreateCalendar &&
+    brownGoldConflicts.length === 0 &&
+    unresolvedPreviewDays.length === 0;
   const matchedCount = resolutions.filter((resolution) => resolution.matchedExistingScheduleId).length;
   const newScheduleCount = schedulesNeedingTimes.length;
 
@@ -3307,10 +3355,33 @@ function AiImportReview({
         )}
       </ReviewPanel>
 
+      <AiImportedCalendarPreview
+        importResult={importResult}
+        result={previewResult}
+        scheduleMap={previewScheduleMap}
+        resolutions={resolutions}
+        schedules={schedules}
+        reviewMode={reviewMode}
+        brownGoldConflicts={brownGoldConflicts}
+        unresolvedDays={unresolvedPreviewDays}
+        onImportResultChange={onImportResultChange}
+      />
+
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 dark:border-slate-700">
-        <button type="button" onClick={onAdvancedEdit} className={secondaryButtonClass}>
-          Advanced Edit
-        </button>
+        {reviewMode === "advanced" ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={onBackToReview} className={secondaryButtonClass}>
+              Back to AI Review
+            </button>
+            <button type="button" onClick={onSaveAdvancedEdit} className={secondaryButtonClass}>
+              Save Changes
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={onAdvancedEdit} className={secondaryButtonClass}>
+            Advanced Edit
+          </button>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={onContinueManually} className={secondaryButtonClass}>
             Continue Manually
@@ -3324,6 +3395,338 @@ function AiImportReview({
         </div>
       </div>
     </div>
+  );
+}
+
+function AiImportedCalendarPreview({
+  importResult,
+  result,
+  scheduleMap,
+  resolutions,
+  schedules,
+  reviewMode,
+  brownGoldConflicts,
+  unresolvedDays,
+  onImportResultChange,
+}: {
+  importResult: AiCalendarImportResult;
+  result: CalendarGenerationResult;
+  scheduleMap: Map<string, WizardScheduleSummary>;
+  resolutions: DetectedScheduleResolution[];
+  schedules: WizardScheduleSummary[];
+  reviewMode: AiReviewMode;
+  brownGoldConflicts: Array<{ date: string; expected: string; actual: string }>;
+  unresolvedDays: GeneratedCalendarDay[];
+  onImportResultChange: (nextResult: AiCalendarImportResult) => void;
+}) {
+  const months = useMemo(() => {
+    const grouped = new Map<string, GeneratedCalendarDay[]>();
+    for (const generatedDay of result.days) {
+      const key = generatedDay.date.slice(0, 7);
+      grouped.set(key, [...(grouped.get(key) || []), generatedDay]);
+    }
+    return Array.from(grouped.entries());
+  }, [result.days]);
+  const firstInstructionalMonth =
+    result.days.find((day) => day.isSchoolDay)?.date.slice(0, 7) ||
+    months[0]?.[0] ||
+    "";
+  const [monthKey, setMonthKey] = useState(firstInstructionalMonth);
+  const [selectedDate, setSelectedDate] = useState(
+    result.days.find((day) => day.isSchoolDay)?.date || result.days[0]?.date || ""
+  );
+  const [lastResult, setLastResult] = useState<AiCalendarImportResult | null>(null);
+  const selectedDay =
+    result.days.find((calendarDay) => calendarDay.date === selectedDate) || null;
+  const selectedSpecialDay = selectedDay
+    ? importResult.specialDays.find(
+        (day) =>
+          compareDateStrings(day.startDate, selectedDay.date) <= 0 &&
+          compareDateStrings(day.endDate, selectedDay.date) >= 0
+      )
+    : null;
+  const selectedInfo = selectedDay
+    ? importResult.informationalDates.filter((date) => date.date === selectedDay.date)
+    : [];
+  const monthIndex = months.findIndex(([key]) => key === monthKey);
+  const monthDays = months[monthIndex]?.[1] || [];
+  const previousMonth = monthIndex > 0 ? months[monthIndex - 1]?.[0] : null;
+  const nextMonth = monthIndex >= 0 && monthIndex < months.length - 1
+    ? months[monthIndex + 1]?.[0]
+    : null;
+  const schedulesNeedingTimes = resolutions.filter(
+    (resolution) =>
+      !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
+  );
+  const showBrownGoldVerification = hasBrownGoldVerificationScheduleSet(scheduleMap);
+  const brownGoldRows = showBrownGoldVerification
+    ? getBrownGoldVerificationRows(result, scheduleMap)
+    : [];
+  const lowConfidenceCount = [
+    importResult.schoolYear,
+    importResult.pattern,
+    ...importResult.detectedSchedules,
+    ...importResult.noSchoolRanges,
+    ...importResult.specialDays,
+    ...importResult.informationalDates,
+  ].filter((item) => item.confidence !== "high").length;
+
+  function rememberAndApply(nextResult: AiCalendarImportResult) {
+    setLastResult(importResult);
+    onImportResultChange(nextResult);
+  }
+
+  function updateSelectedDate({
+    scheduleTempId,
+    noSchool,
+    note,
+  }: {
+    scheduleTempId?: string;
+    noSchool?: boolean;
+    note?: string;
+  }) {
+    if (!selectedDay) return;
+    const date = selectedDay.date;
+    const nextNoSchoolRanges = importResult.noSchoolRanges.filter(
+      (range) => range.id !== `manual-no-school-${date}`
+    );
+    const nextSpecialDays = importResult.specialDays.filter(
+      (day) => day.id !== `manual-special-${date}`
+    );
+    const nextInformationalDates = importResult.informationalDates.filter(
+      (item) => item.id !== `manual-info-${date}`
+    );
+
+    if (noSchool) {
+      nextNoSchoolRanges.push({
+        id: `manual-no-school-${date}`,
+        startDate: date,
+        endDate: date,
+        label: note?.trim() || "No School",
+        type: "No School",
+        confidence: "high",
+        evidence: { explanation: "Manual edit" },
+      });
+    } else if (scheduleTempId) {
+      nextSpecialDays.push({
+        id: `manual-special-${date}`,
+        startDate: date,
+        endDate: date,
+        label: getScheduleName(scheduleMap, scheduleTempId),
+        type: "Manual Edit",
+        scheduleTempId,
+        isInstructional: true,
+        confidence: "high",
+        evidence: { explanation: "Manual edit" },
+      });
+    }
+
+    if (note?.trim()) {
+      nextInformationalDates.push({
+        id: `manual-info-${date}`,
+        date,
+        label: note.trim(),
+        confidence: "high",
+        evidence: { explanation: "Manual edit" },
+      });
+    }
+
+    rememberAndApply({
+      ...importResult,
+      noSchoolRanges: nextNoSchoolRanges,
+      specialDays: nextSpecialDays,
+      informationalDates: nextInformationalDates,
+    });
+  }
+
+  return (
+    <ReviewPanel title="Calendar Preview" className="mt-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard label="Instructional days" value={String(result.summary.instructionalDayCount)} />
+        <MetricCard label="No-school days" value={String(result.summary.noSchoolWeekdayCount)} />
+        <MetricCard label="Schedules detected" value={String(resolutions.length)} />
+        <MetricCard label="Need bell times" value={String(schedulesNeedingTimes.length)} />
+        <MetricCard label="Special days" value={String(importResult.specialDays.length)} />
+        <MetricCard label="Unresolved items" value={String(unresolvedDays.length)} />
+        <MetricCard label="Low confidence" value={String(lowConfidenceCount)} />
+      </div>
+
+      {(brownGoldConflicts.length > 0 || unresolvedDays.length > 0) && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
+          <p className="font-bold">Fix these preview issues before creating the calendar:</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {brownGoldConflicts.map((conflict) => (
+              <li key={conflict.date}>
+                {formatDateForDisplay(conflict.date)} should be {conflict.expected}, but preview shows {conflict.actual}.
+              </li>
+            ))}
+            {unresolvedDays.slice(0, 8).map((day) => (
+              <li key={day.date}>{formatDateForDisplay(day.date)} has no schedule assignment.</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {showBrownGoldVerification && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-[#242424]">
+          <h3 className="text-sm font-bold">Brown/Gold verification</h3>
+          <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            First instructional day and first two instructional weeks must match the visual calendar.
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {brownGoldRows.map((row) => (
+              <div
+                key={row.date}
+                className={[
+                  "rounded-lg border p-3 text-xs font-semibold",
+                  row.matches
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100"
+                    : "border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100",
+                ].join(" ")}
+              >
+                <p className="font-bold">{formatDateForDisplay(row.date)}</p>
+                <p>Expected: {row.expected}</p>
+                <p>Preview: {row.actual}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <button
+          type="button"
+          disabled={!previousMonth}
+          onClick={() => previousMonth && setMonthKey(previousMonth)}
+          className={subtleButtonClass}
+        >
+          Previous
+        </button>
+        <p className="text-sm font-bold text-slate-600 dark:text-slate-300">
+          Defaulted to the first instructional month.
+        </p>
+        <button
+          type="button"
+          disabled={!nextMonth}
+          onClick={() => nextMonth && setMonthKey(nextMonth)}
+          className={subtleButtonClass}
+        >
+          Next
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
+        <MonthPreview
+          monthKey={monthKey}
+          days={monthDays}
+          scheduleMap={scheduleMap}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+        />
+
+        <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-black">
+          <h3 className="text-lg font-bold">Selected Date</h3>
+          {!selectedDay ? (
+            <p className="mt-3 text-sm text-slate-500">Select a date to inspect it.</p>
+          ) : (
+            <div className="mt-4 space-y-3 text-sm">
+              <SummaryRow label="Date" value={formatDateForDisplay(selectedDay.date)} />
+              <SummaryRow label="Classification" value={selectedDay.isSchoolDay ? "Instructional day" : "No school"} />
+              <SummaryRow label="Assigned schedule" value={getScheduleName(scheduleMap, selectedDay.scheduleId)} />
+              <SummaryRow label="Normal pattern" value={getScheduleName(scheduleMap, selectedDay.baseScheduleId)} />
+              <SummaryRow label="Notes" value={selectedDay.labels.join(", ") || "None"} />
+              <SummaryRow
+                label="Source"
+                value={
+                  selectedSpecialDay?.evidence?.explanation ||
+                  (selectedDay.sources.specialDayIds.length
+                    ? "Explicit AI-detected date assignment"
+                    : selectedDay.sources.noSchoolRangeIds.length
+                      ? "No-school coverage"
+                      : "Pattern-generated assignment")
+                }
+              />
+              {selectedDay.scheduleId &&
+                scheduleMap.get(selectedDay.scheduleId)?.setupStatus === "needs_times" && (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+                    Bell times can be added later.
+                  </p>
+                )}
+              {selectedInfo.length > 0 && (
+                <SummaryRow
+                  label="Informational labels"
+                  value={selectedInfo.map((info) => info.label).join(", ")}
+                />
+              )}
+
+              {reviewMode === "advanced" && (
+                <div className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Change schedule
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-[#242424] dark:text-white"
+                      defaultValue={selectedDay.scheduleId || ""}
+                      onChange={(event) => updateSelectedDate({ scheduleTempId: event.target.value })}
+                    >
+                      <option value="">No schedule</option>
+                      {resolutions.filter((resolution) => resolution.status !== "ignored").map((resolution) => (
+                        <option key={resolution.tempId} value={resolution.tempId}>
+                          {reviewedScheduleName(resolution)}
+                        </option>
+                      ))}
+                      {schedules.map((schedule) => (
+                        <option key={schedule.id} value={schedule.id}>
+                          {schedule.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => updateSelectedDate({ noSchool: true, note: "No School" })}
+                    className={secondaryButtonClass}
+                  >
+                    Mark No School
+                  </button>
+                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Add note
+                    <input
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-[#242424] dark:text-white"
+                      placeholder="Event or note"
+                      onBlur={(event) => updateSelectedDate({ note: event.target.value })}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={!lastResult}
+                    onClick={() => {
+                      if (lastResult) onImportResultChange(lastResult);
+                      setLastResult(null);
+                    }}
+                    className={subtleButtonClass}
+                  >
+                    Undo Last Edit
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </aside>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+        {[...scheduleMap.values()].slice(0, 12).map((schedule) => (
+          <span key={schedule.id} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2 py-1 dark:border-slate-700">
+            <span
+              className="h-2.5 w-2.5 rounded-full"
+              style={getScheduleDotStyle(getScheduleCalendarColor(schedule))}
+              aria-hidden="true"
+            />
+            {schedule.name}
+          </span>
+        ))}
+      </div>
+    </ReviewPanel>
   );
 }
 

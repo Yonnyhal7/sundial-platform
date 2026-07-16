@@ -239,7 +239,7 @@ export function convertAiImportToWizardDraft<TDraft extends AiWizardDraftShape>(
     label: specialDay.label,
     type: normalizeSpecialDayType(specialDay.type),
     isInstructional: specialDay.isInstructional,
-    rotationBehavior: "advance" as const,
+    rotationBehavior: "pause" as const,
   }));
 
   const completedSteps: AiWizardStep[] = ["school-year", "no-school", "special-days"];

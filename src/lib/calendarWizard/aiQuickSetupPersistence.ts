@@ -693,7 +693,7 @@ export function resolveAiScheduleReferences(
         : null,
       label: day.label,
       isInstructional: day.isInstructional,
-      rotationBehavior: "advance",
+      rotationBehavior: "pause",
     })),
     informationalDates: importResult.informationalDates.map((date) => ({
       id: date.id,
