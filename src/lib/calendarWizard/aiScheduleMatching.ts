@@ -3,6 +3,7 @@ import type {
   DetectedScheduleResolution,
 } from "./aiImportTypes";
 import { getAiScheduleDefaultColor, normalizeHexColor } from "@/lib/scheduleColors";
+import { canonicalScheduleName } from "./scheduleIdentity";
 
 export type ExistingScheduleForMatching = {
   id: string;
@@ -11,17 +12,8 @@ export type ExistingScheduleForMatching = {
   calendarColor?: string | null;
 };
 
-const scheduleSuffixPattern = /\b(schedule|day)\b/g;
-
 export function normalizeScheduleNameForMatching(name: string) {
-  return name
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/['’]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(scheduleSuffixPattern, " ")
-    .trim()
-    .replace(/\s+/g, " ");
+  return canonicalScheduleName(name);
 }
 
 export function matchDetectedSchedules(
@@ -40,7 +32,7 @@ export function matchDetectedSchedules(
     ]);
   }
 
-  return detectedSchedules.map((detectedSchedule) => {
+  const resolutions: DetectedScheduleResolution[] = detectedSchedules.map((detectedSchedule) => {
     const previous = preserved.get(detectedSchedule.tempId);
     if (previous?.status === "matched_by_admin" || previous?.status === "ignored") {
       return {
@@ -87,4 +79,13 @@ export function matchDetectedSchedules(
       setupChoice: "add_later",
     };
   });
+  console.info("AI calendar schedule registry", resolutions.map((resolution) => ({
+    source: resolution.tempId.startsWith("pdf-vector-") ? "pdf_vector_legend" : "ai_detected",
+    idType: resolution.matchedExistingScheduleId ? "database" : "temporary",
+    displayName: resolution.reviewedName || resolution.detectedName,
+    canonicalKey: canonicalScheduleName(resolution.reviewedName || resolution.detectedName),
+    matchedExistingScheduleId: resolution.matchedExistingScheduleId,
+    legendColor: null,
+  })));
+  return resolutions;
 }

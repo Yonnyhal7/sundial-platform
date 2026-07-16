@@ -55,6 +55,28 @@ describe("vector calendar extraction", () => {
     expect(merged.firstInstructionalAssignment).toMatchObject({ date: "2026-08-12", scheduleName: "All Periods 1-6", source: "pdf_vector_fill" });
     expect(merged.specialDays.find((day) => day.startDate === "2026-08-12")?.rotationBehavior).toBe("pause");
     expect(merged.specialDays.find((day) => day.startDate === "2026-08-13")?.rotationBehavior).toBe("advance");
+    expect(merged.legendMappings).toContainEqual({ normalizedColor: "#ff0000", canonicalScheduleKey: "all-periods-1-6", scheduleId: "pdf-vector-all-periods-1-6" });
+  });
+
+  it("deduplicates punctuation variants and rewrites every imported reference", () => {
+    const vector = { ...matchVectorCalendarStructure(texts, rectangles), durationMs: 5 };
+    const base: AiCalendarImportResult = {
+      schemaVersion: 1, source: "openai", analyzedAt: "2026-07-16",
+      schoolYear: { startDate: "2026-08-12", endDate: "2027-06-01", operatingWeekdays: [1, 2, 3, 4, 5], confidence: "high" },
+      detectedSchedules: [
+        { tempId: "ai-all", detectedName: "All-Periods 1–6", normalizedName: "All Periods 1 - 6", category: "special", confidence: "high", needsSetup: true },
+        { tempId: "ai-brown", detectedName: "Brown Day", normalizedName: "Brown Day", category: "rotation", confidence: "high", needsSetup: true },
+        { tempId: "duplicate-brown", detectedName: " Brown  Day ", normalizedName: "Brown Day", category: "rotation", confidence: "review", needsSetup: true },
+        { tempId: "ai-gold", detectedName: "Gold Day", normalizedName: "Gold Day", category: "rotation", confidence: "high", needsSetup: true },
+      ],
+      pattern: { type: "repeating", scheduleTempIds: ["duplicate-brown", "ai-gold"], confidence: "high" },
+      noSchoolRanges: [], specialDays: [{ id: "old", startDate: "2026-08-11", endDate: "2026-08-11", label: "Brown", scheduleTempId: "duplicate-brown", isInstructional: true, confidence: "high" }], informationalDates: [], warnings: [],
+    };
+    const merged = mergeVectorCalendarAssignments(base, vector);
+    expect(merged.detectedSchedules.filter((item) => item.detectedName.toLowerCase().includes("brown"))).toHaveLength(1);
+    expect(merged.pattern.scheduleTempIds[0]).toBe("pdf-vector-brown");
+    expect(merged.specialDays.find((day) => day.id === "old")?.scheduleTempId).toBe("pdf-vector-brown");
+    expect(merged.detectedSchedules.filter((item) => item.detectedName.toLowerCase().includes("all"))).toHaveLength(1);
   });
 
   it("blocks pattern-only first-day inference", () => {

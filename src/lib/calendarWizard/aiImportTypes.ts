@@ -152,6 +152,11 @@ export type AiCalendarImportResult = {
     confidence: number;
     color?: string;
   }>;
+  legendMappings?: Array<{
+    normalizedColor: string;
+    canonicalScheduleKey: string;
+    scheduleId: string;
+  }>;
   firstInstructionalAssignment?: {
     date: string;
     scheduleName: string | null;

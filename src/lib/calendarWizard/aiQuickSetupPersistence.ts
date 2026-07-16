@@ -269,7 +269,7 @@ export function isNoSchoolLikeDetectedScheduleName(name: string) {
     "school closed",
     "district closed",
     "recess",
-  ].some((phrase) => normalized === phrase || normalized.includes(phrase));
+  ].map(normalizeScheduleNameForMatching).some((phrase) => normalized === phrase || normalized.includes(phrase));
 }
 
 export function getAiScheduleUsageDetails(
@@ -693,7 +693,7 @@ export function resolveAiScheduleReferences(
         : null,
       label: day.label,
       isInstructional: day.isInstructional,
-      rotationBehavior: "pause",
+      rotationBehavior: day.rotationBehavior || "pause",
     })),
     informationalDates: importResult.informationalDates.map((date) => ({
       id: date.id,

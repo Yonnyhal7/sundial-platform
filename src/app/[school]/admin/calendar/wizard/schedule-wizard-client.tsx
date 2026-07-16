@@ -335,6 +335,7 @@ function buildAiPreviewScheduleMap(
     const matched = resolution.matchedExistingScheduleId
       ? schedulesById.get(resolution.matchedExistingScheduleId)
       : null;
+    if (matched) map.delete(matched.id);
     map.set(resolution.tempId, {
       id: resolution.tempId,
       name: reviewedScheduleName(resolution),
