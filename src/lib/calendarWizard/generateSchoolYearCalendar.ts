@@ -1,4 +1,5 @@
 import {
+  addDays,
   clampRangeToBounds,
   compareDateStrings,
   eachDateInRange,
@@ -97,6 +98,7 @@ function incrementCount(counts: Record<string, number>, key: string | null) {
 
 function getNormalScheduleId(
   config: CalendarWizardConfig,
+  date: DateString,
   weekday: Weekday,
   repeatingIndex: number,
   warnings: CalendarGenerationWarning[],
@@ -122,6 +124,21 @@ function getNormalScheduleId(
     return scheduleId;
   }
 
+  if (config.pattern.type === "calendar_week") {
+    if (config.pattern.scheduleIds.length === 0) {
+      const code = "repeating_pattern_missing_schedules";
+      warningCodes.push(code);
+      addWarning(warnings, code, "The alternating week pattern needs at least one schedule.");
+      return null;
+    }
+    const start = new Date(`${config.pattern.startDate}T00:00:00Z`).getTime();
+    const current = new Date(`${date}T00:00:00Z`).getTime();
+    const weekOffset = Math.floor((current - start) / (7 * 24 * 60 * 60 * 1000));
+    const startIndex = config.pattern.startIndex || 0;
+    const index = ((startIndex + weekOffset) % config.pattern.scheduleIds.length + config.pattern.scheduleIds.length) % config.pattern.scheduleIds.length;
+    return config.pattern.scheduleIds[index] || null;
+  }
+
   if (config.pattern.scheduleIds.length === 0) {
     const code = "repeating_pattern_missing_schedules";
     warningCodes.push(code);
@@ -144,6 +161,12 @@ function getNormalScheduleId(
 
 function shouldAdvanceRepeatingPattern(config: CalendarWizardConfig) {
   return config.pattern.type === "repeating";
+}
+
+function shouldAdvanceAcrossNoSchool(config: CalendarWizardConfig, isOperatingDay: boolean) {
+  return config.pattern.type === "repeating" &&
+    config.pattern.pauseOnNoSchoolDays === false &&
+    isOperatingDay;
 }
 
 function buildRangeMap<T extends { id: string; label: string }>(
@@ -369,6 +392,25 @@ export function generateSchoolYearCalendar(
   );
 
   let repeatingIndex = 0;
+  if (
+    config.pattern.type === "repeating" &&
+    config.pattern.startDate &&
+    compareDateStrings(config.pattern.startDate, schoolYearStart) > 0
+  ) {
+    for (const date of eachDateInRange(schoolYearStart, addDays(config.pattern.startDate, -1))) {
+      const weekday = getWeekday(date);
+      const nonInstructionalSpecial = (specialDayMap.get(date) || []).some(
+        (entry) => !entry.isInstructional
+      );
+      if (
+        operatingWeekdaySet.has(weekday) &&
+        (noSchoolMap.get(date) || []).length === 0 &&
+        !nonInstructionalSpecial
+      ) {
+        repeatingIndex -= 1;
+      }
+    }
+  }
 
   for (const date of eachDateInRange(schoolYearStart, schoolYearEnd)) {
     const weekday = getWeekday(date);
@@ -415,6 +457,7 @@ export function generateSchoolYearCalendar(
             ? "no_school"
             : classificationOverride.classification,
       });
+      if (shouldAdvanceAcrossNoSchool(config, isOperatingDay)) repeatingIndex += 1;
       continue;
     }
 
@@ -434,6 +477,7 @@ export function generateSchoolYearCalendar(
         warningCodes,
         assignmentSource: null,
       });
+      if (shouldAdvanceAcrossNoSchool(config, isOperatingDay)) repeatingIndex += 1;
       continue;
     }
 
@@ -453,7 +497,7 @@ export function generateSchoolYearCalendar(
         addWarning(
           warnings,
           code,
-          "A special school day overlaps a no-school day. The date remains no school.",
+          `${conflictingSpecialEntries.map((entry) => entry.label).join(", ")} occurs during ${noSchoolEntries.map((entry) => entry.label).join(", ")} on ${date}. Sundial kept the date as no school, preserved both labels, removed the student schedule assignment, and paused rotation.`,
           {
             dates: [date],
             sourceIds: [
@@ -481,11 +525,13 @@ export function generateSchoolYearCalendar(
         warningCodes,
         assignmentSource: inferredNonInstructionalClassification(noSchoolEntries),
       });
+      if (shouldAdvanceAcrossNoSchool(config, isOperatingDay)) repeatingIndex += 1;
       continue;
     }
 
     const baseScheduleId = getNormalScheduleId(
       config,
+      date,
       weekday,
       repeatingIndex,
       warnings,
@@ -528,6 +574,7 @@ export function generateSchoolYearCalendar(
           warningCodes,
           assignmentSource: isStaffOnlyLabel(specialDay.label) ? "staff_only" : "no_school",
         });
+        if (shouldAdvanceAcrossNoSchool(config, isOperatingDay)) repeatingIndex += 1;
         continue;
       }
     }

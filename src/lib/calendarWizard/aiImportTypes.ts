@@ -134,8 +134,23 @@ export type AiImportAutomaticResolution = {
 };
 
 export type AiImportWarningResolution = {
+  issueId?: string;
+  issueCode?: string;
   code: string;
-  status: "unreviewed" | "accepted_suggestion" | "kept_original" | "edited_manually" | "acknowledged";
+  status:
+    | "unresolved"
+    | "acknowledged"
+    | "automatically_resolved"
+    | "manually_resolved"
+    /** Legacy values retained for saved drafts created before stable issue IDs. */
+    | "unreviewed"
+    | "accepted_suggestion"
+    | "kept_original"
+    | "edited_manually";
+  affectedDates?: string[];
+  resolution?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
   note?: string;
 };
 

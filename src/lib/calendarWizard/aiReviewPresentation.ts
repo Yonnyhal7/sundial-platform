@@ -77,10 +77,53 @@ export function assignmentSourcePresentation(
 export function deduplicateClassifiedWarnings(warnings: ClassifiedCalendarWarning[]) {
   const retained = new Map<string, ClassifiedCalendarWarning>();
   for (const warning of warnings) {
-    const key = `${warning.classification}|${warning.code}|${warning.message.trim().toLowerCase()}`;
+    const key = warning.issueId;
     if (!retained.has(key)) retained.set(key, warning);
   }
   return [...retained.values()];
+}
+
+export type CalendarWarningDateDetails = {
+  date: string;
+  specialLabels: string[];
+  noSchoolLabels: string[];
+  currentClassification: "No school" | "Instructional" | "Needs correction";
+  suggestedResult: string;
+  rotationEffect: string;
+};
+
+export function getCalendarWarningDateDetails(
+  importResult: AiCalendarImportResult,
+  warning: ClassifiedCalendarWarning
+): CalendarWarningDateDetails[] {
+  return warning.affectedDates.map((date) => {
+    const noSchoolLabels = importResult.noSchoolRanges
+      .filter((range) => date >= range.startDate && date <= range.endDate)
+      .map((range) => range.label);
+    const specialLabels = [
+      ...importResult.specialDays
+        .filter((day) => date >= day.startDate && date <= day.endDate)
+        .map((day) => day.label),
+      ...importResult.informationalDates
+        .filter((item) => item.date === date)
+        .map((item) => item.label),
+    ];
+    const isSafeNoSchoolOverlap =
+      warning.issueCode === "special_day_overlaps_no_school" ||
+      warning.classification === "automatically_resolved";
+    return {
+      date,
+      specialLabels: [...new Set(specialLabels)],
+      noSchoolLabels: [...new Set(noSchoolLabels)],
+      currentClassification: isSafeNoSchoolOverlap ? "No school" : "Needs correction",
+      suggestedResult: isSafeNoSchoolOverlap
+        ? "Keep the date as no school, preserve both labels, and remove any student schedule assignment."
+        : warning.suggestedCorrection || "Review the source details and save a valid calendar-day classification.",
+      rotationEffect: isSafeNoSchoolOverlap
+        ? "The schedule rotation pauses on this date."
+        : "Rotation will be recalculated after the date is saved.",
+    };
+  });
 }
 
 export function includedNoSchoolLabels(

@@ -119,6 +119,57 @@ describe("generateSchoolYearCalendar", () => {
     expect(day(result, "2026-08-12").scheduleId).toBe(GOLD);
   });
 
+  it("keeps calendar-week alternation stable across holidays", () => {
+    const result = generateSchoolYearCalendar(
+      baseConfig({
+        schoolYear: { startDate: "2026-08-10", endDate: "2026-08-21" },
+        pattern: {
+          type: "calendar_week",
+          scheduleIds: [BROWN, GOLD],
+          startDate: "2026-08-10",
+          startIndex: 0,
+        },
+        noSchoolRanges: [{ startDate: "2026-08-17", label: "Holiday" }],
+      })
+    );
+
+    expect(day(result, "2026-08-14").scheduleId).toBe(BROWN);
+    expect(day(result, "2026-08-17").isSchoolDay).toBe(false);
+    expect(day(result, "2026-08-18").scheduleId).toBe(GOLD);
+  });
+
+  it("supports custom cycles that continue through no-school operating days", () => {
+    const result = generateSchoolYearCalendar(
+      baseConfig({
+        pattern: {
+          type: "repeating",
+          scheduleIds: [BROWN, GOLD, REGULAR],
+          pauseOnNoSchoolDays: false,
+        },
+        noSchoolRanges: [{ startDate: "2026-08-11", label: "Holiday" }],
+      })
+    );
+
+    expect(day(result, "2026-08-10").scheduleId).toBe(BROWN);
+    expect(day(result, "2026-08-12").scheduleId).toBe(REGULAR);
+  });
+
+  it("respects the configured instructional-cycle anchor date and starting position", () => {
+    const result = generateSchoolYearCalendar(
+      baseConfig({
+        pattern: {
+          type: "repeating",
+          scheduleIds: [BROWN, GOLD],
+          startDate: "2026-08-12",
+          startIndex: 1,
+        },
+      })
+    );
+
+    expect(day(result, "2026-08-12").scheduleId).toBe(GOLD);
+    expect(day(result, "2026-08-13").scheduleId).toBe(BROWN);
+  });
+
   it("does not advance repeating patterns for a multi-day break", () => {
     const result = generateSchoolYearCalendar(
       baseConfig({
@@ -366,6 +417,10 @@ describe("generateSchoolYearCalendar", () => {
     expect(result.warnings.map((warning) => warning.code)).toContain(
       "special_day_overlaps_no_school"
     );
+    expect(result.warnings.find((warning) => warning.code === "special_day_overlaps_no_school")).toMatchObject({
+      dates: ["2026-08-11"],
+      message: expect.stringContaining("Rally occurs during Holiday on 2026-08-11"),
+    });
   });
 
   it("preserves an overlap label and pauses the repeating rotation", () => {

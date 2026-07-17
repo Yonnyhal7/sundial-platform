@@ -28,6 +28,21 @@ export type SchoolCalendarPeriod = {
   endTime: string;
 };
 
+export type AdminCalendarMode = "read" | "guided-preview" | "guided-edit" | "admin-edit";
+
+function datesBetween(start: string, end: string) {
+  const first = start <= end ? start : end;
+  const last = start <= end ? end : start;
+  const dates: string[] = [];
+  const cursor = new Date(`${first}T00:00:00Z`);
+  const final = new Date(`${last}T00:00:00Z`);
+  while (cursor <= final) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
 function monthStart(value: Date) {
   return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), 1));
 }
@@ -46,6 +61,9 @@ export function AdminCalendarView({
   firstMonth,
   lastMonth,
   details,
+  mode = "read",
+  selectedDates = [],
+  onSelectionChange,
 }: {
   days: SchoolCalendarDay[];
   schedules: SchoolCalendarSchedule[];
@@ -56,10 +74,17 @@ export function AdminCalendarView({
   firstMonth?: Date;
   lastMonth?: Date;
   details: ReactNode;
+  mode?: AdminCalendarMode;
+  selectedDates?: string[];
+  onSelectionChange?: (dates: string[]) => void;
 }) {
   const [month, setMonth] = useState(() => monthStart(initialMonth));
+  const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
   const previousDisabled = Boolean(firstMonth && monthKey(month) <= monthKey(monthStart(firstMonth)));
   const nextDisabled = Boolean(lastMonth && monthKey(month) >= monthKey(monthStart(lastMonth)));
+  const todayMonth = monthStart(new Date());
+  const todayAvailable = (!firstMonth || monthKey(todayMonth) >= monthKey(monthStart(firstMonth))) &&
+    (!lastMonth || monthKey(todayMonth) <= monthKey(monthStart(lastMonth)));
 
   function changeMonth(offset: number) {
     const nextMonth = new Date(
@@ -76,7 +101,22 @@ export function AdminCalendarView({
         days={days}
         schedules={schedules}
         selectedDate={selectedDate}
-        onSelectDate={onSelectedDateChange}
+        selectedDates={selectedDates}
+        onSelectDate={(date, event) => {
+          onSelectedDateChange(date);
+          if (mode !== "guided-edit" || !onSelectionChange) return;
+          if (event.shiftKey && selectionAnchor) {
+            onSelectionChange(datesBetween(selectionAnchor, date));
+            return;
+          }
+          const nextSelection = event.metaKey || event.ctrlKey
+            ? selectedDates.includes(date)
+              ? selectedDates.filter((selected) => selected !== date)
+              : [...selectedDates, date]
+            : [date];
+          setSelectionAnchor(date);
+          onSelectionChange(nextSelection);
+        }}
         navigation={
           <CalendarMonthNavigation
             month={month}
@@ -84,6 +124,8 @@ export function AdminCalendarView({
             nextDisabled={nextDisabled}
             onPrevious={() => changeMonth(-1)}
             onNext={() => changeMonth(1)}
+            onToday={todayAvailable ? () => { setMonth(todayMonth); onMonthChange?.(todayMonth); } : undefined}
+            onMonthChange={(value) => { const next = new Date(`${value}-01T00:00:00Z`); setMonth(next); onMonthChange?.(next); }}
           />
         }
       />
@@ -100,21 +142,29 @@ export function CalendarMonthNavigation({
   onNext,
   previousDisabled = false,
   nextDisabled = false,
+  onToday,
+  onMonthChange,
 }: {
   month: Date;
   onPrevious: () => void;
   onNext: () => void;
   previousDisabled?: boolean;
   nextDisabled?: boolean;
+  onToday?: () => void;
+  onMonthChange?: (month: string) => void;
 }) {
   return (
     <div className="mb-4 grid grid-cols-[auto_1fr_auto] items-center gap-2 sm:mb-5 sm:gap-4">
       <button type="button" onClick={onPrevious} disabled={previousDisabled} className="cursor-pointer rounded-xl border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:px-3 sm:text-sm">
         <span className="sm:hidden">←</span><span className="hidden sm:inline">← Previous</span>
       </button>
-      <h3 className="text-center text-lg font-semibold text-slate-950 dark:text-white sm:text-xl">
-        {month.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}
-      </h3>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <h3 className="text-center text-lg font-semibold text-slate-950 dark:text-white sm:text-xl">
+          {month.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })}
+        </h3>
+        {onMonthChange && <input type="month" aria-label="Choose calendar month" value={monthKey(month)} onChange={(event) => { if (event.target.value) onMonthChange(event.target.value); }} className="max-w-36 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800" />}
+        {onToday && <button type="button" onClick={onToday} className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:text-slate-300">Today</button>}
+      </div>
       <button type="button" onClick={onNext} disabled={nextDisabled} className="cursor-pointer rounded-xl border border-slate-200 px-2 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:px-3 sm:text-sm">
         <span className="sm:hidden">→</span><span className="hidden sm:inline">Next →</span>
       </button>
@@ -122,12 +172,13 @@ export function CalendarMonthNavigation({
   );
 }
 
-export function CalendarDateCell({ day, dayNumber, schedule, selected, onSelect }: {
+export function CalendarDateCell({ day, dayNumber, schedule, selected, multiSelected = false, onSelect }: {
   day: SchoolCalendarDay | null;
   dayNumber: number;
   schedule?: SchoolCalendarSchedule | null;
   selected: boolean;
-  onSelect: () => void;
+  multiSelected?: boolean;
+  onSelect: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   const isNoSchoolDay = day?.isNoSchoolDay ?? day?.isSchoolDay === false;
   const label = isNoSchoolDay
@@ -137,10 +188,10 @@ export function CalendarDateCell({ day, dayNumber, schedule, selected, onSelect 
   return (
     <button type="button" onClick={onSelect} className={[
       "relative aspect-square min-h-12 cursor-pointer overflow-hidden rounded-xl border p-1.5 text-left transition sm:p-2",
-      selected ? "border-[var(--school-primary)] bg-[color-mix(in_srgb,var(--school-primary)_10%,white)] text-[var(--school-primary)] shadow-sm ring-2 ring-[var(--school-primary)]/20 dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,transparent)] dark:text-white" : isNoSchoolDay ? "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-200" : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700",
+      selected || multiSelected ? "border-[var(--school-primary)] bg-[color-mix(in_srgb,var(--school-primary)_10%,white)] text-[var(--school-primary)] shadow-sm ring-2 ring-[var(--school-primary)]/20 dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,transparent)] dark:text-white" : isNoSchoolDay ? "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-200" : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700",
       day?.hasConflict ? "border-red-500 ring-2 ring-red-500/30" : "",
       day?.needsReview && !day?.hasConflict ? "border-amber-500 ring-2 ring-amber-400/40" : "",
-    ].join(" ")} aria-label={`${day?.date || dayNumber}, ${label}${day?.hasConflict ? ", conflict" : ""}${day?.needsReview ? ", needs review" : ""}`}>
+    ].join(" ")} aria-pressed={multiSelected || selected} aria-label={`${day?.date || dayNumber}, ${label}${day?.hasConflict ? ", conflict" : ""}${day?.needsReview ? ", needs review" : ""}`}>
       <span className="text-[clamp(0.8rem,2.3vw,1.35rem)] font-semibold leading-none">{dayNumber}</span>
       {day && (schedule || day.label || isNoSchoolDay || day.hasConflict) && (
         <span className="absolute bottom-2 left-1/2 flex max-w-[calc(100%-0.75rem)] -translate-x-1/2 items-center gap-1" title={label}>
@@ -154,12 +205,13 @@ export function CalendarDateCell({ day, dayNumber, schedule, selected, onSelect 
   );
 }
 
-export function SchoolCalendarMonthGrid({ month, days, schedules, selectedDate, onSelectDate, navigation }: {
+export function SchoolCalendarMonthGrid({ month, days, schedules, selectedDate, selectedDates = [], onSelectDate, navigation }: {
   month: Date;
   days: SchoolCalendarDay[];
   schedules: SchoolCalendarSchedule[];
   selectedDate: string | null;
-  onSelectDate: (date: string) => void;
+  selectedDates?: string[];
+  onSelectDate: (date: string, event: React.MouseEvent<HTMLButtonElement>) => void;
   navigation?: ReactNode;
 }) {
   const year = month.getUTCFullYear();
@@ -181,7 +233,7 @@ export function SchoolCalendarMonthGrid({ month, days, schedules, selectedDate, 
           const dayNumber = index + 1;
           const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNumber).padStart(2, "0")}`;
           const day = dayMap.get(date) || { date, scheduleId: null, isSchoolDay: false, isNoSchoolDay: false, label: null };
-          return <CalendarDateCell key={date} day={day} dayNumber={dayNumber} schedule={day.scheduleId ? scheduleMap.get(day.scheduleId) : null} selected={selectedDate === date} onSelect={() => onSelectDate(date)} />;
+          return <CalendarDateCell key={date} day={day} dayNumber={dayNumber} schedule={day.scheduleId ? scheduleMap.get(day.scheduleId) : null} selected={selectedDate === date} multiSelected={selectedDates.includes(date)} onSelect={(event) => onSelectDate(date, event)} />;
         })}
         {Array.from({ length: trailingCellCount }, (_, index) => <div key={`trailing-${index}`} data-calendar-empty="trailing" className="aspect-square" />)}
       </div>

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AiCalendarImportResult } from "./aiImportTypes";
+import { classifyCalendarWarnings } from "./aiQuickSetupPersistence";
 import {
   assignmentSourcePresentation,
   buildAiReviewReadiness,
   deduplicateClassifiedWarnings,
+  getCalendarWarningDateDetails,
   getTrueScheduleExceptionDates,
   includedNoSchoolLabels,
 } from "./aiReviewPresentation";
@@ -75,7 +77,17 @@ describe("AI review presentation", () => {
   });
 
   it("groups duplicate warnings and contained no-school labels", () => {
-    const warning = { code: "overlap", message: "Overlapping labels were merged.", severity: "review" as const, classification: "needs_review" as const, resolved: true };
+    const warning = {
+      issueId: "overlap::none::none",
+      issueCode: "overlap",
+      affectedDates: [],
+      code: "overlap",
+      message: "Overlapping labels were merged.",
+      severity: "needs_review" as const,
+      status: "acknowledged" as const,
+      classification: "needs_review" as const,
+      resolved: true,
+    };
     expect(deduplicateClassifiedWarnings([warning, warning])).toHaveLength(1);
     expect(includedNoSchoolLabels("2026-12-21", "2027-01-01", [{
       code: "no_school_ranges_merged",
@@ -84,6 +96,38 @@ describe("AI review presentation", () => {
       dateRange: { startDate: "2026-12-21", endDate: "2027-01-01" },
       labelsPreserved: ["Admission Day", "Christmas Holidays", "New Year's Day"],
     }])).toEqual(["Admission Day", "Christmas Holidays", "New Year's Day"]);
+  });
+
+  it("presents the exact date and labels for a safe no-school overlap", () => {
+    const result = importResult();
+    result.noSchoolRanges = [{
+      id: "christmas-recess",
+      startDate: "2026-12-21",
+      endDate: "2027-01-01",
+      label: "Christmas Recess",
+      type: "Recess",
+      confidence: "high",
+    }];
+    result.informationalDates = [{
+      id: "admission-day",
+      date: "2026-12-23",
+      label: "Admission Day",
+      confidence: "high",
+    }];
+    const warning = classifyCalendarWarnings([{
+      code: "special_day_overlaps_no_school",
+      message: "The date remains no school.",
+      dates: ["2026-12-23"],
+    }]).automaticallyResolvedWarnings[0];
+
+    expect(getCalendarWarningDateDetails(result, warning)).toEqual([{
+      date: "2026-12-23",
+      specialLabels: ["Admission Day"],
+      noSchoolLabels: ["Christmas Recess"],
+      currentClassification: "No school",
+      suggestedResult: "Keep the date as no school, preserve both labels, and remove any student schedule assignment.",
+      rotationEffect: "The schedule rotation pauses on this date.",
+    }]);
   });
 
   it("treats missing bell times as a non-blocking readiness warning", () => {

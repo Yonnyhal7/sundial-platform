@@ -1217,7 +1217,10 @@ export async function createAiCalendarFromDraftAction(
       );
     }
 
-    const generatedWarningClassification = classifyCalendarWarnings(generated.warnings);
+    const generatedWarningClassification = classifyCalendarWarnings(
+      generated.warnings,
+      aiImport.warningResolutions || []
+    );
     logCalendarWarningClassification("generated_calendar", generatedWarningClassification);
 
     if (generatedWarningClassification.blockingWarnings.length > 0) {
@@ -1227,13 +1230,21 @@ export async function createAiCalendarFromDraftAction(
       );
     }
 
-    const acknowledgedIssueCodes = new Set(
+    const explicitlyAcknowledgedIssueCodes = new Set(
       (input.acknowledgedIssueCodes || []).filter(
         (code): code is string => typeof code === "string" && code.length > 0
       )
     );
-    for (const warning of aiWarningClassification.acknowledgedReviewWarnings) {
-      acknowledgedIssueCodes.add(String(warning.code));
+    const persistedResolvedIssueIds = new Set([
+      ...aiWarningClassification.acknowledgedReviewWarnings,
+      ...generatedWarningClassification.acknowledgedReviewWarnings,
+    ].map((warning) => warning.issueId));
+    const acknowledgedIssueCodes = new Set(explicitlyAcknowledgedIssueCodes);
+    for (const warning of [
+      ...aiWarningClassification.acknowledgedReviewWarnings,
+      ...generatedWarningClassification.acknowledgedReviewWarnings,
+    ]) {
+      acknowledgedIssueCodes.add(warning.issueCode);
     }
     if (importResult.instructionalDayCountReview && countReviewState.ready) {
       acknowledgedIssueCodes.add("instructional_day_count_mismatch");
@@ -1241,7 +1252,11 @@ export async function createAiCalendarFromDraftAction(
     const missingAcknowledgments = [
       ...aiWarningClassification.unacknowledgedReviewWarnings,
       ...generatedWarningClassification.unacknowledgedReviewWarnings,
-    ].filter((warning) => !acknowledgedIssueCodes.has(String(warning.code)));
+    ].filter(
+      (warning) =>
+        !persistedResolvedIssueIds.has(warning.issueId) &&
+        !explicitlyAcknowledgedIssueCodes.has(warning.issueCode)
+    );
     if (missingAcknowledgments.length > 0) {
       return validationError(
         "Acknowledge the remaining review notes before creating the calendar.",

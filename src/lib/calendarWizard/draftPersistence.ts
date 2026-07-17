@@ -37,7 +37,9 @@ export function getCalendarWizardFlowForDraft(
 
 export const CALENDAR_WIZARD_STEPS = [
   "school-year",
+  "schedule-names",
   "normal-schedule",
+  "exceptions-review",
   "no-school",
   "special-days",
   "review",
@@ -224,9 +226,17 @@ function migrateDraftShape(value: unknown): AiWizardDraftShape | null {
       operatingWeekdays: operatingWeekdays.length ? operatingWeekdays : [1, 2, 3, 4, 5],
     },
     patternMode:
-      value.patternMode === "repeating" || value.patternMode === "weekday"
+      value.patternMode === "alternate" || value.patternMode === "repeating" || value.patternMode === "weekday"
         ? value.patternMode
         : "same",
+    alternationMethod:
+      value.alternationMethod === "calendar_week" ? "calendar_week" : "instructional_day",
+    patternStartDate: typeof value.patternStartDate === "string" ? value.patternStartDate : "",
+    repeatingStartIndex:
+      typeof value.repeatingStartIndex === "number" && Number.isInteger(value.repeatingStartIndex)
+        ? value.repeatingStartIndex
+        : 0,
+    pauseOnNoSchoolDays: value.pauseOnNoSchoolDays !== false,
     sameScheduleId: typeof value.sameScheduleId === "string" ? value.sameScheduleId : "",
     repeatingScheduleIds: Array.isArray(value.repeatingScheduleIds)
       ? value.repeatingScheduleIds.filter((id): id is string => typeof id === "string")

@@ -58,6 +58,24 @@ describe("calendar wizard draft persistence", () => {
     expect(migrated?.version).toBe(1);
     expect(migrated?.currentStep).toBe("school-year");
     expect(migrated?.draft.schoolYear.label).toBe("2026-2027");
+    expect(migrated?.draft.alternationMethod).toBe("instructional_day");
+    expect(migrated?.draft.pauseOnNoSchoolDays).toBe(true);
+  });
+
+  it("persists baseline pattern anchors and the new guided steps", () => {
+    const serialized = serializeCalendarWizardDraft({
+      currentStep: "exceptions-review",
+      draft: manualDraft({
+        patternMode: "alternate",
+        alternationMethod: "calendar_week",
+        patternStartDate: "2026-08-10",
+        repeatingStartIndex: 1,
+      }),
+    });
+
+    expect(serialized?.data.currentStep).toBe("exceptions-review");
+    expect(serialized?.data.draft.patternMode).toBe("alternate");
+    expect(serialized?.data.draft.patternStartDate).toBe("2026-08-10");
   });
 
   it("normalizes null endDate values to startDate", () => {
@@ -100,8 +118,14 @@ describe("calendar wizard draft persistence", () => {
           unresolvedRequiredScheduleIds: resolutions.map((resolution) => resolution.tempId),
           warnings: importResult.warnings,
           warningResolutions: importResult.warnings.map((warning) => ({
+            issueId: `${warning.code}::none::none`,
+            issueCode: warning.code,
             code: warning.code,
             status: "acknowledged",
+            affectedDates: [],
+            resolution: "Administrator kept the original state.",
+            reviewedBy: "current_administrator",
+            reviewedAt: "2026-07-17T12:00:00.000Z",
           })),
         },
       }),
@@ -111,6 +135,11 @@ describe("calendar wizard draft persistence", () => {
     expect(serialized?.data.draft.aiImport?.resolutions[0]?.reviewedName).toContain("Reviewed");
     expect(serialized?.data.draft.aiImport?.resolutions[0]?.setupChoice).toBe("add_later");
     expect(serialized?.data.draft.aiImport?.warningResolutions?.[0]?.status).toBe("acknowledged");
+    expect(serialized?.data.draft.aiImport?.warningResolutions?.[0]).toMatchObject({
+      issueId: expect.stringContaining("::none::none"),
+      reviewedBy: "current_administrator",
+      reviewedAt: "2026-07-17T12:00:00.000Z",
+    });
   });
 
   it("uses separate draft types for AI import and guided setup", () => {

@@ -5,6 +5,7 @@ import {
   collectReferencedRemovedScheduleIds,
   collectUnmappedTemporaryScheduleIds,
   getAiCreateCalendarReadiness,
+  getCalendarWarningIssueId,
   getAiScheduleUsageDetails,
   isNoSchoolLikeDetectedScheduleName,
   planAiSchedulePersistence,
@@ -680,6 +681,46 @@ describe("AI quick setup persistence planning", () => {
 
     expect(classification.blockingWarnings).toHaveLength(0);
     expect(classification.automaticallyResolvedWarnings).toHaveLength(1);
+    expect(classification.automaticallyResolvedWarnings[0]).toMatchObject({
+      affectedDates: ["2026-12-18"],
+      severity: "automatically_resolved",
+      status: "automatically_resolved",
+      resolved: true,
+    });
+  });
+
+  it("recognizes legacy overlap wording as automatically resolved even with blocking severity", () => {
+    const classification = classifyCalendarWarnings([{
+      code: "legacy_overlap_warning",
+      severity: "blocking",
+      message: "A special school day overlaps a no-school day. The date remains no school.",
+    }]);
+
+    expect(classification.blockingWarnings).toHaveLength(0);
+    expect(classification.automaticallyResolvedWarnings).toHaveLength(1);
+  });
+
+  it("uses stable issue IDs so resolving one date cannot leave or clear a stale sibling", () => {
+    const first: CalendarGenerationWarning = {
+      code: "instructional_day_missing_schedule",
+      message: "Missing schedule on the first date.",
+      dates: ["2026-08-12"],
+    };
+    const second: CalendarGenerationWarning = {
+      code: "instructional_day_missing_schedule",
+      message: "Missing schedule on the second date.",
+      dates: ["2026-08-13"],
+    };
+    const classification = classifyCalendarWarnings([first, second], [{
+      issueId: getCalendarWarningIssueId(first),
+      issueCode: first.code,
+      code: first.code,
+      status: "manually_resolved",
+      affectedDates: first.dates,
+    }]);
+
+    expect(classification.blockingWarnings).toHaveLength(1);
+    expect(classification.blockingWarnings[0].affectedDates).toEqual(["2026-08-13"]);
   });
 
   it("keeps no-school ranges outside the year as review-only", () => {

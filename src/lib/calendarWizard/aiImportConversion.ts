@@ -9,7 +9,9 @@ import type { CalendarWizardConfig, Weekday } from "./types";
 
 export type AiWizardStep =
   | "school-year"
+  | "schedule-names"
   | "normal-schedule"
+  | "exceptions-review"
   | "no-school"
   | "special-days"
   | "review";
@@ -25,7 +27,11 @@ export type AiWizardDraftShape = {
     instructionalEnd?: string;
     operatingWeekdays: Weekday[];
   };
-  patternMode: "same" | "repeating" | "weekday";
+  patternMode: "same" | "alternate" | "repeating" | "weekday";
+  alternationMethod?: "instructional_day" | "calendar_week";
+  patternStartDate?: string;
+  repeatingStartIndex?: number;
+  pauseOnNoSchoolDays?: boolean;
   sameScheduleId: string;
   repeatingScheduleIds: string[];
   weekdaySchedules: Partial<Record<Weekday, string>>;

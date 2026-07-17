@@ -2,7 +2,7 @@ export type DateString = string;
 
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-export type PatternType = "same" | "repeating" | "weekday";
+export type PatternType = "same" | "repeating" | "calendar_week" | "weekday";
 
 export type RotationBehavior = "advance" | "pause" | "restart";
 
@@ -42,6 +42,15 @@ export type RepeatingPattern = {
   type: "repeating";
   scheduleIds: string[];
   startIndex?: number;
+  startDate?: DateString;
+  pauseOnNoSchoolDays?: boolean;
+};
+
+export type CalendarWeekPattern = {
+  type: "calendar_week";
+  scheduleIds: string[];
+  startDate: DateString;
+  startIndex?: number;
 };
 
 export type WeekdayPattern = {
@@ -52,6 +61,7 @@ export type WeekdayPattern = {
 export type CalendarSchedulePattern =
   | SameSchedulePattern
   | RepeatingPattern
+  | CalendarWeekPattern
   | WeekdayPattern;
 
 export type DateRange = {

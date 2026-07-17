@@ -50,6 +50,25 @@ describe("AI calendar review experience", () => {
     expect(source).toContain("Blocked by ${blockingIssueCount} required issue");
   });
 
+  it("links warning actions to the exact preview date and reevaluates after save", () => {
+    expect(review).toContain("setPreviewIssueRequest");
+    expect(review).toContain("editWarningManually");
+    expect(review).toContain('key={previewIssueRequest?.requestId || "calendar-preview"}');
+    expect(preview).toContain("issueRequest?.date ||");
+    expect(preview).toContain("scrollIntoView");
+    expect(preview).toContain("classificationControlRef.current?.focus()");
+    expect(preview).toContain("issueRemains");
+    expect(preview).toContain("onIssueSave(issueRequest.issueId, !issueRemains)");
+  });
+
+  it("renders exact overlap details and unresolved-only action controls", () => {
+    expect(review).toContain("getCalendarWarningDateDetails(importResult, warning)");
+    expect(review).toContain("Current classification:");
+    expect(review).toContain("Sundial will:");
+    expect(review).toContain("Automatically resolved · Safe for calendar creation.");
+    expect(review).toContain('warning.status === "unresolved"');
+  });
+
   it("removes the special-day category and derives summary counts from the preview", () => {
     expect(review).not.toContain("Special School Days");
     expect(review).not.toContain("Special Schedule Days");

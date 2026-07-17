@@ -85,9 +85,24 @@ export type CalendarWarningClassificationKind =
   | "automatically_resolved"
   | "informational";
 
-export type ClassifiedCalendarWarning = ClassifiableCalendarWarning & {
+export type CalendarReviewIssueStatus =
+  | "unresolved"
+  | "acknowledged"
+  | "automatically_resolved"
+  | "manually_resolved";
+
+export type ClassifiedCalendarWarning = Omit<ClassifiableCalendarWarning, "severity"> & {
+  issueId: string;
+  issueCode: string;
+  affectedDates: string[];
+  severity: CalendarWarningClassificationKind;
+  status: CalendarReviewIssueStatus;
   classification: CalendarWarningClassificationKind;
   resolved: boolean;
+  suggestedCorrection?: string;
+  resolution?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
 };
 
 export type CalendarWarningClassification = {
@@ -146,7 +161,58 @@ const informationalWarningCodes = new Set([
 ]);
 
 function resolutionIsComplete(resolution: AiImportWarningResolution | undefined) {
-  return Boolean(resolution && resolution.status !== "unreviewed");
+  return Boolean(
+    resolution &&
+      resolution.status !== "unreviewed" &&
+      resolution.status !== "unresolved"
+  );
+}
+
+function warningDates(warning: ClassifiableCalendarWarning) {
+  return "dates" in warning && Array.isArray(warning.dates)
+    ? [...new Set(warning.dates)].sort()
+    : [];
+}
+
+function warningSourceIds(warning: ClassifiableCalendarWarning) {
+  return "sourceIds" in warning && Array.isArray(warning.sourceIds)
+    ? [...new Set(warning.sourceIds)].sort()
+    : [];
+}
+
+export function getCalendarWarningIssueId(warning: ClassifiableCalendarWarning) {
+  const dates = warningDates(warning);
+  const sources = warningSourceIds(warning);
+  return [String(warning.code || "calendar_warning"), dates.join(","), sources.join(",")]
+    .map((part) => part || "none")
+    .join("::");
+}
+
+function issueStatus(
+  classification: CalendarWarningClassificationKind,
+  resolution: AiImportWarningResolution | undefined
+): CalendarReviewIssueStatus {
+  if (classification === "automatically_resolved") return "automatically_resolved";
+  if (!resolutionIsComplete(resolution)) return "unresolved";
+  if (
+    resolution?.status === "edited_manually" ||
+    resolution?.status === "manually_resolved" ||
+    resolution?.status === "accepted_suggestion"
+  ) {
+    return "manually_resolved";
+  }
+  return "acknowledged";
+}
+
+function suggestedCorrection(warning: ClassifiableCalendarWarning) {
+  const code = String(warning.code || "");
+  if (code === "special_day_overlaps_no_school") {
+    return "Keep the date as no school, preserve all labels, remove the student schedule, and pause rotation.";
+  }
+  if (code === "instructional_day_missing_schedule") {
+    return "Assign a valid school-owned schedule to the instructional date.";
+  }
+  return undefined;
 }
 
 function classifyWarningKind(
@@ -156,7 +222,14 @@ function classifyWarningKind(
   const message = warning.message.toLowerCase();
 
   if (blockingWarningCodes.has(code)) return "blocking";
-  if (automaticallyResolvedWarningCodes.has(code)) return "automatically_resolved";
+  if (
+    automaticallyResolvedWarningCodes.has(code) ||
+    (message.includes("special school day overlaps") &&
+      message.includes("no-school day") &&
+      message.includes("remains no school"))
+  ) {
+    return "automatically_resolved";
+  }
 
   if (
     informationalWarningCodes.has(code) ||
@@ -191,8 +264,15 @@ export function classifyCalendarWarnings(
   warnings: ClassifiableCalendarWarning[] = [],
   warningResolutions: AiImportWarningResolution[] = []
 ): CalendarWarningClassification {
-  const resolutionsByCode = new Map(
-    warningResolutions.map((resolution) => [resolution.code, resolution])
+  const resolutionsByIssueId = new Map(
+    warningResolutions
+      .filter((resolution) => resolution.issueId)
+      .map((resolution) => [resolution.issueId as string, resolution])
+  );
+  const legacyResolutionsByCode = new Map(
+    warningResolutions
+      .filter((resolution) => !resolution.issueId)
+      .map((resolution) => [resolution.code, resolution])
   );
   const blockingWarnings: ClassifiedCalendarWarning[] = [];
   const needsReviewWarnings: ClassifiedCalendarWarning[] = [];
@@ -201,13 +281,28 @@ export function classifyCalendarWarnings(
 
   for (const warning of warnings) {
     const classification = classifyWarningKind(warning);
-    const resolved =
-      classification === "automatically_resolved" ||
-      resolutionIsComplete(resolutionsByCode.get(warning.code));
-    const classified = { ...warning, classification, resolved };
+    const issueId = getCalendarWarningIssueId(warning);
+    const resolution =
+      resolutionsByIssueId.get(issueId) || legacyResolutionsByCode.get(warning.code);
+    const status = issueStatus(classification, resolution);
+    const resolved = status !== "unresolved";
+    const classified: ClassifiedCalendarWarning = {
+      ...warning,
+      issueId,
+      issueCode: String(warning.code),
+      affectedDates: warningDates(warning),
+      severity: classification,
+      status,
+      classification,
+      resolved,
+      suggestedCorrection: suggestedCorrection(warning),
+      resolution: resolution?.resolution,
+      reviewedBy: resolution?.reviewedBy,
+      reviewedAt: resolution?.reviewedAt,
+    };
 
     if (classification === "blocking") {
-      blockingWarnings.push(classified);
+      if (status === "unresolved") blockingWarnings.push(classified);
     } else if (classification === "needs_review") {
       needsReviewWarnings.push(classified);
     } else if (classification === "automatically_resolved") {

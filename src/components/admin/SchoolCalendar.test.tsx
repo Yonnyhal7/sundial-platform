@@ -44,6 +44,20 @@ describe("SchoolCalendar date styling", () => {
     expect(markup).toContain("needs review");
   });
 
+  it("exposes accessible multi-selection state", () => {
+    const markup = renderToStaticMarkup(
+      <CalendarDateCell
+        day={{ date: "2026-08-10", scheduleId: "regular", isSchoolDay: true }}
+        dayNumber={10}
+        selected={false}
+        multiSelected
+        onSelect={() => {}}
+      />
+    );
+    expect(markup).toContain('aria-pressed="true"');
+    expect(markup).toContain("ring-2");
+  });
+
   it("renders explicit empty cells before and after the active month", () => {
     const markup = renderToStaticMarkup(
       <SchoolCalendarMonthGrid
@@ -73,5 +87,9 @@ describe("SchoolCalendar date styling", () => {
     expect(guided).toContain("<AdminCalendarView");
     expect(guided).not.toContain("function MonthPreview(");
     expect(guided).not.toContain("function scheduleAccent(");
+    expect(guided).toContain('mode="guided-edit"');
+    expect(guided).toContain("Select date range");
+    expect(guided).toContain("Restore Normal Pattern");
+    expect(guided).toContain("Undo last edit");
   });
 });
