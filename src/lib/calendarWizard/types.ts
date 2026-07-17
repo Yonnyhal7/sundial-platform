@@ -10,6 +10,27 @@ export type SchoolYearRange = {
   name?: string;
   startDate: DateString;
   endDate: DateString;
+  calendarCoverageStart?: DateString;
+  calendarCoverageEnd?: DateString;
+  instructionalStart?: DateString;
+  instructionalEnd?: DateString;
+};
+
+export type CalendarDateClassification =
+  | "instructional"
+  | "no_school"
+  | "staff_only"
+  | "neutral_non_operating"
+  | "removed_from_coverage";
+
+export type CalendarDateClassificationOverride = {
+  date: DateString;
+  classification: CalendarDateClassification;
+  scheduleId?: string | null;
+  label?: string;
+  sourceLabel?: string;
+  confidence?: number;
+  rotationBehavior?: RotationBehavior;
 };
 
 export type SameSchedulePattern = {
@@ -77,6 +98,7 @@ export type CalendarWizardConfig = {
   specialDays?: SpecialSchoolDay[];
   datedScheduleAssignments?: DatedScheduleAssignment[];
   informationalDates?: InformationalDate[];
+  dateClassifications?: CalendarDateClassificationOverride[];
 };
 
 export type GeneratedDaySource = {
@@ -91,12 +113,13 @@ export type GeneratedCalendarDay = {
   weekday: Weekday;
   isOperatingDay: boolean;
   isSchoolDay: boolean;
+  classification?: Exclude<CalendarDateClassification, "removed_from_coverage">;
   baseScheduleId: string | null;
   scheduleId: string | null;
   labels: string[];
   sources: GeneratedDaySource;
   warningCodes: CalendarGenerationWarningCode[];
-  assignmentSource?: "pdf_vector_fill" | "administrator" | "explicit_text" | "genuine_special" | "pattern_generated" | "no_school" | null;
+  assignmentSource?: "pdf_vector_fill" | "administrator" | "explicit_text" | "genuine_special" | "pattern_generated" | "no_school" | "staff_only" | "neutral_non_operating" | null;
 };
 
 export type CalendarGenerationWarningCode =

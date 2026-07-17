@@ -20,9 +20,12 @@ import {
 import { generateSchoolYearCalendar } from "@/lib/calendarWizard/generateSchoolYearCalendar";
 import {
   computeAssignmentDigest,
+  computeCalendarClassificationDigest,
   computeDatedScheduleAssignmentDigest,
   findAssignmentDigestDifferences,
 } from "@/lib/calendarWizard/assignmentDigest";
+import { getInstructionalDayCountReviewState } from "@/lib/calendarWizard/instructionalDayCountReview";
+import { validateAiCalendarImportResult } from "@/lib/calendarWizard/aiImportTypes";
 import { canonicalScheduleName } from "@/lib/calendarWizard/scheduleIdentity";
 import {
   buildAiPreviewConfig,
@@ -114,6 +117,7 @@ export type CreateAiCalendarFromDraftActionInput = {
   expectedDraftUpdatedAt?: string | null;
   launchContext?: CalendarWizardLaunchContext | null;
   previewAssignmentDigest?: string;
+  previewClassificationDigest?: string;
 };
 
 export type CalendarWizardDraftActionResult =
@@ -130,6 +134,185 @@ export type CalendarWizardDraftActionResult =
       status: "validation_error" | "permission_error" | "server_error";
       message: string;
     };
+
+export type GuidedScheduleNameActionResult =
+  | {
+      status: "success";
+      schedule?: {
+        id: string;
+        name: string;
+        type: null;
+        calendarColor: null;
+        active: true;
+        setupStatus: "needs_times";
+        periodCount: 0;
+        firstStartTime: null;
+        lastEndTime: null;
+      };
+    }
+  | {
+      status: "validation_error" | "permission_error" | "server_error" | "assigned";
+      message: string;
+    };
+
+function normalizeScheduleName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function guidedScheduleNameExists(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  schoolId: string,
+  name: string,
+  exceptScheduleId?: string
+) {
+  const { data, error } = await supabase
+    .from("schedules")
+    .select("id, schedule_name")
+    .eq("school_id", schoolId)
+    .returns<Array<{ id: string; schedule_name: string }>>();
+
+  if (error) throw error;
+  const normalized = name.toLocaleLowerCase("en-US");
+  return (data || []).some(
+    (schedule) =>
+      schedule.id !== exceptScheduleId &&
+      normalizeScheduleName(schedule.schedule_name).toLocaleLowerCase("en-US") === normalized
+  );
+}
+
+export async function createGuidedScheduleName(
+  school: string,
+  rawName: string
+): Promise<GuidedScheduleNameActionResult> {
+  const name = normalizeScheduleName(rawName);
+  if (!name || name.length > 80) {
+    return { status: "validation_error", message: "Enter a schedule name using 80 characters or fewer." };
+  }
+
+  try {
+    const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    if (await guidedScheduleNameExists(adminUser.supabase, schoolData.id, name)) {
+      return { status: "validation_error", message: "A schedule with this name already exists in this school." };
+    }
+
+    const { data, error } = await adminUser.supabase
+      .from("schedules")
+      .insert({
+        school_id: schoolData.id,
+        schedule_name: name,
+        schedule_type: null,
+        calendar_color: null,
+        active: true,
+        setup_status: "needs_times",
+      })
+      .select("id, schedule_name")
+      .single<{ id: string; schedule_name: string }>();
+
+    if (error || !data) {
+      console.error("Create guided schedule name error:", JSON.stringify(error, null, 2));
+      return { status: "server_error", message: "Sundial could not create that schedule name." };
+    }
+
+    revalidatePath(`/${school}/admin/schedules`);
+    return {
+      status: "success",
+      schedule: {
+        id: data.id,
+        name: data.schedule_name,
+        type: null,
+        calendarColor: null,
+        active: true,
+        setupStatus: "needs_times",
+        periodCount: 0,
+        firstStartTime: null,
+        lastEndTime: null,
+      },
+    };
+  } catch (error) {
+    console.error("Create guided schedule name error:", error);
+    return { status: "permission_error", message: "You cannot create schedules for this school." };
+  }
+}
+
+export async function renameGuidedScheduleName(
+  school: string,
+  scheduleId: string,
+  rawName: string
+): Promise<GuidedScheduleNameActionResult> {
+  if (!isUuid(scheduleId)) {
+    return { status: "validation_error", message: "That schedule is not valid." };
+  }
+  const name = normalizeScheduleName(rawName);
+  if (!name || name.length > 80) {
+    return { status: "validation_error", message: "Enter a schedule name using 80 characters or fewer." };
+  }
+
+  try {
+    const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    if (await guidedScheduleNameExists(adminUser.supabase, schoolData.id, name, scheduleId)) {
+      return { status: "validation_error", message: "A schedule with this name already exists in this school." };
+    }
+    const { data, error } = await adminUser.supabase
+      .from("schedules")
+      .update({ schedule_name: name, updated_at: new Date().toISOString() })
+      .eq("id", scheduleId)
+      .eq("school_id", schoolData.id)
+      .select("id")
+      .maybeSingle<{ id: string }>();
+    if (error || !data) {
+      return { status: "permission_error", message: "That schedule is not available in this school." };
+    }
+    revalidatePath(`/${school}/admin/schedules`);
+    return { status: "success" };
+  } catch (error) {
+    console.error("Rename guided schedule error:", error);
+    return { status: "server_error", message: "Sundial could not rename that schedule." };
+  }
+}
+
+export async function deleteUnusedGuidedScheduleName(
+  school: string,
+  scheduleId: string
+): Promise<GuidedScheduleNameActionResult> {
+  if (!isUuid(scheduleId)) {
+    return { status: "validation_error", message: "That schedule is not valid." };
+  }
+  try {
+    const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    const { count, error: assignmentError } = await adminUser.supabase
+      .from("calendar_days")
+      .select("id", { count: "exact", head: true })
+      .eq("school_id", schoolData.id)
+      .or(`schedule_id.eq.${scheduleId},base_schedule_id.eq.${scheduleId}`);
+    if (assignmentError) {
+      return { status: "server_error", message: "Sundial could not check schedule assignments." };
+    }
+    if ((count || 0) > 0) {
+      return { status: "assigned", message: "This schedule is already assigned to calendar dates." };
+    }
+
+    const { data, error } = await adminUser.supabase
+      .from("schedules")
+      .delete()
+      .eq("id", scheduleId)
+      .eq("school_id", schoolData.id)
+      .eq("setup_status", "needs_times")
+      .select("id")
+      .maybeSingle<{ id: string }>();
+    if (error || !data) {
+      return { status: "permission_error", message: "Only unused name-only schedules can be deleted here." };
+    }
+    revalidatePath(`/${school}/admin/schedules`);
+    return { status: "success" };
+  } catch (error) {
+    console.error("Delete guided schedule error:", error);
+    return { status: "server_error", message: "Sundial could not delete that schedule." };
+  }
+}
 
 async function getCalendarDraftSchoolContext(school: string) {
   const schoolData = await getSchoolForSetup(school);
@@ -796,6 +979,12 @@ export async function createAiCalendarFromDraftAction(
         "This draft does not include an AI calendar import. Continue manually or upload the PDF again."
       );
     }
+    const importValidation = validateAiCalendarImportResult(importResult);
+    if (!importValidation.success) {
+      return validationError(
+        "The saved AI calendar review is malformed. Reload the analysis before creating the calendar."
+      );
+    }
     const detectedNameByTempId = new Map(
       importResult.detectedSchedules.map((schedule) => [schedule.tempId, schedule.detectedName])
     );
@@ -899,6 +1088,20 @@ export async function createAiCalendarFromDraftAction(
     }
 
     const generated = generateSchoolYearCalendar(config);
+    const countReviewState = getInstructionalDayCountReviewState(
+      importResult.instructionalDayCountReview,
+      generated.summary.instructionalDayCount
+    );
+    if (!countReviewState.ready) {
+      return validationError(
+        "Review the instructional-day count difference before creating the calendar.",
+        {
+          calendar: countReviewState.unresolvedDates.length > 0
+            ? `${countReviewState.unresolvedDates.length} discrepancy dates still need classifications.`
+            : "Confirm the final instructional count with the required acknowledgment.",
+        }
+      );
+    }
 
     const persistedScheduleNames = new Map<string, string>();
     const existingScheduleNames = new Map<string, string>();
@@ -911,6 +1114,10 @@ export async function createAiCalendarFromDraftAction(
       if (persistedId) persistedScheduleNames.set(persistedId, detected.detectedName);
     }
     const creationPayloadDigest = await computeAssignmentDigest(
+      generated.days,
+      (scheduleId) => persistedScheduleNames.get(scheduleId)
+    );
+    const creationClassificationDigest = await computeCalendarClassificationDigest(
       generated.days,
       (scheduleId) => persistedScheduleNames.get(scheduleId)
     );
@@ -930,9 +1137,16 @@ export async function createAiCalendarFromDraftAction(
       serverPreview.days,
       (scheduleId) => previewScheduleNames.get(scheduleId)
     );
+    const serverPreviewClassificationDigest = await computeCalendarClassificationDigest(
+      serverPreview.days,
+      (scheduleId) => previewScheduleNames.get(scheduleId)
+    );
     const clientPreviewAssignmentDigest = input.previewAssignmentDigest;
+    const clientPreviewClassificationDigest = input.previewClassificationDigest;
     const matches = serverPreviewAssignmentDigest === creationPayloadDigest &&
-      (!clientPreviewAssignmentDigest || clientPreviewAssignmentDigest === serverPreviewAssignmentDigest);
+      serverPreviewClassificationDigest === creationClassificationDigest &&
+      (!clientPreviewAssignmentDigest || clientPreviewAssignmentDigest === serverPreviewAssignmentDigest) &&
+      (!clientPreviewClassificationDigest || clientPreviewClassificationDigest === serverPreviewClassificationDigest);
     const previewCreationDifferingDates = serverPreviewAssignmentDigest === creationPayloadDigest
       ? []
       : findAssignmentDigestDifferences(
@@ -946,6 +1160,9 @@ export async function createAiCalendarFromDraftAction(
       previewAssignmentDigest: serverPreviewAssignmentDigest,
       clientPreviewAssignmentDigest,
       creationPayloadDigest,
+      serverPreviewClassificationDigest,
+      clientPreviewClassificationDigest,
+      creationClassificationDigest,
       matches,
       firstDifferingDates: previewCreationDifferingDates,
     });
@@ -1053,6 +1270,29 @@ export async function createAiCalendarFromDraftAction(
           label: row.label,
           is_school_day: row.is_school_day,
         })),
+        p_count_review: importResult.instructionalDayCountReview
+          ? {
+              reason_code: importResult.instructionalDayCountReview.reasonCode,
+              declared_instructional_day_count:
+                importResult.instructionalDayCountReview.declaredInstructionalDayCount,
+              generated_instructional_day_count:
+                importResult.instructionalDayCountReview.generatedInstructionalDayCount,
+              final_approved_instructional_day_count:
+                importResult.instructionalDayCountReview.finalApprovedInstructionalDayCount,
+              acknowledged: importResult.instructionalDayCountReview.acknowledged,
+              review_note: importResult.instructionalDayCountReview.reviewNote || null,
+              classifications: importResult.instructionalDayCountReview.discrepancyDates,
+              classification_digest: creationClassificationDigest,
+              calendar_coverage_start:
+                importResult.schoolYear.calendarCoverageStart || importResult.schoolYear.startDate,
+              calendar_coverage_end:
+                importResult.schoolYear.calendarCoverageEnd || importResult.schoolYear.endDate,
+              instructional_start:
+                importResult.schoolYear.instructionalStart || importResult.schoolYear.startDate,
+              instructional_end:
+                importResult.schoolYear.instructionalEnd || importResult.schoolYear.endDate,
+            }
+          : null,
       }
     );
 

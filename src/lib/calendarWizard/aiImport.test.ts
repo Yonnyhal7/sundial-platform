@@ -115,6 +115,8 @@ function rawExtraction(overrides: Partial<RawAiCalendarExtraction> = {}): RawAiC
     documentTitle: "School Calendar",
     detectedSchoolName: "Test High School",
     schoolYearLabel: "2026-2027",
+    calendarCoverageStart: null,
+    calendarCoverageEnd: null,
     firstInstructionalDate: "2026-08-10",
     lastInstructionalDate: "2026-08-14",
     operatingWeekdays: [1, 2, 3, 4, 5],
@@ -658,6 +660,33 @@ describe("AI calendar import normalization", () => {
       expect(normalized.importResult.warnings).toContainEqual(
         expect.objectContaining({ code: "instructional_day_count_mismatch" })
       );
+    }
+  });
+
+  it("preserves calendar coverage separately from instructional boundaries", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        calendarCoverageStart: "2026-08-10",
+        calendarCoverageEnd: "2027-05-31",
+        firstInstructionalDate: "2026-08-12",
+        lastInstructionalDate: "2027-05-27",
+        expectedInstructionalDayCount: 180,
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.importResult.schoolYear).toMatchObject({
+        startDate: "2026-08-10",
+        endDate: "2027-05-31",
+        calendarCoverageStart: "2026-08-10",
+        calendarCoverageEnd: "2027-05-31",
+        instructionalStart: "2026-08-12",
+        instructionalEnd: "2027-05-27",
+      });
+      expect(normalized.importResult.declaredInstructionalDayCount).toBe(180);
+      expect(normalized.importResult.generatedInstructionalDayCount).not.toBeNull();
     }
   });
 

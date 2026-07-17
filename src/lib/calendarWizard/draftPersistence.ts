@@ -205,6 +205,22 @@ function migrateDraftShape(value: unknown): AiWizardDraftShape | null {
       label: typeof schoolYear.label === "string" ? schoolYear.label : "",
       startDate: typeof schoolYear.startDate === "string" ? schoolYear.startDate : "",
       endDate: typeof schoolYear.endDate === "string" ? schoolYear.endDate : "",
+      calendarCoverageStart:
+        typeof schoolYear.calendarCoverageStart === "string"
+          ? schoolYear.calendarCoverageStart
+          : undefined,
+      calendarCoverageEnd:
+        typeof schoolYear.calendarCoverageEnd === "string"
+          ? schoolYear.calendarCoverageEnd
+          : undefined,
+      instructionalStart:
+        typeof schoolYear.instructionalStart === "string"
+          ? schoolYear.instructionalStart
+          : undefined,
+      instructionalEnd:
+        typeof schoolYear.instructionalEnd === "string"
+          ? schoolYear.instructionalEnd
+          : undefined,
       operatingWeekdays: operatingWeekdays.length ? operatingWeekdays : [1, 2, 3, 4, 5],
     },
     patternMode:

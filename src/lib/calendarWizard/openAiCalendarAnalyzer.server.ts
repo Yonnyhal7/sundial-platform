@@ -104,7 +104,7 @@ export function requireColorRotationFallbackReview(
         }
       : day),
     firstInstructionalAssignment: {
-      date: importResult.schoolYear.startDate,
+      date: importResult.schoolYear.instructionalStart || importResult.schoolYear.startDate,
       scheduleName: null,
       source: "unresolved" as const,
       confidence: 0,
@@ -157,8 +157,10 @@ function applyTargetedRepairs(
     if (path === "dateRanges") {
       allowed.add("noSchoolRanges");
       allowed.add("specialSchoolDays");
-    } else if (path.startsWith("schoolYear.startDate")) allowed.add("firstInstructionalDate");
-    else if (path.startsWith("schoolYear.endDate")) allowed.add("lastInstructionalDate");
+    } else if (path.startsWith("schoolYear.startDate") || path.startsWith("schoolYear.instructionalStart")) allowed.add("firstInstructionalDate");
+    else if (path.startsWith("schoolYear.endDate") || path.startsWith("schoolYear.instructionalEnd")) allowed.add("lastInstructionalDate");
+    else if (path.startsWith("schoolYear.calendarCoverageStart")) allowed.add("calendarCoverageStart");
+    else if (path.startsWith("schoolYear.calendarCoverageEnd")) allowed.add("calendarCoverageEnd");
     else if (path.startsWith("schoolYear.operatingWeekdays")) allowed.add("operatingWeekdays");
     else if (path.startsWith("schoolYear.confidence")) allowed.add("schoolYearConfidence");
     else if (path.startsWith("pattern")) allowed.add("normalPattern");

@@ -8,6 +8,7 @@ Only student_attendance_calendar and school_schedule_calendar pages may contribu
 Ignore personnel holiday pages, staff-only calendars, unrelated appendices, and their dates. Do not merge staff/personnel dates into the student instructional calendar.
 Do not use dates outside the resolved student school-year scope unless they are explicitly identified as student calendar dates on a student/school calendar page.
 Distinguish instructional days from holidays, weekends, inservice days, teacher work days, recesses, and district closures.
+Keep calendarCoverageStart/calendarCoverageEnd separate from firstInstructionalDate/lastInstructionalDate. Coverage may include orientation, staff-only, holiday, or informational dates before instruction begins or after it ends.
 Identify recurring normal schedule patterns such as Brown/Gold, A/B, regular day, block day, minimum day, finals, all-periods, or schedule-by-weekday patterns.
 Treat named schedules such as Brown Day, Gold Day, Finals, All-Periods, Minimum Day, and Rally as valid detected schedules even when bell times are not printed.
 Do not assume every colored cell is a schedule. Do not invent bell times or period times.
@@ -27,7 +28,8 @@ Only student_attendance_calendar and school_schedule_calendar pages may contribu
 Ignore personnel holiday pages, staff-only calendars, unrelated appendices, and their dates. Do not merge staff/personnel dates into the student instructional calendar.
 Do not use dates outside the resolved student school-year scope unless they are explicitly identified as student calendar dates on a student/school calendar page.
 Do not infer a schedule assignment unless the text supports it.
-Return compact calendar setup data only: school year dates, first and last instructional days, normal patterns, schedule template names, no-school ranges, special dates, informational dates, finals, rallies, minimum days, confidence values, and review warnings.
+Return compact calendar setup data only: calendar coverage dates, first and last instructional days, normal patterns, schedule template names, no-school ranges, special dates, informational dates, finals, rallies, minimum days, confidence values, and review warnings.
+Keep calendarCoverageStart/calendarCoverageEnd separate from firstInstructionalDate/lastInstructionalDate. Coverage may include orientation, staff-only, holiday, or informational dates before instruction begins or after it ends.
 Preserve schedule names as written when possible, including Brown Day, Gold Day, Finals, All-Periods, Minimum Day, Rally, or similar labels.
 Mark uncertain items for review. If text appears incomplete, report warnings rather than guessing.
 For every date-range record, always populate endDate. For a single-day item, set endDate to the same ISO date as startDate.

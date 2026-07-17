@@ -550,6 +550,12 @@ describe("AI quick setup persistence planning", () => {
     if (removal.success) {
       expect(removal.importResult.pattern.scheduleTempIds).not.toContain("ai-schedule-no-classes");
       expect(removal.importResult.noSchoolRanges.length).toBeGreaterThan(importResult.noSchoolRanges.length);
+      expect(removal.importResult.expectedInstructionalDayCount).toBe(
+        withNoClasses.expectedInstructionalDayCount
+      );
+      expect(removal.importResult.declaredInstructionalDayCount).toBe(
+        withNoClasses.declaredInstructionalDayCount
+      );
     }
   });
 

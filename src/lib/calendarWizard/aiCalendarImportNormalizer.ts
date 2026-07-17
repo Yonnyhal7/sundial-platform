@@ -20,13 +20,17 @@ import {
   type AiImportValidationResult,
   type AiImportWarning,
 } from "./aiImportTypes";
-import type { CalendarWizardConfig, PatternType, Weekday } from "./types";
+import type { PatternType, Weekday } from "./types";
 import { getLocalTodayISO } from "@/lib/localDate";
+import { buildAiPreviewConfig } from "./aiImportPreview";
+import { initializeInstructionalDayCountReview } from "./instructionalDayCountReview";
 
 export type RawAiCalendarExtraction = {
   documentTitle: string | null;
   detectedSchoolName: string | null;
   schoolYearLabel: string | null;
+  calendarCoverageStart?: string | null;
+  calendarCoverageEnd?: string | null;
   firstInstructionalDate: string;
   lastInstructionalDate: string;
   operatingWeekdays: Weekday[];
@@ -153,6 +157,8 @@ function normalizeRawContract(value: unknown): RawAiCalendarExtraction {
     documentTitle: typeof raw.documentTitle === "string" ? raw.documentTitle : null,
     detectedSchoolName: typeof raw.detectedSchoolName === "string" ? raw.detectedSchoolName : null,
     schoolYearLabel: typeof raw.schoolYearLabel === "string" ? raw.schoolYearLabel : null,
+    calendarCoverageStart: typeof raw.calendarCoverageStart === "string" ? raw.calendarCoverageStart : null,
+    calendarCoverageEnd: typeof raw.calendarCoverageEnd === "string" ? raw.calendarCoverageEnd : null,
     firstInstructionalDate: typeof raw.firstInstructionalDate === "string" ? raw.firstInstructionalDate : "",
     lastInstructionalDate: typeof raw.lastInstructionalDate === "string" ? raw.lastInstructionalDate : "",
     operatingWeekdays: normalizeWeekdays(raw.operatingWeekdays),
@@ -557,41 +563,6 @@ function addDateWarnings(importResult: AiCalendarImportResult, warnings: AiImpor
   }
 }
 
-function addInstructionalDayCountWarning(importResult: AiCalendarImportResult, warnings: AiImportWarning[]) {
-  const expected = importResult.expectedInstructionalDayCount;
-  if (!expected || !isDateString(importResult.schoolYear.startDate) || !isDateString(importResult.schoolYear.endDate)) {
-    return;
-  }
-
-  const config: CalendarWizardConfig = {
-    schoolYear: {
-      name: importResult.schoolYear.label,
-      startDate: importResult.schoolYear.startDate,
-      endDate: importResult.schoolYear.endDate,
-    },
-    operatingWeekdays: importResult.schoolYear.operatingWeekdays,
-    pattern: {
-      type: "same",
-      scheduleId: "ai-verification-schedule",
-    },
-    noSchoolRanges: importResult.noSchoolRanges,
-    specialDays: importResult.specialDays.map((day) => ({
-      ...day,
-      scheduleId: day.isInstructional ? "ai-verification-schedule" : null,
-    })),
-    informationalDates: importResult.informationalDates,
-  };
-  const generated = generateSchoolYearCalendar(config);
-
-  if (generated.summary.instructionalDayCount !== expected) {
-    warnings.push({
-      code: "instructional_day_count_mismatch",
-      severity: "review",
-      message: `The PDF lists ${expected} instructional days, but the imported rules currently produce ${generated.summary.instructionalDayCount}. Please review highlighted dates.`,
-    });
-  }
-}
-
 export function normalizeAiCalendarExtraction(
   input: RawAiCalendarExtraction,
   options: NormalizeAiCalendarImportOptions
@@ -818,21 +789,50 @@ export function normalizeAiCalendarExtraction(
     });
   }
 
-  const importResult: AiCalendarImportResult = {
+  const instructionalStart = normalizeDateValue(raw.firstInstructionalDate);
+  const instructionalEnd = normalizeDateValue(raw.lastInstructionalDate);
+  const inferredCoverageDates = [
+    instructionalStart,
+    instructionalEnd,
+    ...noSchoolRanges.flatMap((range) => [range.startDate, range.endDate]),
+    ...specialDays.flatMap((range) => [range.startDate, range.endDate]),
+    ...informationalDates.map((date) => date.date),
+  ].filter(isDateString).sort(compareDateStrings);
+  const explicitCoverageStart = raw.calendarCoverageStart
+    ? normalizeDateValue(raw.calendarCoverageStart)
+    : null;
+  const explicitCoverageEnd = raw.calendarCoverageEnd
+    ? normalizeDateValue(raw.calendarCoverageEnd)
+    : null;
+  const calendarCoverageStart =
+    (explicitCoverageStart && isDateString(explicitCoverageStart) ? explicitCoverageStart : null) ||
+    inferredCoverageDates[0] ||
+    instructionalStart;
+  const calendarCoverageEnd =
+    (explicitCoverageEnd && isDateString(explicitCoverageEnd) ? explicitCoverageEnd : null) ||
+    inferredCoverageDates[inferredCoverageDates.length - 1] ||
+    instructionalEnd;
+
+  let importResult: AiCalendarImportResult = {
     schemaVersion: 1,
     source: options.source,
     analyzedAt: options.analyzedAt || getLocalTodayISO(),
     documentTitle: trimOptional(raw.documentTitle),
     detectedSchoolName: trimOptional(raw.detectedSchoolName),
     expectedInstructionalDayCount: normalizeInteger(raw.expectedInstructionalDayCount),
+    declaredInstructionalDayCount: normalizeInteger(raw.expectedInstructionalDayCount),
     legendInterpretation: trimOptional(raw.legendInterpretation),
     extractionNotes: trimOptional(raw.extractionNotes),
     usage: options.usage,
     pageClassifications,
     schoolYear: {
       label: trimOptional(raw.schoolYearLabel) || undefined,
-      startDate: normalizeDateValue(raw.firstInstructionalDate),
-      endDate: normalizeDateValue(raw.lastInstructionalDate),
+      startDate: calendarCoverageStart,
+      endDate: calendarCoverageEnd,
+      calendarCoverageStart,
+      calendarCoverageEnd,
+      instructionalStart,
+      instructionalEnd,
       operatingWeekdays: normalizeWeekdays(raw.operatingWeekdays),
       confidence: normalizeConfidence(raw.schoolYearConfidence),
     },
@@ -871,7 +871,17 @@ export function normalizeAiCalendarExtraction(
   const preReviewValidation = validateAiCalendarImportResult(importResult);
   if (!preReviewValidation.success) return preReviewValidation;
 
-  addInstructionalDayCountWarning(importResult, warnings);
+  importResult = initializeInstructionalDayCountReview(
+    importResult,
+    generateSchoolYearCalendar(buildAiPreviewConfig(importResult))
+  );
+  if (importResult.instructionalDayCountReview) {
+    warnings.push({
+      code: "instructional_day_count_mismatch",
+      severity: "review",
+      message: `The PDF states ${importResult.instructionalDayCountReview.declaredInstructionalDayCount} instructional days, but Sundial currently identifies ${importResult.instructionalDayCountReview.generatedInstructionalDayCount}. Review the additional dates and decide how each should be classified.`,
+    });
+  }
 
   const validation = validateAiCalendarImportResult(importResult);
   if (!validation.success) return validation;

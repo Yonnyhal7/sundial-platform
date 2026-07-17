@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildAiPreviewConfig } from "./aiImportPreview";
+import { assignmentSourcePresentation, getTrueScheduleExceptionDates } from "./aiReviewPresentation";
+import { initializeInstructionalDayCountReview } from "./instructionalDayCountReview";
 import type { AiCalendarImportResult } from "./aiImportTypes";
 import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
 import { mergeVectorCalendarAssignments } from "./mergeVectorCalendarAssignments";
@@ -14,17 +16,28 @@ const fixturePath = resolve(
   process.cwd(),
   ".local-benchmarks/ai-calendar/26-27 DOHS Brown Gold Calendar.pdf"
 );
+const attendanceFixturePath = resolve(
+  process.cwd(),
+  ".local-benchmarks/ai-calendar/2026-2027 Student Attendance Calendar 2.2.26.pdf"
+);
 const describeWithFixture = existsSync(fixturePath) ? describe : describe.skip;
+const describeWithAttendanceFixture = existsSync(attendanceFixturePath) ? describe : describe.skip;
 
 function baseImportResult(): AiCalendarImportResult {
   return {
     schemaVersion: 1,
     source: "openai",
     analyzedAt: "2026-07-16T00:00:00.000Z",
+    expectedInstructionalDayCount: 180,
+    declaredInstructionalDayCount: 180,
     schoolYear: {
       label: "2026-2027",
       startDate: "2026-08-10",
       endDate: "2027-05-31",
+      calendarCoverageStart: "2026-08-10",
+      calendarCoverageEnd: "2027-05-31",
+      instructionalStart: "2026-08-12",
+      instructionalEnd: "2027-05-27",
       operatingWeekdays: [1, 2, 3, 4, 5],
       confidence: "high",
     },
@@ -110,8 +123,18 @@ describeWithFixture("real DOHS Brown/Gold downstream transformation", () => {
         canonicalScheduleName(day.label).startsWith("all-periods") && day.startDate === "2026-08-12"
       )
     ).toBe(true);
+    expect(getTrueScheduleExceptionDates(merged)).toEqual(["2026-08-12", "2027-05-24"]);
 
     const preview = generateSchoolYearCalendar(buildAiPreviewConfig(merged));
+    const reviewedImport = initializeInstructionalDayCountReview(merged, preview);
+    expect(reviewedImport.declaredInstructionalDayCount).toBe(180);
+    expect(reviewedImport.generatedInstructionalDayCount).toBe(184);
+    expect(reviewedImport.instructionalDayCountReview?.discrepancyDates.map((day) => day.date)).toEqual([
+      "2026-08-10",
+      "2026-08-11",
+      "2027-05-28",
+      "2027-05-31",
+    ]);
     const expected = [
       ["2026-08-12", "all-periods-1-6"],
       ["2026-08-13", "brown"],
@@ -132,9 +155,46 @@ describeWithFixture("real DOHS Brown/Gold downstream transformation", () => {
       expect(canonicalScheduleName(scheduleNameById.get(day?.scheduleId || "") || "")).toBe(scheduleKey);
       expect(day?.assignmentSource).toBe("pdf_vector_fill");
     }
+    expect(assignmentSourcePresentation(
+      preview.days.find((candidate) => candidate.date === "2026-08-12")?.assignmentSource || null
+    )).toEqual({ friendly: "Detected from PDF color", internal: "pdf_vector_fill" });
+    for (const date of ["2026-08-10", "2026-08-11"]) {
+      expect(preview.days.find((candidate) => candidate.date === date)).toMatchObject({
+        isSchoolDay: false,
+        scheduleId: null,
+        classification: "staff_only",
+        assignmentSource: "staff_only",
+      });
+    }
+    expect(preview.days.find((candidate) => candidate.date === "2026-08-15")).toMatchObject({
+      isOperatingDay: false,
+      isSchoolDay: false,
+      scheduleId: null,
+      assignmentSource: null,
+    });
+    expect(preview.summary.instructionalDayCount).toBe(
+      preview.days.filter((day) => day.isSchoolDay).length
+    );
     for (const date of ["2026-09-07", "2026-11-11"]) {
       const day = preview.days.find((candidate) => candidate.date === date);
       expect(day).toMatchObject({ isSchoolDay: false, scheduleId: null, assignmentSource: "no_school" });
     }
+  });
+});
+
+describeWithAttendanceFixture("real student attendance calendar evidence", () => {
+  it("extracts the declared count and separate coverage/instruction boundaries from the PDF", async () => {
+    const { extractCalendarPdfText } = await import("./pdfTextExtraction.server");
+    const bytes = await readFile(attendanceFixturePath);
+    const extracted = await extractCalendarPdfText(
+      new File([bytes], "2026-2027 Student Attendance Calendar 2.2.26.pdf", { type: "application/pdf" })
+    );
+
+    expect(extracted.pageCount).toBe(2);
+    expect(extracted.text).toMatch(/180\s+INSTRUCTIONAL\s+DAYS/i);
+    expect(extracted.text).toMatch(/August\s+10\s*&\s*11,?\s+2026[\s\S]*Teacher\s+Orientation/i);
+    expect(extracted.text).toMatch(/August\s+12,?\s+2026[\s\S]*Instruction\s+Begins/i);
+    expect(extracted.text).toMatch(/May\s+27,?\s+2027[\s\S]*Spring\s+Term\s+Ends/i);
+    expect(extracted.text).toMatch(/May\s+31,?\s+2027[\s\S]*Memorial\s+Day/i);
   });
 });

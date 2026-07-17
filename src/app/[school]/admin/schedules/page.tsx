@@ -129,7 +129,7 @@ export default async function AdminSchedulesPage({
                       )}
                       {setupStatus === "needs_times" && (
                         <span className="rounded-full bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-800 ring-1 ring-amber-500/30 dark:text-amber-200">
-                          Bell times needed
+                          Needs bell times
                         </span>
                       )}
                     </div>
@@ -147,7 +147,7 @@ export default async function AdminSchedulesPage({
                     href={`/${school}/admin/schedules/${schedule.id}/edit`}
                     className="cursor-pointer rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
                   >
-                    {setupStatus === "needs_times" ? "Add Bell Times" : "Edit Schedule"}
+                    {setupStatus === "needs_times" ? "Add Periods" : "Edit Schedule"}
                   </Link>
 
                   <form action={deleteSchedule}>

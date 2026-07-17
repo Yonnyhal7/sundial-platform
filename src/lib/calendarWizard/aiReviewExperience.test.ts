@@ -1,0 +1,56 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import { AI_CALENDAR_ANALYSIS_VERSION } from "./aiCalendarAnalysisVersion";
+
+const source = readFileSync(
+  resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/schedule-wizard-client.tsx"),
+  "utf8"
+);
+const review = source.slice(source.indexOf("function AiImportReview("), source.indexOf("function AiImportedCalendarPreview("));
+const preview = source.slice(source.indexOf("function AiImportedCalendarPreview("), source.indexOf("function ReviewPanel("));
+
+describe("AI calendar review experience", () => {
+  it("renders one shared calendar preview without a duplicate verification grid", () => {
+    expect((preview.match(/<SchoolCalendarMonthGrid/g) || [])).toHaveLength(1);
+    expect(preview).not.toContain("Assignment Verification");
+  });
+
+  it("places the instructional count review in the shared preview with selectable flagged dates", () => {
+    expect(preview).toContain("Instructional-Day Count Review");
+    expect(preview).toContain("PDF-declared count");
+    expect(preview).toContain("Current preview count");
+    expect(preview).toContain("setSelectedDate(item.date)");
+    expect(preview).toContain("staff_only");
+    expect(preview).toContain("neutral_non_operating");
+    expect(preview).toContain("removed_from_coverage");
+  });
+
+  it("keeps Create Calendar only in final actions below readiness", () => {
+    expect((review.match(/Create Calendar/g) || [])).toHaveLength(1);
+    expect(review.indexOf("Readiness Checklist")).toBeLessThan(review.indexOf("Create Calendar"));
+    expect(review.indexOf("data-ai-review-final-actions")).toBeLessThan(review.indexOf("Create Calendar"));
+  });
+
+  it("removes the special-day category and derives summary counts from the preview", () => {
+    expect(review).not.toContain("Special School Days");
+    expect(review).not.toContain("Special Schedule Days");
+    expect(review).not.toContain("Special schedule days");
+    expect(review).toContain("previewResult.summary.instructionalDayCount");
+    expect(review).toContain("previewResult.summary.noSchoolWeekdayCount");
+  });
+
+  it("orders the simplified review sections correctly", () => {
+    const labels = ["Import Summary", 'title="Detected Schedules"', 'title="Warnings"', 'title="No-School Days"', "<AiImportedCalendarPreview", 'title="Readiness Checklist"'];
+    const positions = labels.map((label) => review.indexOf(label));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it("invalidates calendar-v10 review caches with calendar-v11", () => {
+    expect(AI_CALENDAR_ANALYSIS_VERSION).toBe("calendar-v11");
+    const cacheSource = readFileSync(resolve(process.cwd(), "src/lib/calendarWizard/aiCalendarAnalysisCache.server.ts"), "utf8");
+    expect(cacheSource).toContain("AI_CALENDAR_ANALYSIS_VERSION");
+    expect(cacheSource).toContain('.eq("analysis_version", key.version)');
+  });
+});

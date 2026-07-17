@@ -143,7 +143,7 @@ describe("AI import calendar preview", () => {
     const edited = updateAiImportPreviewDay(original, {
       date: "2026-08-11",
       scheduleTempId: "sched-gold",
-      isSchoolDay: true,
+      classification: "instructional",
       note: "Orientation ends",
     });
     const result = generateSchoolYearCalendar(buildAiPreviewConfig(edited));

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeAssignmentDigest,
+  computeCalendarClassificationDigest,
   findAssignmentDigestDifferences,
 } from "./assignmentDigest";
 
@@ -35,5 +36,15 @@ describe("calendar assignment digest", () => {
       (id) => id,
       (id) => id
     )).toEqual(["2026-08-13"]);
+  });
+
+  it("includes staff-only and neutral classifications in the classification digest", async () => {
+    const staff = await computeCalendarClassificationDigest([
+      { date: "2026-08-10", isSchoolDay: false, scheduleId: null, classification: "staff_only", labels: ["Teacher Orientation"] },
+    ], (id) => id);
+    const neutral = await computeCalendarClassificationDigest([
+      { date: "2026-08-10", isSchoolDay: false, scheduleId: null, classification: "neutral_non_operating", labels: ["Teacher Orientation"] },
+    ], (id) => id);
+    expect(staff).not.toBe(neutral);
   });
 });

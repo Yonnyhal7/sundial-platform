@@ -11,6 +11,8 @@ import type {
   CalendarGenerationWarning,
   CalendarGenerationWarningCode,
   CalendarWizardConfig,
+  CalendarDateClassification,
+  CalendarDateClassificationOverride,
   DateString,
   DatedScheduleAssignment,
   GeneratedCalendarDay,
@@ -271,7 +273,7 @@ function summarize(days: GeneratedCalendarDay[], warningCount: number) {
       summary.weekendOrNonOperatingDayCount += 1;
     }
 
-    if (day.isOperatingDay && !day.isSchoolDay) {
+    if (day.isOperatingDay && day.classification === "no_school") {
       summary.noSchoolWeekdayCount += 1;
     }
 
@@ -293,12 +295,32 @@ function summarize(days: GeneratedCalendarDay[], warningCount: number) {
   return summary;
 }
 
+function isStaffOnlyLabel(value: string | null | undefined) {
+  return /\b(teacher orientation|inservice|in-service|staff(?:\s+only)?|work\s*day|professional development|professional learning)\b/i.test(
+    value || ""
+  );
+}
+
+function inferredNonInstructionalClassification(
+  entries: Array<{ label?: string; type?: string }>
+): Exclude<CalendarDateClassification, "instructional" | "removed_from_coverage"> {
+  return entries.some((entry) => isStaffOnlyLabel(entry.label) || isStaffOnlyLabel(entry.type))
+    ? "staff_only"
+    : "no_school";
+}
+
+function buildDateClassificationMap(
+  classifications: CalendarDateClassificationOverride[] = []
+) {
+  return new Map(classifications.map((classification) => [classification.date, classification]));
+}
+
 export function generateSchoolYearCalendar(
   config: CalendarWizardConfig
 ): CalendarGenerationResult {
   const warnings: CalendarGenerationWarning[] = [];
-  const schoolYearStart = config.schoolYear.startDate;
-  const schoolYearEnd = config.schoolYear.endDate;
+  const schoolYearStart = config.schoolYear.calendarCoverageStart || config.schoolYear.startDate;
+  const schoolYearEnd = config.schoolYear.calendarCoverageEnd || config.schoolYear.endDate;
   const operatingWeekdaySet = new Set(config.operatingWeekdays);
 
   if (compareDateStrings(schoolYearStart, schoolYearEnd) > 0) {
@@ -335,6 +357,7 @@ export function generateSchoolYearCalendar(
   const specialDayMap = buildRangeMap(specialDays, schoolYearStart, schoolYearEnd);
   const infoMap = buildInfoMap(config.informationalDates);
   const datedAssignmentMap = buildDatedAssignmentMap(config.datedScheduleAssignments);
+  const dateClassificationMap = buildDateClassificationMap(config.dateClassifications);
   const days: GeneratedCalendarDay[] = [];
 
   addRangeValidationWarnings(
@@ -354,6 +377,10 @@ export function generateSchoolYearCalendar(
     const specialEntries = specialDayMap.get(date) || [];
     const informationalEntries = infoMap.get(date) || [];
     const datedAssignment = datedAssignmentMap.get(date) || null;
+    const classificationOverride = dateClassificationMap.get(date) || null;
+    if (classificationOverride?.classification === "removed_from_coverage") {
+      continue;
+    }
     const labels: string[] = [];
     const warningCodes: CalendarGenerationWarningCode[] = [];
     const sources = {
@@ -364,8 +391,12 @@ export function generateSchoolYearCalendar(
     };
 
     addLabels(labels, informationalEntries.map((entry) => entry.label));
+    addLabels(labels, [classificationOverride?.label]);
 
-    if (!isOperatingDay) {
+    if (
+      classificationOverride &&
+      classificationOverride.classification !== "instructional"
+    ) {
       addLabels(labels, noSchoolEntries.map((entry) => entry.label));
       addLabels(labels, specialEntries.map((entry) => entry.label));
       days.push({
@@ -373,6 +404,29 @@ export function generateSchoolYearCalendar(
         weekday,
         isOperatingDay,
         isSchoolDay: false,
+        classification: classificationOverride.classification,
+        baseScheduleId: null,
+        scheduleId: null,
+        labels,
+        sources,
+        warningCodes,
+        assignmentSource:
+          classificationOverride.classification === "no_school"
+            ? "no_school"
+            : classificationOverride.classification,
+      });
+      continue;
+    }
+
+    if (!isOperatingDay && classificationOverride?.classification !== "instructional") {
+      addLabels(labels, noSchoolEntries.map((entry) => entry.label));
+      addLabels(labels, specialEntries.map((entry) => entry.label));
+      days.push({
+        date,
+        weekday,
+        isOperatingDay,
+        isSchoolDay: false,
+        classification: "neutral_non_operating",
         baseScheduleId: null,
         scheduleId: null,
         labels,
@@ -383,7 +437,10 @@ export function generateSchoolYearCalendar(
       continue;
     }
 
-    if (noSchoolEntries.length > 0) {
+    if (
+      noSchoolEntries.length > 0 &&
+      classificationOverride?.classification !== "instructional"
+    ) {
       addLabels(labels, noSchoolEntries.map((entry) => entry.label));
 
       const conflictingSpecialEntries = specialEntries.filter(
@@ -416,12 +473,13 @@ export function generateSchoolYearCalendar(
         weekday,
         isOperatingDay,
         isSchoolDay: false,
+        classification: inferredNonInstructionalClassification(noSchoolEntries),
         baseScheduleId: null,
         scheduleId: null,
         labels,
         sources,
         warningCodes,
-        assignmentSource: "no_school",
+        assignmentSource: inferredNonInstructionalClassification(noSchoolEntries),
       });
       continue;
     }
@@ -449,7 +507,10 @@ export function generateSchoolYearCalendar(
     if (specialDay) {
       addLabels(labels, [specialDay.label]);
 
-      if (!specialDay.isInstructional) {
+      if (
+        !specialDay.isInstructional &&
+        classificationOverride?.classification !== "instructional"
+      ) {
         if (specialDay.rotationBehavior === "restart" && shouldAdvanceRepeatingPattern(config)) {
           repeatingIndex = 0;
         }
@@ -459,12 +520,13 @@ export function generateSchoolYearCalendar(
           weekday,
           isOperatingDay,
           isSchoolDay: false,
+          classification: isStaffOnlyLabel(specialDay.label) ? "staff_only" : "no_school",
           baseScheduleId: null,
           scheduleId: null,
           labels,
           sources,
           warningCodes,
-          assignmentSource: "no_school",
+          assignmentSource: isStaffOnlyLabel(specialDay.label) ? "staff_only" : "no_school",
         });
         continue;
       }
@@ -482,12 +544,15 @@ export function generateSchoolYearCalendar(
         entry.assignmentSource !== "administrator" &&
         entry.assignmentSource !== "explicit_text"
     ) || null;
-    const scheduleId = administratorOverride?.scheduleId ??
+    const scheduleId = classificationOverride?.scheduleId ??
+      administratorOverride?.scheduleId ??
       datedAssignment?.scheduleId ??
       explicitTextAssignment?.scheduleId ??
       genuineSpecialDay?.scheduleId ??
       baseScheduleId;
-    const assignmentSource = administratorOverride
+    const assignmentSource = classificationOverride?.classification === "instructional"
+      ? "administrator" as const
+      : administratorOverride
       ? "administrator" as const
       : datedAssignment?.source ||
         (explicitTextAssignment
@@ -512,6 +577,7 @@ export function generateSchoolYearCalendar(
       weekday,
       isOperatingDay,
       isSchoolDay: true,
+      classification: "instructional",
       baseScheduleId,
       scheduleId,
       labels,
@@ -521,7 +587,8 @@ export function generateSchoolYearCalendar(
     });
 
     if (shouldAdvanceRepeatingPattern(config)) {
-      const behavior = administratorOverride?.rotationBehavior ||
+      const behavior = classificationOverride?.rotationBehavior ||
+        administratorOverride?.rotationBehavior ||
         datedAssignment?.rotationBehavior ||
         explicitTextAssignment?.rotationBehavior ||
         genuineSpecialDay?.rotationBehavior ||

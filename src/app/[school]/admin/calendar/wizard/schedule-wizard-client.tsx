@@ -30,16 +30,27 @@ import {
   type AiImportStatusResponse,
 } from "@/lib/calendarWizard/aiImportClient";
 import { AI_CALENDAR_ANALYSIS_VERSION } from "@/lib/calendarWizard/aiCalendarAnalysisVersion";
-import { computeAssignmentDigest } from "@/lib/calendarWizard/assignmentDigest";
+import {
+  computeAssignmentDigest,
+  computeCalendarClassificationDigest,
+} from "@/lib/calendarWizard/assignmentDigest";
 import {
   buildAiPreviewConfig,
   getBrownGoldVerificationConflicts,
-  getBrownGoldVerificationRows,
   getDeterministicAssignmentConflicts,
   getUnreviewedRequiredAssignmentDates,
-  hasBrownGoldVerificationScheduleSet,
   updateAiImportPreviewDay,
 } from "@/lib/calendarWizard/aiImportPreview";
+import {
+  assignmentSourcePresentation,
+  buildAiReviewReadiness,
+  deduplicateClassifiedWarnings,
+  includedNoSchoolLabels,
+} from "@/lib/calendarWizard/aiReviewPresentation";
+import {
+  acknowledgeInstructionalDayCountReview,
+  getInstructionalDayCountReviewState,
+} from "@/lib/calendarWizard/instructionalDayCountReview";
 import {
   clearAiImportMetadata,
   getAiImportReadinessSummary,
@@ -67,6 +78,7 @@ import {
   removeAiDetectedSchedule,
   type AiScheduleRemovalAction,
   type AiScheduleUsageDetails,
+  type ClassifiedCalendarWarning,
 } from "@/lib/calendarWizard/aiQuickSetupPersistence";
 import {
   confidenceLabel,
@@ -95,6 +107,7 @@ import { generateSchoolYearCalendar } from "@/lib/calendarWizard/generateSchoolY
 import type {
   CalendarGenerationResult,
   CalendarGenerationWarning,
+  CalendarDateClassification,
   CalendarWizardConfig,
   GeneratedCalendarDay,
   NoSchoolRange,
@@ -106,7 +119,10 @@ import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
 import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 import {
   createAiCalendarFromDraftAction,
+  createGuidedScheduleName,
+  deleteUnusedGuidedScheduleName,
   generateCalendarAction,
+  renameGuidedScheduleName,
   deleteCalendarWizardDraft,
   saveCalendarWizardDraft,
   type CalendarCompletionSummary,
@@ -169,6 +185,10 @@ type WizardDraft = {
     label: string;
     startDate: string;
     endDate: string;
+    calendarCoverageStart?: string;
+    calendarCoverageEnd?: string;
+    instructionalStart?: string;
+    instructionalEnd?: string;
     operatingWeekdays: Weekday[];
   };
   patternMode: PatternMode;
@@ -833,11 +853,19 @@ function buildConfig(draft: WizardDraft): CalendarWizardConfig | null {
       name: schoolYear.label,
       startDate: schoolYear.startDate,
       endDate: schoolYear.endDate,
+      calendarCoverageStart: schoolYear.calendarCoverageStart,
+      calendarCoverageEnd: schoolYear.calendarCoverageEnd,
+      instructionalStart: schoolYear.instructionalStart,
+      instructionalEnd: schoolYear.instructionalEnd,
     },
     operatingWeekdays: schoolYear.operatingWeekdays,
     noSchoolRanges: draft.noSchoolRanges,
     specialDays: draft.specialDays,
     informationalDates: draft.informationalDates,
+    dateClassifications: (draft.aiImport?.result?.dateClassifications || []).map((classification) => ({
+      ...classification,
+      scheduleId: classification.scheduleTempId,
+    })),
   };
 
   if (draft.patternMode === "same") {
@@ -1035,18 +1063,26 @@ function ScheduleSelector({
   schedules,
   onChange,
   describedBy,
+  onCreateNew,
 }: {
   id?: string;
   value: string;
   schedules: WizardScheduleSummary[];
   onChange: (value: string) => void;
   describedBy?: string;
+  onCreateNew?: () => void;
 }) {
   return (
     <select
       id={id}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => {
+        if (event.target.value === "__create_schedule__") {
+          onCreateNew?.();
+          return;
+        }
+        onChange(event.target.value);
+      }}
       className={inputClass}
       aria-describedby={describedBy}
     >
@@ -1055,8 +1091,10 @@ function ScheduleSelector({
         <option key={schedule.id} value={schedule.id}>
           {schedule.name}
           {schedule.type ? ` (${schedule.type})` : ""}
+          {schedule.setupStatus === "needs_times" ? " · Needs bell times" : ""}
         </option>
       ))}
+      {onCreateNew && <option value="__create_schedule__">+ Create New Schedule</option>}
     </select>
   );
 }
@@ -1100,25 +1138,6 @@ function ScheduleSummaryText({ schedule }: { schedule?: WizardScheduleSummary })
 function getScheduleName(scheduleMap: Map<string, WizardScheduleSummary>, id: string | null) {
   if (!id) return "No schedule";
   return scheduleMap.get(id)?.name || "Unknown schedule";
-}
-
-function assignmentSourceLabel(source: GeneratedCalendarDay["assignmentSource"]) {
-  switch (source) {
-    case "pdf_vector_fill":
-      return "pdf_vector_fill";
-    case "administrator":
-      return "administrator";
-    case "explicit_text":
-      return "explicit_text";
-    case "pattern_generated":
-      return "pattern_generated";
-    case "no_school":
-      return "no_school";
-    case "genuine_special":
-      return "genuine_special";
-    default:
-      return "unassigned";
-  }
 }
 
 function warningMessage(warning: CalendarGenerationWarning) {
@@ -1165,7 +1184,7 @@ export default function ScheduleWizardClient({
   schoolSlug,
   schoolName,
   adminBasePath,
-  schedules,
+  schedules: initialSchedules,
   existingCalendarRange,
   initialSavedDraft,
   flowMode = "guided",
@@ -1206,7 +1225,10 @@ export default function ScheduleWizardClient({
   const alternateFlowLabel = isAiMode
     ? "Use Guided Setup instead"
     : "Use AI Calendar Import instead";
-  const [draft, setDraft] = useState<WizardDraft>(() => createDefaultDraft(schedules));
+  const [schedules, setSchedules] = useState<WizardScheduleSummary[]>(initialSchedules);
+  const [showScheduleNameManager, setShowScheduleNameManager] = useState(false);
+  const [guidedScheduleIds, setGuidedScheduleIds] = useState<string[]>([]);
+  const [draft, setDraft] = useState<WizardDraft>(() => createDefaultDraft(initialSchedules));
   const [currentStep, setCurrentStep] = useState<WizardStep>("school-year");
   const [draftLoading, setDraftLoading] = useState(true);
   const [errors, setErrors] = useState<StepErrors>({});
@@ -1648,12 +1670,17 @@ export default function ScheduleWizardClient({
         previewGenerated.days,
         (scheduleId) => previewScheduleMap.get(scheduleId)?.name
       );
+      const previewClassificationDigest = await computeCalendarClassificationDigest(
+        previewGenerated.days,
+        (scheduleId) => previewScheduleMap.get(scheduleId)?.name
+      );
 
       const result = await createAiCalendarFromDraftAction(schoolSlug, {
         replaceExisting,
         expectedDraftUpdatedAt: saved.draft.updated_at,
         launchContext,
         previewAssignmentDigest,
+        previewClassificationDigest,
       });
 
       if (result.status === "success") {
@@ -1834,10 +1861,10 @@ export default function ScheduleWizardClient({
               draft={draft}
               schedules={schedules}
               scheduleMap={scheduleMap}
-              adminBasePath={adminBasePath}
               onAddTimesNow={saveAndOpenSchedule}
               errors={errors}
               updateDraft={updateDraft}
+              onManageScheduleNames={() => setShowScheduleNameManager(true)}
             />
           )}
           {isGuidedMode && currentStep === "no-school" && (
@@ -1850,6 +1877,7 @@ export default function ScheduleWizardClient({
               scheduleMap={scheduleMap}
               errors={errors}
               updateDraft={updateDraft}
+              onManageScheduleNames={() => setShowScheduleNameManager(true)}
             />
           )}
           {isGuidedMode && currentStep === "review" && (
@@ -1947,6 +1975,40 @@ export default function ScheduleWizardClient({
             if (!isSaving) {
               setShowAiCreateModal(false);
             }
+          }}
+        />
+      )}
+      {showScheduleNameManager && (
+        <GuidedScheduleNameManager
+          school={schoolSlug}
+          schedules={schedules}
+          createdScheduleIds={guidedScheduleIds}
+          draft={draft}
+          onClose={() => setShowScheduleNameManager(false)}
+          onCreated={(schedule) => {
+            setSchedules((current) => [...current, schedule].sort((a, b) => a.name.localeCompare(b.name)));
+            setGuidedScheduleIds((current) => [...current, schedule.id]);
+            updateDraft((current) =>
+              current.sameScheduleId
+                ? current
+                : {
+                    ...current,
+                    sameScheduleId: schedule.id,
+                    repeatingScheduleIds: [schedule.id],
+                    weekdaySchedules: Object.fromEntries(
+                      current.schoolYear.operatingWeekdays.map((day) => [day, schedule.id])
+                    ),
+                  }
+            );
+          }}
+          onRenamed={(scheduleId, name) =>
+            setSchedules((current) =>
+              current.map((schedule) => schedule.id === scheduleId ? { ...schedule, name } : schedule)
+            )
+          }
+          onDeleted={(scheduleId) => {
+            setSchedules((current) => current.filter((schedule) => schedule.id !== scheduleId));
+            setGuidedScheduleIds((current) => current.filter((id) => id !== scheduleId));
           }}
         />
       )}
@@ -3160,11 +3222,6 @@ function AiImportReview({
       !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
   );
   const usageCounts = getDetectedScheduleUsageCounts(importResult);
-  const readiness = getAiImportReadinessSummary({
-    importResult,
-    resolutions,
-    warnings: importResult.warnings,
-  });
   const warningResolutionMap = new Map(
     warningResolutions.map((resolution) => [resolution.code, resolution])
   );
@@ -3173,14 +3230,18 @@ function AiImportReview({
     ...getScheduleNameValidation(resolution, resolutions, schedules),
   }));
   const scheduleNameErrors = scheduleValidation.filter((item) => item.error);
-  const warningReadiness = getAiCreateCalendarReadiness({
-    warnings: importResult.warnings,
-    warningResolutions,
-    scheduleNameErrorCount: scheduleNameErrors.length,
-  });
   const previewScheduleMap = buildAiPreviewScheduleMap(schedules, resolutions);
   const previewConfig = buildAiPreviewConfig(importResult);
   const previewResult = generateSchoolYearCalendar(previewConfig);
+  const instructionalDayCountReviewState = getInstructionalDayCountReviewState(
+    importResult.instructionalDayCountReview,
+    previewResult.summary.instructionalDayCount
+  );
+  const warningReadiness = getAiCreateCalendarReadiness({
+    warnings: [...importResult.warnings, ...previewResult.warnings],
+    warningResolutions,
+    scheduleNameErrorCount: scheduleNameErrors.length,
+  });
   const brownGoldConflicts = getBrownGoldVerificationConflicts(
     previewResult,
     previewScheduleMap
@@ -3195,21 +3256,59 @@ function AiImportReview({
   const unresolvedPreviewDays = previewResult.days.filter((day) =>
     day.warningCodes.includes("instructional_day_missing_schedule")
   );
+  const unresolvedAssignmentDates = new Set([
+    ...unreviewedRequiredAssignmentDates,
+    ...unresolvedPreviewDays.map((day) => day.date),
+  ]);
+  const blockingConflictCount =
+    warningReadiness.blockingWarnings.length +
+    scheduleNameErrors.length +
+    brownGoldConflicts.length +
+    deterministicConflicts.length +
+    unresolvedAssignmentDates.size +
+    (instructionalDayCountReviewState.ready ? 0 : 1);
   const canCreateCalendar =
     warningReadiness.canCreateCalendar &&
     brownGoldConflicts.length === 0 &&
     deterministicConflicts.length === 0 &&
     unreviewedRequiredAssignmentDates.length === 0 &&
-    unresolvedPreviewDays.length === 0;
-  const matchedCount = resolutions.filter((resolution) => resolution.matchedExistingScheduleId).length;
-  const newScheduleCount = schedulesNeedingTimes.length;
-  const patternScheduleNames = importResult.pattern.scheduleTempIds
-    .map((scheduleId) => previewScheduleMap.get(scheduleId)?.name)
-    .filter((name): name is string => Boolean(name));
-  const patternBegins = [...(importResult.datedScheduleAssignments || [])]
-    .filter((assignment) => importResult.pattern.scheduleTempIds.includes(assignment.scheduleTempId))
-    .sort((a, b) => a.date.localeCompare(b.date))[0] || null;
-  const firstInstructionalAssignment = importResult.firstInstructionalAssignment;
+    unresolvedPreviewDays.length === 0 &&
+    instructionalDayCountReviewState.ready;
+  const firstTwoInstructionalWeeks = previewResult.days
+    .filter((day) => day.isSchoolDay)
+    .slice(0, 10);
+  const firstTwoWeeksVerified =
+    firstTwoInstructionalWeeks.length > 0 &&
+    firstTwoInstructionalWeeks.every((day) => Boolean(day.scheduleId)) &&
+    brownGoldConflicts.length === 0 &&
+    deterministicConflicts.length === 0;
+  const previewMatchesCreationPayload =
+    brownGoldConflicts.length === 0 && deterministicConflicts.length === 0;
+  const readinessItems = buildAiReviewReadiness({
+    importResult,
+    previewDays: previewResult.days,
+    firstTwoWeeksVerified,
+    unresolvedAssignmentCount: unresolvedAssignmentDates.size,
+    blockingConflictCount,
+    previewMatchesCreationPayload,
+    schedulesNeedingBellTimes: schedulesNeedingTimes.length,
+    currentInstructionalDayCount: previewResult.summary.instructionalDayCount,
+  });
+  const blockingWarnings = deduplicateClassifiedWarnings(warningReadiness.blockingWarnings);
+  const reviewWarnings = deduplicateClassifiedWarnings(warningReadiness.unresolvedReviewWarnings);
+  const informationalWarnings = deduplicateClassifiedWarnings([
+    ...warningReadiness.informationalWarnings,
+    ...warningReadiness.resolvedReviewWarnings,
+  ]);
+  const reviewItemCount = reviewWarnings.length;
+  const automaticResolutions = (importResult.automaticResolutions || []).filter(
+    (resolution, index, all) =>
+      all.findIndex((candidate) =>
+        candidate.code === resolution.code &&
+        candidate.title === resolution.title &&
+        candidate.message === resolution.message
+      ) === index
+  );
 
   function requestRemoveSchedule(resolution: DetectedScheduleResolution) {
     const usage = getAiScheduleUsageDetails(importResult, resolution.tempId);
@@ -3241,6 +3340,42 @@ function AiImportReview({
     setReplacementScheduleId("");
   }
 
+  function renderWarningGroup(
+    title: string,
+    warnings: ClassifiedCalendarWarning[]
+  ) {
+    if (warnings.length === 0) return null;
+    return (
+      <div>
+        <h5 className="text-sm font-bold text-slate-900 dark:text-white">{title}</h5>
+        <ul className="mt-2 space-y-2">
+          {warnings.map((warning) => {
+            const resolution = warningResolutionMap.get(String(warning.code));
+            const reviewable = warning.classification !== "informational";
+            return (
+              <li key={`${warning.classification}-${warning.code}-${warning.message}`} className="rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-700">
+                <p className="font-semibold text-slate-700 dark:text-slate-200">{warning.message}</p>
+                {reviewable && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => onWarningResolutionChange(String(warning.code), "accepted_suggestion")} className={[subtleButtonClass, resolution?.status === "accepted_suggestion" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
+                      Use suggested correction
+                    </button>
+                    <button type="button" onClick={() => onWarningResolutionChange(String(warning.code), "kept_original")} className={[subtleButtonClass, resolution?.status === "kept_original" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
+                      Keep original
+                    </button>
+                    <button type="button" onClick={() => onWarningResolutionChange(String(warning.code), "edited_manually")} className={[subtleButtonClass, resolution?.status === "edited_manually" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
+                      Edit manually
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-[#242424]">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3264,9 +3399,6 @@ function AiImportReview({
           <button type="button" onClick={() => void onStartOver()} className={subtleButtonClass}>
             Start Over
           </button>
-          <button type="button" onClick={onCreateCalendar} disabled={!canCreateCalendar} className={sundialPrimaryButtonClass("px-5")}>
-            Create Calendar
-          </button>
         </div>
       </div>
 
@@ -3281,75 +3413,55 @@ function AiImportReview({
         </div>
       )}
 
-      <div className="mt-5 grid gap-3 md:grid-cols-6">
-        <MetricCard
+      <section aria-labelledby="ai-import-summary-title" className="mt-5 rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
+        <h4 id="ai-import-summary-title" className="text-sm font-bold uppercase tracking-[0.14em] text-slate-500">
+          Import Summary
+        </h4>
+        <div className="mt-3 grid gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <CompactSummaryItem
           label="School year"
           value={`${formatDateForDisplay(importResult.schoolYear.startDate)} - ${formatDateForDisplay(importResult.schoolYear.endDate)}`}
         />
-        <MetricCard
-          label="Instructional days detected"
-          value={String(importResult.expectedInstructionalDayCount || "Review")}
+        <CompactSummaryItem
+          label="Instructional days"
+          value={String(previewResult.summary.instructionalDayCount)}
         />
-        <MetricCard
-          label="No-school ranges"
-          value={String(importResult.noSchoolRanges.length)}
+        <CompactSummaryItem
+          label="No-school days"
+          value={String(previewResult.summary.noSchoolWeekdayCount)}
         />
-        <MetricCard
-          label="Special schedule days"
-          value={String(importResult.specialDays.length)}
-        />
-        <MetricCard
+        <CompactSummaryItem
           label="Detected schedules"
-          value={`${matchedCount} matched / ${newScheduleCount} new`}
+          value={String(resolutions.filter((resolution) => resolution.status !== "ignored").length)}
         />
-        <MetricCard
+        <CompactSummaryItem
+          label="Need bell times"
+          value={String(schedulesNeedingTimes.length)}
+        />
+        <CompactSummaryItem
           label="Blocking issues"
-          value={String(warningReadiness.blockingWarnings.length)}
+          value={String(blockingConflictCount)}
         />
-        <MetricCard
+        <CompactSummaryItem
           label="Review items"
-          value={String(warningReadiness.reviewWarnings.length)}
+          value={String(reviewItemCount)}
         />
-      </div>
+        </div>
+      </section>
 
       {!canCreateCalendar && (
         <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
           {scheduleNameErrors.length > 0
             ? "Resolve duplicate or invalid schedule names before creating the calendar."
+            : !instructionalDayCountReviewState.ready
+              ? "Review every flagged instructional-count date and acknowledge the final count before creating the calendar."
             : unreviewedRequiredAssignmentDates.length > 0
               ? `Verify the first ${unreviewedRequiredAssignmentDates.length} remaining color-rotation assignments in the calendar preview before creating the calendar.`
             : "Fix blocking calendar issues before creating the calendar."}
         </p>
       )}
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <ReviewPanel title="School Year">
-          <ReviewLine label="Dates" value={`${formatDateForDisplay(importResult.schoolYear.startDate)} - ${formatDateForDisplay(importResult.schoolYear.endDate)}`} />
-          <ReviewLine label="Confidence" value={confidenceLabel(importResult.schoolYear.confidence)} />
-        </ReviewPanel>
-        <ReviewPanel title="Detected Schedule Pattern">
-          <ReviewLine
-            label="Pattern"
-            value={patternScheduleNames.length > 1
-              ? `${patternScheduleNames.join("/")} alternating schedule`
-              : patternScheduleNames[0] || importResult.pattern.type}
-          />
-          <ReviewLine
-            label="Begins"
-            value={patternBegins ? formatDateForDisplay(patternBegins.date) : "Review"}
-          />
-          <ReviewLine
-            label="First instructional day"
-            value={firstInstructionalAssignment
-              ? `${formatDateForDisplay(firstInstructionalAssignment.date)} · ${firstInstructionalAssignment.scheduleName}`
-              : "Review"}
-          />
-          <ReviewLine label="No-school behavior" value="No-school days pause rotation" />
-          <ReviewLine label="Confidence" value={confidenceLabel(importResult.pattern.confidence)} />
-        </ReviewPanel>
-      </div>
-
-      <ReviewPanel title="Schedule Templates" className="mt-4">
+      <ReviewPanel title="Detected Schedules" className="mt-4">
         <div className="space-y-3">
           {resolutions.map((resolution) => {
             const matchedSchedule = schedules.find(
@@ -3430,6 +3542,18 @@ function AiImportReview({
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+                    <span
+                      className="h-3 w-3 rounded-full border"
+                      style={getScheduleDotStyle(getScheduleCalendarColor({
+                        id: resolution.tempId,
+                        name,
+                        calendarColor: matchedSchedule?.calendarColor || resolution.calendarColor,
+                      }))}
+                      aria-hidden="true"
+                    />
+                    {name}
+                  </span>
                   <p className="text-xs font-semibold text-slate-500">
                     {detectedScheduleStatusLabel(resolution)} · Used on{" "}
                     {pluralize(usageCounts[resolution.tempId] || 0, "calendar day")}
@@ -3549,180 +3673,63 @@ function AiImportReview({
         </div>
       )}
 
-      <ReviewPanel title="Readiness Checklist" className="mt-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <ChecklistGroup
-            title="Calendar detected"
-            items={[
-              ["School year confirmed", Boolean(importResult.schoolYear.startDate && importResult.schoolYear.endDate)],
-              ["Instructional day count confirmed", Boolean(importResult.expectedInstructionalDayCount)],
-              ["Pattern detected", Boolean(importResult.pattern.scheduleTempIds.length)],
-              ["No-school days reviewed", true],
-              ["Special days reviewed", true],
-            ]}
-          />
-          <ChecklistGroup
-            title="Schedule setup"
-            items={[
-              ...resolutions.map((resolution) => [
-                `${reviewedScheduleName(resolution)} ${
-                  resolution.matchedExistingScheduleId
-                    ? "matched"
-                    : "will be created"
-                }`,
-                true,
-              ] as [string, boolean]),
-            ]}
-          />
-        </div>
-        <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Bell times are allowed to remain incomplete. Calendar setup is{" "}
-          {readiness.percentComplete}% ready for Phase C creation.
-        </p>
+      <ReviewPanel title="Warnings" className="mt-4">
+        {blockingWarnings.length === 0 && reviewWarnings.length === 0 && informationalWarnings.length === 0 && automaticResolutions.length === 0 ? (
+          <p className="text-sm text-slate-500">No warnings were found.</p>
+        ) : (
+          <div className="space-y-5">
+            {renderWarningGroup("Blocking", blockingWarnings)}
+            {renderWarningGroup("Needs review", reviewWarnings)}
+            {automaticResolutions.length > 0 && (
+              <div>
+                <h5 className="text-sm font-bold text-slate-900 dark:text-white">Automatically resolved</h5>
+                <ul className="mt-2 space-y-2">
+                  {automaticResolutions.map((resolution) => (
+                    <li key={`${resolution.code}-${resolution.title}`} className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100">
+                      <p className="font-bold">{resolution.title}</p>
+                      <p className="mt-1 font-semibold">{resolution.message}</p>
+                      {resolution.labelsPreserved && resolution.labelsPreserved.length > 0 && (
+                        <p className="mt-1 text-xs font-semibold">Labels preserved: {resolution.labelsPreserved.join(", ")}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {renderWarningGroup("Informational", informationalWarnings)}
+          </div>
+        )}
       </ReviewPanel>
 
-      {importResult.automaticResolutions && importResult.automaticResolutions.length > 0 && (
-        <ReviewPanel title="Automatically resolved" className="mt-4">
-          <div className="space-y-3">
-            {importResult.automaticResolutions.map((resolution, index) => (
-              <details
-                key={`${resolution.code}-${index}`}
-                className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100"
-              >
-                <summary className="cursor-pointer font-bold">
-                  {resolution.title}
-                </summary>
-                <p className="mt-2 font-semibold">{resolution.message}</p>
-                {resolution.labelsPreserved && resolution.labelsPreserved.length > 0 && (
-                  <p className="mt-2 text-xs font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-                    Labels preserved: {resolution.labelsPreserved.join(", ")}
-                  </p>
-                )}
-                {resolution.dateRange && (
-                  <p className="mt-1 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
-                    {formatDateRange(
-                      resolution.dateRange.startDate,
-                      resolution.dateRange.endDate
-                    )}
-                  </p>
-                )}
-              </details>
-            ))}
-          </div>
-          <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            You can undo these corrections by editing the affected no-school or
-            informational dates before creating the calendar.
-          </p>
-        </ReviewPanel>
-      )}
-
-      {importResult.warnings.length > 0 && (
-        <ReviewPanel title="Warnings" className="mt-4">
-          <ul className="space-y-3 text-sm font-medium text-slate-600 dark:text-slate-300">
-            {importResult.warnings.map((warning) => {
-              const resolution = warningResolutionMap.get(warning.code);
-              const classification = classifyCalendarWarnings(
-                [warning],
-                resolution ? [resolution] : []
-              );
-              const classifiedWarning =
-                classification.blockingWarnings[0] ||
-                classification.reviewWarnings[0] ||
-                classification.informationalWarnings[0];
-              const isBlocking = classifiedWarning?.classification === "blocking";
-              const severityLabel =
-                classifiedWarning?.classification === "informational"
-                  ? "informational"
-                  : classifiedWarning?.classification || warning.severity;
+      <ReviewPanel title="No-School Days" className="mt-4">
+        {importResult.noSchoolRanges.length === 0 ? (
+          <p className="text-sm text-slate-500">No no-school days detected.</p>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {importResult.noSchoolRanges.map((range) => {
+              const includedLabels = includedNoSchoolLabels(
+                range.startDate,
+                range.endDate,
+                automaticResolutions
+              ).filter((label) => label.toLowerCase() !== range.label.toLowerCase());
               return (
-                <li key={warning.code} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-                  <p>
-                    <span className="font-bold">{severityLabel}:</span> {warning.message}
+                <article key={range.id} className="min-w-0 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                  <h5 className="font-bold text-slate-900 dark:text-white">{range.label}</h5>
+                  <p className="mt-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    {formatDateRange(range.startDate, range.endDate)}
                   </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onWarningResolutionChange(warning.code, "accepted_suggestion")}
-                      className={[
-                        subtleButtonClass,
-                        resolution?.status === "accepted_suggestion" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : "",
-                      ].join(" ")}
-                    >
-                      Use suggested correction
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onWarningResolutionChange(warning.code, "kept_original")}
-                      className={[
-                        subtleButtonClass,
-                        resolution?.status === "kept_original" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : "",
-                      ].join(" ")}
-                    >
-                      Keep original
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onWarningResolutionChange(warning.code, "edited_manually")}
-                      className={[
-                        subtleButtonClass,
-                        resolution?.status === "edited_manually" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : "",
-                      ].join(" ")}
-                    >
-                      Edit manually
-                    </button>
-                  </div>
-                  {isBlocking && (!resolution || resolution.status === "unreviewed") && (
-                    <p className="mt-2 text-xs font-bold text-red-600 dark:text-red-300">
-                      This blocking warning must be reviewed before calendar creation.
-                    </p>
+                  {includedLabels.length > 0 && (
+                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      <p className="font-bold">Included labels:</p>
+                      <ul className="mt-1 list-disc pl-4">
+                        {includedLabels.map((label) => <li key={label}>{label}</li>)}
+                      </ul>
+                    </div>
                   )}
-                </li>
+                </article>
               );
             })}
-          </ul>
-        </ReviewPanel>
-      )}
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <ReviewPanel title="No-School Days">
-          {importResult.noSchoolRanges.length === 0 ? (
-            <p className="text-sm text-slate-500">No no-school days detected.</p>
-          ) : (
-            importResult.noSchoolRanges.map((range) => (
-              <ReviewLine
-                key={range.id}
-                label={range.label}
-                value={`${formatDateRange(range.startDate, range.endDate)} · ${confidenceLabel(range.confidence)}`}
-              />
-            ))
-          )}
-        </ReviewPanel>
-        <ReviewPanel title="Special Schedule Days">
-          {importResult.specialDays.length === 0 ? (
-            <p className="text-sm text-slate-500">No special schedule days detected.</p>
-          ) : (
-            importResult.specialDays.map((day) => (
-              <ReviewLine
-                key={day.id}
-                label={day.label}
-                value={`${formatDateRange(day.startDate, day.endDate)} · ${confidenceLabel(day.confidence)}`}
-              />
-            ))
-          )}
-        </ReviewPanel>
-      </div>
-
-      <ReviewPanel title="Important Dates" className="mt-4">
-        {importResult.informationalDates.length === 0 ? (
-          <p className="text-sm text-slate-500">No informational dates detected.</p>
-        ) : (
-          importResult.informationalDates.map((date) => (
-            <ReviewLine
-              key={date.id}
-              label={date.label}
-              value={`${formatDateForDisplay(date.date)} · ${confidenceLabel(date.confidence)}`}
-            />
-          ))
+          </div>
         )}
       </ReviewPanel>
 
@@ -3738,7 +3745,14 @@ function AiImportReview({
         onImportResultChange={onImportResultChange}
       />
 
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 dark:border-slate-700">
+      <ReviewPanel title="Readiness Checklist" className="mt-4">
+        <ReadinessChecklist items={readinessItems} />
+        <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Bell times are non-blocking and may be completed after calendar creation.
+        </p>
+      </ReviewPanel>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 dark:border-slate-700" data-ai-review-final-actions>
         {reviewMode === "advanced" ? (
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={onBackToReview} className={secondaryButtonClass}>
@@ -3809,7 +3823,7 @@ function AiImportedCalendarPreview({
   const [editorEdit, setEditorEdit] = useState<{
     date: string;
     scheduleId: string;
-    isSchoolDay: boolean;
+    classification: CalendarDateClassification;
     note: string;
   } | null>(null);
   const [lastResult, setLastResult] = useState<AiCalendarImportResult | null>(null);
@@ -3830,12 +3844,23 @@ function AiImportedCalendarPreview({
   const selectedInfo = selectedDay
     ? importResult.informationalDates.filter((date) => date.date === selectedDay.date)
     : [];
+  const selectedCountReviewDate = selectedDay
+    ? importResult.instructionalDayCountReview?.discrepancyDates.find(
+        (item) => item.date === selectedDay.date
+      ) || null
+    : null;
   const editor = editorEdit && editorEdit.date === selectedDay?.date
     ? editorEdit
     : {
         date: selectedDay?.date || "",
         scheduleId: selectedDay?.scheduleId || "",
-        isSchoolDay: selectedDay?.isSchoolDay ?? true,
+        classification:
+          selectedDay?.classification ||
+          (selectedDay?.isSchoolDay
+            ? "instructional"
+            : selectedDay?.isOperatingDay
+              ? "no_school"
+              : "neutral_non_operating"),
         note: selectedDay?.labels.join(", ") || "",
       };
   const monthIndex = months.findIndex(([key]) => key === monthKey);
@@ -3844,14 +3869,6 @@ function AiImportedCalendarPreview({
   const nextMonth = monthIndex >= 0 && monthIndex < months.length - 1
     ? months[monthIndex + 1]?.[0]
     : null;
-  const schedulesNeedingTimes = resolutions.filter(
-    (resolution) =>
-      !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
-  );
-  const showBrownGoldVerification = hasBrownGoldVerificationScheduleSet(scheduleMap);
-  const brownGoldRows = showBrownGoldVerification
-    ? getBrownGoldVerificationRows(result, scheduleMap)
-    : [];
   const deterministicConflicts = getDeterministicAssignmentConflicts(
     importResult,
     result,
@@ -3859,15 +3876,14 @@ function AiImportedCalendarPreview({
   );
   const unreviewedRequiredAssignmentDates =
     getUnreviewedRequiredAssignmentDates(importResult);
-  const lowConfidenceCount = [
-    importResult.schoolYear,
-    importResult.pattern,
-    ...importResult.detectedSchedules,
-    ...importResult.noSchoolRanges,
-    ...importResult.specialDays,
-    ...importResult.informationalDates,
-  ].filter((item) => item.confidence !== "high").length;
-
+  const countReview = importResult.instructionalDayCountReview;
+  const countReviewState = getInstructionalDayCountReviewState(
+    countReview,
+    result.summary.instructionalDayCount
+  );
+  const countReviewDates = new Set(
+    countReview?.discrepancyDates.map((item) => item.date) || []
+  );
   function rememberAndApply(nextResult: AiCalendarImportResult) {
     setLastResult(importResult);
     onImportResultChange(nextResult);
@@ -3878,7 +3894,7 @@ function AiImportedCalendarPreview({
     rememberAndApply(updateAiImportPreviewDay(importResult, {
       date: selectedDay.date,
       scheduleTempId: editor.scheduleId || null,
-      isSchoolDay: editor.isSchoolDay,
+      classification: editor.classification,
       note: editor.note,
       rotationBehavior: selectedSpecialDay?.rotationBehavior || "pause",
     }));
@@ -3889,16 +3905,85 @@ function AiImportedCalendarPreview({
       <p className="mb-4 text-sm leading-6 text-slate-600 dark:text-slate-300">
         Review the calendar exactly as it will appear after creation. Select a date to inspect or change its schedule.
       </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Instructional days" value={String(result.summary.instructionalDayCount)} />
-        <MetricCard label="No-school days" value={String(result.summary.noSchoolWeekdayCount)} />
-        <MetricCard label="Schedules detected" value={String(resolutions.length)} />
-        <MetricCard label="Need bell times" value={String(schedulesNeedingTimes.length)} />
-        <MetricCard label="Special days" value={String(importResult.specialDays.length)} />
-        <MetricCard label="Unresolved items" value={String(unresolvedDays.length)} />
-        <MetricCard label="Low confidence" value={String(lowConfidenceCount)} />
-      </div>
-
+      {countReview && (
+        <section className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/20" aria-labelledby="instructional-count-review-title">
+          <h3 id="instructional-count-review-title" className="text-lg font-bold text-amber-950 dark:text-amber-100">
+            Instructional-Day Count Review
+          </h3>
+          <p className="mt-2 font-bold text-amber-950 dark:text-amber-100">
+            Instructional-day count needs review
+          </p>
+          <p className="mt-1 text-sm leading-6 text-amber-900 dark:text-amber-100">
+            The PDF states {countReview.declaredInstructionalDayCount} instructional days, but Sundial currently identifies {result.summary.instructionalDayCount}. Review the additional dates below and decide how each should be classified.
+          </p>
+          <dl className="mt-4 grid gap-3 sm:grid-cols-3">
+            <CompactSummaryItem label="PDF-declared count" value={String(countReview.declaredInstructionalDayCount)} />
+            <CompactSummaryItem label="Current preview count" value={String(result.summary.instructionalDayCount)} />
+            <CompactSummaryItem label="Difference" value={`${result.summary.instructionalDayCount - countReview.declaredInstructionalDayCount >= 0 ? "+" : ""}${result.summary.instructionalDayCount - countReview.declaredInstructionalDayCount}`} />
+          </dl>
+          <div className="mt-4">
+            <p className="text-sm font-bold text-amber-950 dark:text-amber-100">Dates needing review:</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {countReview.discrepancyDates.map((item) => (
+                <button
+                  key={item.date}
+                  type="button"
+                  onClick={() => {
+                    setMonthKey(item.date.slice(0, 7));
+                    setSelectedDate(item.date);
+                    setEditorEdit(null);
+                  }}
+                  className={[
+                    subtleButtonClass,
+                    item.reviewed
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100"
+                      : "border-amber-400 bg-white text-amber-950 dark:bg-black dark:text-amber-100",
+                  ].join(" ")}
+                >
+                  {item.reviewed ? "✓" : "!"} {formatDateForDisplay(item.date)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="mt-4 block text-sm font-bold text-amber-950 dark:text-amber-100">
+            Review note (optional)
+            <textarea
+              className="mt-2 min-h-20 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 dark:border-amber-800 dark:bg-black dark:text-white"
+              value={countReview.reviewNote || ""}
+              onChange={(event) => onImportResultChange(
+                acknowledgeInstructionalDayCountReview(
+                  importResult,
+                  result.summary.instructionalDayCount,
+                  countReview.acknowledged,
+                  event.target.value
+                )
+              )}
+            />
+          </label>
+          <label className="mt-4 flex items-start gap-3 text-sm font-bold text-amber-950 dark:text-amber-100">
+            <input
+              type="checkbox"
+              className="mt-1"
+              disabled={countReviewState.unresolvedDates.length > 0}
+              checked={countReviewState.status === "acknowledged"}
+              onChange={(event) => onImportResultChange(
+                acknowledgeInstructionalDayCountReview(
+                  importResult,
+                  result.summary.instructionalDayCount,
+                  event.target.checked,
+                  countReview.reviewNote
+                )
+              )}
+            />
+            <span>
+              I reviewed the instructional-day count difference and confirm the calendar classifications.
+              {countReviewState.unresolvedDates.length > 0 && (
+                <span className="mt-1 block font-semibold">Review all {countReviewState.unresolvedDates.length} remaining dates first.</span>
+              )}
+            </span>
+          </label>
+        </section>
+      )}
       {(brownGoldConflicts.length > 0 || deterministicConflicts.length > 0 || unresolvedDays.length > 0 || unreviewedRequiredAssignmentDates.length > 0) && (
         <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
           <p className="font-bold">Fix these preview issues before creating the calendar:</p>
@@ -3925,32 +4010,6 @@ function AiImportedCalendarPreview({
         </div>
       )}
 
-      {showBrownGoldVerification && (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-[#242424]">
-          <h3 className="text-sm font-bold">Assignment Verification</h3>
-          <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            First instructional day and first two instructional weeks must match the visual calendar.
-          </p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {brownGoldRows.map((row) => (
-              <div
-                key={row.date}
-                className={[
-                  "rounded-lg border p-3 text-xs font-semibold",
-                  row.matches
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100"
-                    : "border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100",
-                ].join(" ")}
-              >
-                <p className="font-bold">{formatDateForDisplay(row.date)}</p>
-                <p>Expected: {row.expected}</p>
-                <p>Preview: {row.actual}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
         <SchoolCalendarMonthGrid
           month={new Date(`${monthKey}-01T00:00:00Z`)}
@@ -3959,7 +4018,9 @@ function AiImportedCalendarPreview({
             scheduleId: day.scheduleId,
             label: day.labels.join(", ") || null,
             isSchoolDay: day.isSchoolDay,
+            isNoSchoolDay: day.isOperatingDay && !day.isSchoolDay,
             hasConflict: day.warningCodes.length > 0 || brownGoldConflicts.some((conflict) => conflict.date === day.date),
+            needsReview: countReviewDates.has(day.date),
           }))}
           schedules={[...scheduleMap.values()].map((schedule) => ({ id: schedule.id, name: schedule.name, type: schedule.type, calendarColor: schedule.calendarColor, setupStatus: schedule.setupStatus }))}
           selectedDate={selectedDate}
@@ -3974,14 +4035,28 @@ function AiImportedCalendarPreview({
           ) : (
             <div className="mt-4 space-y-3 text-sm">
               <SummaryRow label="Date" value={formatDateForDisplay(selectedDay.date)} />
-              <SummaryRow label="Classification" value={selectedDay.isSchoolDay ? "Instructional day" : "No school"} />
+              <SummaryRow
+                label="Classification"
+                value={selectedDay.classification === "staff_only"
+                  ? "Staff-only / inservice"
+                  : selectedDay.classification === "neutral_non_operating"
+                    ? "Informational / non-operating"
+                    : selectedDay.isSchoolDay
+                      ? "Instructional day"
+                      : "No school"}
+              />
+              <SummaryRow label="Counts as instructional" value={selectedDay.isSchoolDay ? "Yes" : "No"} />
+              {selectedCountReviewDate && (
+                <SummaryRow label="PDF source label" value={selectedCountReviewDate.sourceLabel || "Not provided"} />
+              )}
               <SummaryRow label="Assigned schedule" value={getScheduleName(scheduleMap, selectedDay.scheduleId)} />
               <SummaryRow label="Normal pattern" value={getScheduleName(scheduleMap, selectedDay.baseScheduleId)} />
               <SummaryRow label="Notes" value={selectedDay.labels.join(", ") || "None"} />
               <SummaryRow
                 label="Source"
-                value={assignmentSourceLabel(selectedDay.assignmentSource)}
+                value={assignmentSourcePresentation(selectedDay.assignmentSource).friendly}
               />
+              <SummaryRow label="Internal source" value={assignmentSourcePresentation(selectedDay.assignmentSource).internal} />
               <SummaryRow
                 label="Confidence"
                 value={selectedDatedAssignment?.confidence !== undefined
@@ -4009,11 +4084,32 @@ function AiImportedCalendarPreview({
 
               <div className="space-y-3 border-t border-slate-200 pt-3 dark:border-slate-700">
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
+                    Classification
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-[#242424] dark:text-white"
+                      value={editor.classification}
+                      onChange={(event) => {
+                        const classification = event.target.value as CalendarDateClassification;
+                        setEditorEdit({
+                          ...editor,
+                          classification,
+                          scheduleId: classification === "instructional" ? editor.scheduleId : "",
+                        });
+                      }}
+                    >
+                      <option value="instructional">Instructional day</option>
+                      <option value="no_school">No school</option>
+                      <option value="staff_only">Staff-only / inservice</option>
+                      <option value="neutral_non_operating">Informational / non-operating</option>
+                      <option value="removed_from_coverage">Remove from calendar coverage</option>
+                    </select>
+                  </label>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                     Schedule
                     <select
                       className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-[#242424] dark:text-white"
                       value={editor.scheduleId}
-                      disabled={!editor.isSchoolDay}
+                      disabled={editor.classification !== "instructional"}
                       onChange={(event) => setEditorEdit({ ...editor, scheduleId: event.target.value })}
                     >
                       <option value="">No schedule</option>
@@ -4030,7 +4126,9 @@ function AiImportedCalendarPreview({
                     </select>
                   </label>
                   <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
-                    Optional Note / Event Name
+                    {editor.classification === "staff_only"
+                      ? "Staff-only label"
+                      : "Optional Note / Event Name"}
                     <input
                       className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-[#242424] dark:text-white"
                       placeholder="Event or note"
@@ -4038,11 +4136,12 @@ function AiImportedCalendarPreview({
                       onChange={(event) => setEditorEdit({ ...editor, note: event.target.value })}
                     />
                   </label>
-                  <label className="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-300">
-                    <input type="checkbox" checked={editor.isSchoolDay} onChange={(event) => setEditorEdit({ ...editor, isSchoolDay: event.target.checked, scheduleId: event.target.checked ? editor.scheduleId : "" })} />
-                    School Day
-                  </label>
-                  {editor.isSchoolDay && <CalendarScheduleDetails schedule={editor.scheduleId ? (() => { const schedule = scheduleMap.get(editor.scheduleId); return schedule ? { id: schedule.id, name: schedule.name, type: schedule.type, calendarColor: schedule.calendarColor, setupStatus: schedule.setupStatus } : null; })() : null} />}
+                  {editor.classification === "staff_only" && (
+                    <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs font-semibold text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100">
+                      Staff-only dates remain visible, do not count as student instruction, need no student schedule, and do not advance the rotation.
+                    </p>
+                  )}
+                  {editor.classification === "instructional" && <CalendarScheduleDetails schedule={editor.scheduleId ? (() => { const schedule = scheduleMap.get(editor.scheduleId); return schedule ? { id: schedule.id, name: schedule.name, type: schedule.type, calendarColor: schedule.calendarColor, setupStatus: schedule.setupStatus } : null; })() : null} />}
                   <button type="button" onClick={saveSelectedDate} className={sundialPrimaryButtonClass("w-full")}>
                     Save Preview Day
                   </button>
@@ -4064,18 +4163,6 @@ function AiImportedCalendarPreview({
         </aside>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-        {[...scheduleMap.values()].slice(0, 12).map((schedule) => (
-          <span key={schedule.id} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2 py-1 dark:border-slate-700">
-            <span
-              className="h-2.5 w-2.5 rounded-full"
-              style={getScheduleDotStyle(getScheduleCalendarColor(schedule))}
-              aria-hidden="true"
-            />
-            {schedule.name}
-          </span>
-        ))}
-      </div>
     </ReviewPanel>
   );
 }
@@ -4099,42 +4186,65 @@ function ReviewPanel({
   );
 }
 
-function ChecklistGroup({
-  title,
-  items,
-}: {
-  title: string;
-  items: Array<[string, boolean]>;
-}) {
+function CompactSummaryItem({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <h5 className="text-sm font-bold text-slate-900 dark:text-white">{title}</h5>
-      <ul className="mt-3 space-y-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-        {items.map(([label, complete]) => (
-          <li key={label} className="flex items-center gap-2">
-            <span
-              className={[
-                "grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs font-black",
-                complete
-                  ? "bg-emerald-500 text-white"
-                  : "bg-slate-200 text-slate-500 dark:bg-slate-800",
-              ].join(" ")}
-            >
-              {complete ? "✓" : "○"}
-            </span>
-            <span>{label}</span>
-          </li>
-        ))}
-      </ul>
+    <div className="min-w-0">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-slate-900 dark:text-white">{value}</p>
     </div>
   );
 }
 
-function ReviewLine({ label, value }: { label: string; value: string }) {
+function ReadinessChecklist({
+  items,
+}: {
+  items: ReturnType<typeof buildAiReviewReadiness>;
+}) {
+  const failedCount = items.filter((item) => item.status === "fail").length;
+  const warningCount = items.filter((item) => item.status === "warning").length;
   return (
-    <div className="flex items-start justify-between gap-4 text-sm">
-      <span className="font-semibold text-slate-600 dark:text-slate-300">{label}</span>
-      <span className="text-right font-bold">{value}</span>
+    <div>
+      <p className={[
+        "rounded-xl border p-3 text-sm font-bold",
+        failedCount > 0
+          ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-100"
+          : warningCount > 0
+            ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100"
+            : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100",
+      ].join(" ")}>
+        {failedCount > 0
+          ? `Blocked · ${failedCount} item${failedCount === 1 ? "" : "s"} need attention`
+          : warningCount > 0
+            ? `Ready · ${warningCount} non-blocking item${warningCount === 1 ? "" : "s"} can be completed later`
+            : "Ready · All required checks passed"}
+      </p>
+      <ul className="mt-3 grid gap-2 md:grid-cols-2">
+        {items.map((item) => (
+          <li key={item.label} className={[
+            "flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold",
+            item.status === "pass"
+              ? "text-emerald-800 dark:text-emerald-200"
+              : item.status === "warning"
+                ? "text-amber-800 dark:text-amber-200"
+                : "text-red-700 dark:text-red-200",
+          ].join(" ")}>
+            <span
+              aria-hidden="true"
+              className={[
+                "grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs font-black",
+                item.status === "pass"
+                  ? "bg-emerald-500 text-white"
+                  : item.status === "warning"
+                    ? "bg-amber-400 text-amber-950"
+                    : "bg-red-500 text-white",
+              ].join(" ")}
+            >
+              {item.status === "pass" ? "✓" : item.status === "warning" ? "!" : "×"}
+            </span>
+            <span>{item.label}{item.detail ? ` · ${item.detail}` : ""}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -4440,22 +4550,158 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function draftUsesSchedule(draft: WizardDraft, scheduleId: string) {
+  return (
+    draft.sameScheduleId === scheduleId ||
+    draft.repeatingScheduleIds.includes(scheduleId) ||
+    Object.values(draft.weekdaySchedules).includes(scheduleId) ||
+    draft.specialDays.some((day) => day.scheduleId === scheduleId)
+  );
+}
+
+function GuidedScheduleNameManager({
+  school,
+  schedules,
+  createdScheduleIds,
+  draft,
+  onClose,
+  onCreated,
+  onRenamed,
+  onDeleted,
+}: {
+  school: string;
+  schedules: WizardScheduleSummary[];
+  createdScheduleIds: string[];
+  draft: WizardDraft;
+  onClose: () => void;
+  onCreated: (schedule: WizardScheduleSummary) => void;
+  onRenamed: (scheduleId: string, name: string) => void;
+  onDeleted: (scheduleId: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function createName() {
+    setSaving(true);
+    setMessage("");
+    const result = await createGuidedScheduleName(school, name);
+    setSaving(false);
+    if (result.status !== "success" || !result.schedule) {
+      setMessage(
+        result.status === "success"
+          ? "Sundial could not create that schedule."
+          : result.message
+      );
+      return;
+    }
+    onCreated(result.schedule);
+    setName("");
+    setMessage(`${result.schedule.name} is ready to assign. Add bell times later.`);
+  }
+
+  async function renameName(scheduleId: string) {
+    setSaving(true);
+    setMessage("");
+    const trimmedName = editingName.trim().replace(/\s+/g, " ");
+    const result = await renameGuidedScheduleName(school, scheduleId, trimmedName);
+    setSaving(false);
+    if (result.status !== "success") {
+      setMessage(result.message);
+      return;
+    }
+    onRenamed(scheduleId, trimmedName);
+    setEditingId(null);
+    setMessage("Schedule name updated.");
+  }
+
+  async function deleteName(scheduleId: string) {
+    if (draftUsesSchedule(draft, scheduleId)) {
+      setMessage("Change this schedule's draft assignments before deleting it.");
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    const result = await deleteUnusedGuidedScheduleName(school, scheduleId);
+    setSaving(false);
+    if (result.status !== "success") {
+      setMessage(result.message);
+      return;
+    }
+    onDeleted(scheduleId);
+    setMessage("Unused schedule deleted.");
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/55 px-4 py-8">
+      <section role="dialog" aria-modal="true" aria-labelledby="guided-schedule-manager-title" className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-[#242424]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="guided-schedule-manager-title" className="text-2xl font-bold">Schedule names</h2>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Create a name now and add periods or bell times from Schedules later.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className={subtleButtonClass}>Close</button>
+        </div>
+
+        <div className="mt-5 flex gap-3">
+          <label className="sr-only" htmlFor="guided-new-schedule-name">Schedule name</label>
+          <input id="guided-new-schedule-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Regular Schedule" maxLength={80} className={inputClass} />
+          <button type="button" disabled={saving || !name.trim()} onClick={() => void createName()} className={sundialPrimaryButtonClass("shrink-0")}>Add Schedule Name</button>
+        </div>
+
+        {message && <p role="status" className="mt-3 text-sm font-semibold text-amber-800 dark:text-amber-200">{message}</p>}
+
+        <div className="mt-6 space-y-3">
+          {schedules.map((schedule) => (
+            <div key={schedule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+              {editingId === schedule.id ? (
+                <input value={editingName} onChange={(event) => setEditingName(event.target.value)} maxLength={80} className={inputClass} />
+              ) : (
+                <div>
+                  <p className="font-bold">{schedule.name}</p>
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-200">
+                    {schedule.setupStatus === "needs_times" ? "Needs bell times · selectable now" : "Ready"}
+                  </p>
+                </div>
+              )}
+              {createdScheduleIds.includes(schedule.id) && (
+                <div className="flex gap-2">
+                  {editingId === schedule.id ? (
+                    <button type="button" disabled={saving || !editingName.trim()} onClick={() => void renameName(schedule.id)} className={secondaryButtonClass}>Save</button>
+                  ) : (
+                    <button type="button" onClick={() => { setEditingId(schedule.id); setEditingName(schedule.name); }} className={secondaryButtonClass}>Rename</button>
+                  )}
+                  <button type="button" disabled={saving} onClick={() => void deleteName(schedule.id)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 dark:border-red-900/60 dark:text-red-200">Delete</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function NormalScheduleStep({
   draft,
   schedules,
   scheduleMap,
-  adminBasePath,
   onAddTimesNow,
   errors,
   updateDraft,
+  onManageScheduleNames,
 }: {
   draft: WizardDraft;
   schedules: WizardScheduleSummary[];
   scheduleMap: Map<string, WizardScheduleSummary>;
-  adminBasePath: string;
   onAddTimesNow: (tempId: string, detectedName: string) => Promise<void>;
   errors: StepErrors;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
+  onManageScheduleNames: () => void;
 }) {
   const preview = buildPreviewResult(draft);
   const previewDays = preview?.days.filter((calendarDay) => calendarDay.isSchoolDay).slice(0, 10) || [];
@@ -4472,27 +4718,6 @@ function NormalScheduleStep({
     ? getDetectedScheduleUsageCounts(draft.aiImport.result)
     : {};
 
-  if (schedules.length === 0) {
-    return (
-      <div>
-        <h2 className="text-2xl font-bold">What Does a Normal School Week Look Like?</h2>
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 dark:border-amber-900/60 dark:bg-amber-950/20">
-          <h3 className="text-lg font-bold">Create schedules first</h3>
-          <p className="mt-2 text-sm leading-6 text-amber-900 dark:text-amber-100">
-            You need at least one active schedule before creating a school-year calendar.
-            Your wizard draft is saved in this browser session before you leave.
-          </p>
-          <Link
-            href={`${adminBasePath}/schedules/new`}
-            className={sundialPrimaryButtonClass("mt-5")}
-          >
-            Create a Schedule
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   function update(partial: Partial<WizardDraft>) {
     updateDraft((previousDraft) => ({ ...previousDraft, ...partial }));
   }
@@ -4507,6 +4732,21 @@ function NormalScheduleStep({
         <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
           Choose how Sundial should assign schedules before special days and closures are applied.
         </p>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button type="button" onClick={onManageScheduleNames} className={secondaryButtonClass}>
+            + Add Schedule Name
+          </button>
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Periods and bell times can be added later.
+          </span>
+        </div>
+
+        {schedules.length === 0 && (
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm font-semibold text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+            Add a schedule name to start assigning instructional dates. No bell times are required.
+          </div>
+        )}
 
         <fieldset className="mt-6 grid gap-3">
           <legend className="sr-only">Normal schedule pattern</legend>
@@ -4595,6 +4835,7 @@ function NormalScheduleStep({
                 schedules={schedules}
                 onChange={(value) => update({ sameScheduleId: value })}
                 describedBy={errors.sameScheduleId ? "same-schedule-error" : undefined}
+                onCreateNew={onManageScheduleNames}
               />
               <ErrorText id="same-schedule-error">{errors.sameScheduleId}</ErrorText>
               <ScheduleSummaryText schedule={scheduleMap.get(draft.sameScheduleId)} />
@@ -4630,6 +4871,7 @@ function NormalScheduleStep({
                           next[index] = value;
                           update({ repeatingScheduleIds: next });
                         }}
+                        onCreateNew={onManageScheduleNames}
                       />
                       <div className="flex gap-2">
                         <button
@@ -4693,6 +4935,7 @@ function NormalScheduleStep({
                           },
                         })
                       }
+                      onCreateNew={onManageScheduleNames}
                     />
                     <ErrorText>{errors[`weekday-${weekday}`]}</ErrorText>
                   </div>
@@ -4896,12 +5139,14 @@ function SpecialSchoolDaysStep({
   scheduleMap,
   errors,
   updateDraft,
+  onManageScheduleNames,
 }: {
   draft: WizardDraft;
   schedules: WizardScheduleSummary[];
   scheduleMap: Map<string, WizardScheduleSummary>;
   errors: StepErrors;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
+  onManageScheduleNames: () => void;
 }) {
   function addSpecialDay() {
     updateDraft((previousDraft) => ({
@@ -4955,6 +5200,9 @@ function SpecialSchoolDaysStep({
         </div>
         <button type="button" onClick={addSpecialDay} className={sundialPrimaryButtonClass()}>
           Add Special Day
+        </button>
+        <button type="button" onClick={onManageScheduleNames} className={secondaryButtonClass}>
+          + Add Schedule Name
         </button>
       </div>
 
@@ -5045,6 +5293,7 @@ function SpecialSchoolDaysStep({
                     value={specialDay.scheduleId || ""}
                     schedules={schedules}
                     onChange={(value) => updateSpecialDay(specialDay.id!, { scheduleId: value })}
+                    onCreateNew={onManageScheduleNames}
                   />
                   <ErrorText>{errors[`special-${specialDay.id}-schedule`]}</ErrorText>
                 </label>
@@ -5198,6 +5447,19 @@ function ReviewCalendarStep({
     );
   }
 
+  const schedulesToFinish = Array.from(
+    new Set(
+      result.days
+        .filter((day) => day.isSchoolDay && day.scheduleId)
+        .map((day) => day.scheduleId as string)
+    )
+  )
+    .map((scheduleId) => scheduleMap.get(scheduleId))
+    .filter(
+      (schedule): schedule is WizardScheduleSummary =>
+        Boolean(schedule && schedule.setupStatus === "needs_times")
+    );
+
   return (
     <div>
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -5235,6 +5497,18 @@ function ReviewCalendarStep({
           </button>
         ))}
       </div>
+
+      {schedulesToFinish.length > 0 && (
+        <section className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 p-5 dark:border-sky-900/60 dark:bg-sky-950/20">
+          <h3 className="text-lg font-bold text-sky-950 dark:text-sky-100">Schedules to finish later</h3>
+          <ul className="mt-3 space-y-1 text-sm font-semibold text-sky-900 dark:text-sky-100">
+            {schedulesToFinish.map((schedule) => <li key={schedule.id}>• {schedule.name}</li>)}
+          </ul>
+          <p className="mt-3 text-sm text-sky-900 dark:text-sky-100">
+            These schedules can be used to create your calendar now. Add their periods and bell times from the dashboard when they are available.
+          </p>
+        </section>
+      )}
 
       {result.warnings.length > 0 && (
         <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900/60 dark:bg-amber-950/20">

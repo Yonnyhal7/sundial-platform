@@ -1,1 +1,1 @@
-export const AI_CALENDAR_ANALYSIS_VERSION = "calendar-v9";
+export const AI_CALENDAR_ANALYSIS_VERSION = "calendar-v11";

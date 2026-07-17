@@ -19,6 +19,10 @@ export type AiWizardDraftShape = {
     label: string;
     startDate: string;
     endDate: string;
+    calendarCoverageStart?: string;
+    calendarCoverageEnd?: string;
+    instructionalStart?: string;
+    instructionalEnd?: string;
     operatingWeekdays: Weekday[];
   };
   patternMode: "same" | "repeating" | "weekday";
@@ -82,6 +86,11 @@ function getUnresolvedRequiredScheduleIds(
   for (const assignment of importResult.datedScheduleAssignments || []) {
     required.add(assignment.scheduleTempId);
   }
+  for (const classification of importResult.dateClassifications || []) {
+    if (classification.classification === "instructional" && classification.scheduleTempId) {
+      required.add(classification.scheduleTempId);
+    }
+  }
 
   return [...required].filter((tempId) => !scheduleIdFor(tempId, resolutionsByTempId));
 }
@@ -97,6 +106,11 @@ export function getRequiredDetectedScheduleIds(importResult: AiCalendarImportRes
   for (const assignment of importResult.datedScheduleAssignments || []) {
     required.add(assignment.scheduleTempId);
   }
+  for (const classification of importResult.dateClassifications || []) {
+    if (classification.classification === "instructional" && classification.scheduleTempId) {
+      required.add(classification.scheduleTempId);
+    }
+  }
 
   return [...required];
 }
@@ -107,6 +121,14 @@ export function getDetectedScheduleUsageCounts(importResult: AiCalendarImportRes
       name: importResult.schoolYear.label,
       startDate: importResult.schoolYear.startDate,
       endDate: importResult.schoolYear.endDate,
+      calendarCoverageStart:
+        importResult.schoolYear.calendarCoverageStart || importResult.schoolYear.startDate,
+      calendarCoverageEnd:
+        importResult.schoolYear.calendarCoverageEnd || importResult.schoolYear.endDate,
+      instructionalStart:
+        importResult.schoolYear.instructionalStart || importResult.schoolYear.startDate,
+      instructionalEnd:
+        importResult.schoolYear.instructionalEnd || importResult.schoolYear.endDate,
     },
     operatingWeekdays: importResult.schoolYear.operatingWeekdays,
     pattern:
@@ -146,6 +168,10 @@ export function getDetectedScheduleUsageCounts(importResult: AiCalendarImportRes
       rotationBehavior: assignment.rotationBehavior,
     })),
     informationalDates: importResult.informationalDates,
+    dateClassifications: (importResult.dateClassifications || []).map((classification) => ({
+      ...classification,
+      scheduleId: classification.scheduleTempId,
+    })),
   };
 
   return generateSchoolYearCalendar(config).summary.countByActualSchedule;
@@ -274,6 +300,14 @@ export function convertAiImportToWizardDraft<TDraft extends AiWizardDraftShape>(
         label: importResult.schoolYear.label || currentDraft.schoolYear.label,
         startDate: importResult.schoolYear.startDate,
         endDate: importResult.schoolYear.endDate,
+        calendarCoverageStart:
+          importResult.schoolYear.calendarCoverageStart || importResult.schoolYear.startDate,
+        calendarCoverageEnd:
+          importResult.schoolYear.calendarCoverageEnd || importResult.schoolYear.endDate,
+        instructionalStart:
+          importResult.schoolYear.instructionalStart || importResult.schoolYear.startDate,
+        instructionalEnd:
+          importResult.schoolYear.instructionalEnd || importResult.schoolYear.endDate,
         operatingWeekdays: importResult.schoolYear.operatingWeekdays,
       },
       patternMode: importResult.pattern.type,

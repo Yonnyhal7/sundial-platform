@@ -1,5 +1,10 @@
 import { isDateString } from "./dateUtils";
-import type { PatternType, RotationBehavior, Weekday } from "./types";
+import type {
+  CalendarDateClassification,
+  PatternType,
+  RotationBehavior,
+  Weekday,
+} from "./types";
 
 export type AiImportConfidence = "high" | "review" | "uncertain";
 
@@ -28,6 +33,10 @@ export type AiDetectedSchoolYear = {
   label?: string;
   startDate: string;
   endDate: string;
+  calendarCoverageStart?: string;
+  calendarCoverageEnd?: string;
+  instructionalStart?: string;
+  instructionalEnd?: string;
   operatingWeekdays: Weekday[];
   confidence: AiImportConfidence;
   evidence?: AiImportEvidence;
@@ -130,6 +139,31 @@ export type AiImportWarningResolution = {
   note?: string;
 };
 
+export type AiDateClassification = {
+  date: string;
+  classification: CalendarDateClassification;
+  scheduleTempId?: string | null;
+  label?: string;
+  sourceLabel?: string;
+  confidence?: number;
+  rotationBehavior?: RotationBehavior;
+};
+
+export type AiInstructionalDayCountReviewDate = AiDateClassification & {
+  initialClassification: CalendarDateClassification;
+  reviewed: boolean;
+};
+
+export type AiInstructionalDayCountReview = {
+  reasonCode: "instructional_day_count_mismatch";
+  declaredInstructionalDayCount: number;
+  generatedInstructionalDayCount: number;
+  discrepancyDates: AiInstructionalDayCountReviewDate[];
+  acknowledged: boolean;
+  finalApprovedInstructionalDayCount?: number;
+  reviewNote?: string;
+};
+
 export type AiCalendarImportResult = {
   schemaVersion: 1;
   source: "mock" | "openai";
@@ -137,6 +171,8 @@ export type AiCalendarImportResult = {
   documentTitle?: string | null;
   detectedSchoolName?: string | null;
   expectedInstructionalDayCount?: number | null;
+  declaredInstructionalDayCount?: number | null;
+  generatedInstructionalDayCount?: number | null;
   legendInterpretation?: string | null;
   extractionNotes?: string | null;
   usage?: {
@@ -184,6 +220,8 @@ export type AiCalendarImportResult = {
     requiredDates: string[];
     reviewedDates: string[];
   };
+  dateClassifications?: AiDateClassification[];
+  instructionalDayCountReview?: AiInstructionalDayCountReview;
 };
 
 export type DetectedScheduleResolutionStatus =
@@ -326,6 +364,13 @@ export function getAiImportValidationReasonCode(
 
 const confidenceValues = new Set<AiImportConfidence>(["high", "review", "uncertain"]);
 const patternValues = new Set<PatternType>(["same", "repeating", "weekday"]);
+const dateClassificationValues = new Set<CalendarDateClassification>([
+  "instructional",
+  "no_school",
+  "staff_only",
+  "neutral_non_operating",
+  "removed_from_coverage",
+]);
 
 export function confidenceLabel(confidence: AiImportConfidence) {
   if (confidence === "high") return "Confident";
@@ -488,6 +533,18 @@ export function validateAiCalendarImportResult(value: unknown): AiImportValidati
   } else {
     assertDate(schoolYear.startDate, "schoolYear.startDate", errors, validationErrors);
     assertDate(schoolYear.endDate, "schoolYear.endDate", errors, validationErrors);
+    if (schoolYear.calendarCoverageStart !== undefined) {
+      assertDate(schoolYear.calendarCoverageStart, "schoolYear.calendarCoverageStart", errors, validationErrors);
+    }
+    if (schoolYear.calendarCoverageEnd !== undefined) {
+      assertDate(schoolYear.calendarCoverageEnd, "schoolYear.calendarCoverageEnd", errors, validationErrors);
+    }
+    if (schoolYear.instructionalStart !== undefined) {
+      assertDate(schoolYear.instructionalStart, "schoolYear.instructionalStart", errors, validationErrors);
+    }
+    if (schoolYear.instructionalEnd !== undefined) {
+      assertDate(schoolYear.instructionalEnd, "schoolYear.instructionalEnd", errors, validationErrors);
+    }
     if (
       !Array.isArray(schoolYear.operatingWeekdays) ||
       schoolYear.operatingWeekdays.length === 0 ||
@@ -715,6 +772,82 @@ export function validateAiCalendarImportResult(value: unknown): AiImportValidati
       assertString(date.label, `informationalDates.${index}.label`, errors, validationErrors);
       assertConfidence(date.confidence, `informationalDates.${index}.confidence`, errors, validationErrors);
     });
+  }
+
+  if (value.dateClassifications !== undefined) {
+    if (!Array.isArray(value.dateClassifications)) {
+      pushValidationError(errors, validationErrors, {
+        path: "dateClassifications",
+        code: "invalid_type",
+        expected: "array",
+        received: describeReceivedValue(value.dateClassifications),
+        required: false,
+      });
+    } else {
+      value.dateClassifications.forEach((classification, index) => {
+        if (!isRecord(classification)) {
+          pushValidationError(errors, validationErrors, {
+            path: `dateClassifications.${index}`,
+            code: "invalid_type",
+            expected: "object",
+            received: describeReceivedValue(classification),
+          });
+          return;
+        }
+        assertDate(classification.date, `dateClassifications.${index}.date`, errors, validationErrors);
+        if (!dateClassificationValues.has(classification.classification as CalendarDateClassification)) {
+          pushValidationError(errors, validationErrors, {
+            path: `dateClassifications.${index}.classification`,
+            code: "invalid_value",
+            expected: "supported calendar date classification",
+            received: describeReceivedValue(classification.classification),
+          });
+        }
+      });
+    }
+  }
+
+  if (value.instructionalDayCountReview !== undefined) {
+    const review = value.instructionalDayCountReview;
+    if (!isRecord(review)) {
+      pushValidationError(errors, validationErrors, {
+        path: "instructionalDayCountReview",
+        code: "invalid_type",
+        expected: "object",
+        received: describeReceivedValue(review),
+        required: false,
+      });
+    } else {
+      for (const field of [
+        "declaredInstructionalDayCount",
+        "generatedInstructionalDayCount",
+      ] as const) {
+        if (typeof review[field] !== "number" || !Number.isInteger(review[field]) || review[field] < 0) {
+          pushValidationError(errors, validationErrors, {
+            path: `instructionalDayCountReview.${field}`,
+            code: "invalid_type",
+            expected: "non-negative integer",
+            received: describeReceivedValue(review[field]),
+          });
+        }
+      }
+      if (!Array.isArray(review.discrepancyDates)) {
+        pushValidationError(errors, validationErrors, {
+          path: "instructionalDayCountReview.discrepancyDates",
+          code: "invalid_type",
+          expected: "array",
+          received: describeReceivedValue(review.discrepancyDates),
+        });
+      }
+      if (typeof review.acknowledged !== "boolean") {
+        pushValidationError(errors, validationErrors, {
+          path: "instructionalDayCountReview.acknowledged",
+          code: "invalid_type",
+          expected: "boolean",
+          received: describeReceivedValue(review.acknowledged),
+        });
+      }
+    }
   }
 
   if (!Array.isArray(value.warnings)) {

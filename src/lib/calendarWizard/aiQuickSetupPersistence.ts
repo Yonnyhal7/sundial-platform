@@ -289,6 +289,10 @@ export function getAiScheduleUsageDetails(
     (day) => day.isInstructional && day.scheduleTempId === tempId
   ).length + (importResult.datedScheduleAssignments || []).filter(
     (assignment) => assignment.scheduleTempId === tempId
+  ).length + (importResult.dateClassifications || []).filter(
+    (classification) =>
+      classification.classification === "instructional" &&
+      classification.scheduleTempId === tempId
   ).length;
 
   return {
@@ -327,6 +331,21 @@ function replaceScheduleReferences(
         ? { ...assignment, scheduleTempId: replacementScheduleId }
         : assignment
     ),
+    dateClassifications: importResult.dateClassifications?.map((classification) =>
+      classification.scheduleTempId === tempId
+        ? { ...classification, scheduleTempId: replacementScheduleId }
+        : classification
+    ),
+    instructionalDayCountReview: importResult.instructionalDayCountReview
+      ? {
+          ...importResult.instructionalDayCountReview,
+          discrepancyDates: importResult.instructionalDayCountReview.discrepancyDates.map((item) =>
+            item.scheduleTempId === tempId
+              ? { ...item, scheduleTempId: replacementScheduleId }
+              : item
+          ),
+        }
+      : undefined,
   };
 }
 
@@ -377,14 +396,8 @@ function removeScheduleReferencesAsNoSchool(
       existingNoSchoolKeys.add(key);
       return true;
     });
-  const affectedDayCount = new Set(affectedDates).size;
-
   return {
     ...importResult,
-    expectedInstructionalDayCount:
-      typeof importResult.expectedInstructionalDayCount === "number"
-        ? Math.max(0, importResult.expectedInstructionalDayCount - affectedDayCount)
-        : importResult.expectedInstructionalDayCount,
     detectedSchedules: importResult.detectedSchedules.filter(
       (schedule) => schedule.tempId !== tempId
     ),
@@ -399,6 +412,32 @@ function removeScheduleReferencesAsNoSchool(
     ].sort((a, b) => a.startDate.localeCompare(b.startDate)),
     specialDays: convertedSpecialDays,
     datedScheduleAssignments: convertedDatedAssignments,
+    dateClassifications: (importResult.dateClassifications || []).map((classification) =>
+      classification.scheduleTempId === tempId
+        ? {
+            ...classification,
+            classification: "no_school" as const,
+            scheduleTempId: null,
+          }
+        : classification
+    ),
+    instructionalDayCountReview: importResult.instructionalDayCountReview
+      ? {
+          ...importResult.instructionalDayCountReview,
+          acknowledged: false,
+          finalApprovedInstructionalDayCount: undefined,
+          discrepancyDates: importResult.instructionalDayCountReview.discrepancyDates.map((item) =>
+            item.scheduleTempId === tempId
+              ? {
+                  ...item,
+                  classification: "no_school" as const,
+                  scheduleTempId: null,
+                  reviewed: true,
+                }
+              : item
+          ),
+        }
+      : undefined,
   };
 }
 
@@ -506,6 +545,11 @@ export function collectReferencedScheduleIds(importResult: AiCalendarImportResul
   }
   for (const assignment of importResult.datedScheduleAssignments || []) {
     ids.add(assignment.scheduleTempId);
+  }
+  for (const classification of importResult.dateClassifications || []) {
+    if (classification.classification === "instructional" && classification.scheduleTempId) {
+      ids.add(classification.scheduleTempId);
+    }
   }
   return [...ids];
 }
@@ -688,6 +732,14 @@ export function resolveAiScheduleReferences(
         `${importResult.schoolYear.startDate.slice(0, 4)}-${importResult.schoolYear.endDate.slice(0, 4)}`,
       startDate: importResult.schoolYear.startDate,
       endDate: importResult.schoolYear.endDate,
+      calendarCoverageStart:
+        importResult.schoolYear.calendarCoverageStart || importResult.schoolYear.startDate,
+      calendarCoverageEnd:
+        importResult.schoolYear.calendarCoverageEnd || importResult.schoolYear.endDate,
+      instructionalStart:
+        importResult.schoolYear.instructionalStart || importResult.schoolYear.startDate,
+      instructionalEnd:
+        importResult.schoolYear.instructionalEnd || importResult.schoolYear.endDate,
     },
     operatingWeekdays: importResult.schoolYear.operatingWeekdays,
     pattern,
@@ -728,6 +780,12 @@ export function resolveAiScheduleReferences(
       date: date.date,
       label: date.label,
     })),
+    dateClassifications: (importResult.dateClassifications || []).map((classification) => ({
+      ...classification,
+      scheduleId: classification.scheduleTempId
+        ? mapTempId(classification.scheduleTempId, tempToScheduleId)
+        : null,
+    })),
   };
 }
 
@@ -760,6 +818,11 @@ export function collectUnmappedTemporaryScheduleIds(config: CalendarWizardConfig
   for (const specialDay of config.specialDays || []) {
     if (containsTemporaryScheduleId(specialDay.scheduleId)) {
       ids.add(specialDay.scheduleId as string);
+    }
+  }
+  for (const classification of config.dateClassifications || []) {
+    if (containsTemporaryScheduleId(classification.scheduleId)) {
+      ids.add(classification.scheduleId as string);
     }
   }
 

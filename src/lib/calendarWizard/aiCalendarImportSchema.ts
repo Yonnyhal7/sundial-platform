@@ -5,6 +5,8 @@ export const aiCalendarImportJsonSchema = {
     documentTitle: { type: ["string", "null"] },
     detectedSchoolName: { type: ["string", "null"] },
     schoolYearLabel: { type: ["string", "null"] },
+    calendarCoverageStart: { type: ["string", "null"] },
+    calendarCoverageEnd: { type: ["string", "null"] },
     firstInstructionalDate: { type: "string" },
     lastInstructionalDate: { type: "string" },
     operatingWeekdays: {
@@ -157,6 +159,8 @@ export const aiCalendarImportJsonSchema = {
     "documentTitle",
     "detectedSchoolName",
     "schoolYearLabel",
+    "calendarCoverageStart",
+    "calendarCoverageEnd",
     "firstInstructionalDate",
     "lastInstructionalDate",
     "operatingWeekdays",

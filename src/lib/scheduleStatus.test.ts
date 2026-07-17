@@ -72,8 +72,8 @@ describe("schedule setup status", () => {
       "utf8"
     );
 
-    expect(source).toContain("Bell times needed");
-    expect(source).toContain('"Add Bell Times"');
+    expect(source).toContain("Needs bell times");
+    expect(source).toContain('"Add Periods"');
   });
 
   it("marks schedules ready after bell times are added later", () => {

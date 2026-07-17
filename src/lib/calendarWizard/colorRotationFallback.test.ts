@@ -41,7 +41,7 @@ describe("color rotation deterministic-failure behavior", () => {
   it("requires each inferred date to be explicitly saved by the administrator", () => {
     const result = requireColorRotationFallbackReview(fallbackResult(), ["vector_failed"]);
     const reviewed = updateAiImportPreviewDay(result, {
-      date: "2026-08-12", scheduleTempId: "gold", isSchoolDay: true,
+      date: "2026-08-12", scheduleTempId: "gold", classification: "instructional",
       note: "Verified first day", rotationBehavior: "pause",
     });
     expect(reviewed.specialDays.find((day) => day.startDate === "2026-08-12")).toMatchObject({

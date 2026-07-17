@@ -2,8 +2,10 @@ import type { AiCalendarImportResult } from "./aiImportTypes";
 import type {
   CalendarGenerationResult,
   CalendarWizardConfig,
+  CalendarDateClassification,
   Weekday,
 } from "./types";
+import { updateInstructionalDayCountReviewDate } from "./instructionalDayCountReview";
 
 export type AiPreviewScheduleSummary = {
   id: string;
@@ -41,6 +43,14 @@ export function buildAiPreviewConfig(
       name: importResult.schoolYear.label,
       startDate: importResult.schoolYear.startDate,
       endDate: importResult.schoolYear.endDate,
+      calendarCoverageStart:
+        importResult.schoolYear.calendarCoverageStart || importResult.schoolYear.startDate,
+      calendarCoverageEnd:
+        importResult.schoolYear.calendarCoverageEnd || importResult.schoolYear.endDate,
+      instructionalStart:
+        importResult.schoolYear.instructionalStart || importResult.schoolYear.startDate,
+      instructionalEnd:
+        importResult.schoolYear.instructionalEnd || importResult.schoolYear.endDate,
     },
     operatingWeekdays: importResult.schoolYear.operatingWeekdays,
     pattern,
@@ -65,6 +75,10 @@ export function buildAiPreviewConfig(
       rotationBehavior: assignment.rotationBehavior,
     })),
     informationalDates: importResult.informationalDates,
+    dateClassifications: (importResult.dateClassifications || []).map((classification) => ({
+      ...classification,
+      scheduleId: classification.scheduleTempId,
+    })),
   };
 }
 
@@ -90,7 +104,7 @@ function withoutDateFromRanges<T extends { id: string; startDate: string; endDat
 export function updateAiImportPreviewDay(importResult: AiCalendarImportResult, edit: {
   date: string;
   scheduleTempId: string | null;
-  isSchoolDay: boolean;
+  classification: CalendarDateClassification;
   note: string;
   rotationBehavior?: "advance" | "pause" | "restart";
 }) {
@@ -99,8 +113,11 @@ export function updateAiImportPreviewDay(importResult: AiCalendarImportResult, e
   const informationalDates = importResult.informationalDates.filter(
     (item) => item.id !== `manual-info-${edit.date}`
   );
+  const dateClassifications = (importResult.dateClassifications || []).filter(
+    (item) => item.date !== edit.date
+  );
 
-  if (edit.isSchoolDay) {
+  if (edit.classification === "instructional") {
     specialDays.push({
       id: `manual-special-${edit.date}`,
       startDate: edit.date,
@@ -115,7 +132,7 @@ export function updateAiImportPreviewDay(importResult: AiCalendarImportResult, e
       assignmentSource: "administrator",
       assignmentConfidence: 1,
     });
-  } else {
+  } else if (edit.classification === "no_school") {
     noSchoolRanges.push({
       id: `manual-no-school-${edit.date}`,
       startDate: edit.date,
@@ -126,6 +143,20 @@ export function updateAiImportPreviewDay(importResult: AiCalendarImportResult, e
       evidence: { explanation: "Administrator preview edit" },
     });
   }
+
+  const classification = {
+    date: edit.date,
+    classification: edit.classification,
+    scheduleTempId: edit.classification === "instructional" ? edit.scheduleTempId : null,
+    label: edit.note.trim() || undefined,
+    sourceLabel:
+      importResult.instructionalDayCountReview?.discrepancyDates.find(
+        (item) => item.date === edit.date
+      )?.sourceLabel,
+    confidence: 1,
+    rotationBehavior: edit.rotationBehavior || "pause",
+  };
+  dateClassifications.push(classification);
 
   if (edit.note.trim()) {
     informationalDates.push({
@@ -145,7 +176,17 @@ export function updateAiImportPreviewDay(importResult: AiCalendarImportResult, e
           : importResult.assignmentReview.reviewedDates,
       }
     : undefined;
-  return { ...importResult, noSchoolRanges, specialDays, informationalDates, assignmentReview };
+  return updateInstructionalDayCountReviewDate(
+    {
+      ...importResult,
+      noSchoolRanges,
+      specialDays,
+      informationalDates,
+      dateClassifications,
+      assignmentReview,
+    },
+    classification
+  );
 }
 
 export function getUnreviewedRequiredAssignmentDates(importResult: AiCalendarImportResult) {

@@ -119,7 +119,7 @@ export function mergeVectorCalendarAssignments(
     ...genuineVectorSpecialDays,
   ].sort((a, b) => a.startDate.localeCompare(b.startDate));
 
-  const firstDate = importResult.schoolYear.startDate;
+  const firstDate = importResult.schoolYear.instructionalStart || importResult.schoolYear.startDate;
   const first = vector.assignments.find((assignment) => assignment.date === firstDate);
   const warnings = importResult.warnings.filter((warning) => warning.code !== "first_instructional_schedule_unresolved");
   if (!first || first.confidence < 0.95) {
@@ -161,7 +161,7 @@ export function mergeVectorCalendarAssignments(
 
 export function ensureFirstInstructionalAnchor(importResult: AiCalendarImportResult) {
   if (importResult.firstInstructionalAssignment) return importResult;
-  const firstDate = importResult.schoolYear.startDate;
+  const firstDate = importResult.schoolYear.instructionalStart || importResult.schoolYear.startDate;
   const explicitTextDay = importResult.specialDays.find((day) =>
     day.startDate === firstDate && day.endDate === firstDate && day.isInstructional &&
     day.scheduleTempId && day.evidence?.sourceText

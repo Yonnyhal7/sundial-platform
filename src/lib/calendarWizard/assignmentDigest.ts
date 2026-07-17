@@ -6,6 +6,11 @@ export type AssignmentDigestDay = {
   scheduleId: string | null;
 };
 
+export type ClassificationDigestDay = AssignmentDigestDay & {
+  classification?: string;
+  labels?: string[];
+};
+
 export function buildAssignmentDigestPayload(
   days: AssignmentDigestDay[],
   scheduleNameForId: (scheduleId: string) => string | undefined
@@ -51,6 +56,29 @@ export async function computeAssignmentDigest(
   const bytes = new TextEncoder().encode(
     JSON.stringify(buildAssignmentDigestPayload(days, scheduleNameForId))
   );
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export async function computeCalendarClassificationDigest(
+  days: ClassificationDigestDay[],
+  scheduleNameForId: (scheduleId: string) => string | undefined
+) {
+  const normalized = days
+    .map((day) => ({
+      date: day.date,
+      classification:
+        day.classification || (day.isSchoolDay ? "instructional" : "no_school"),
+      finalScheduleCanonicalKey:
+        day.isSchoolDay && day.scheduleId
+          ? canonicalScheduleName(scheduleNameForId(day.scheduleId) || day.scheduleId)
+          : null,
+      labels: [...new Set(day.labels || [])].sort(),
+    }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const bytes = new TextEncoder().encode(JSON.stringify(normalized));
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(hash))
     .map((byte) => byte.toString(16).padStart(2, "0"))

@@ -17,6 +17,9 @@ export function collectStoredDraftScheduleIds(data: CalendarWizardStoredData) {
   draft.aiImport?.resolutions.forEach((resolution) =>
     add(resolution.matchedExistingScheduleId)
   );
+  draft.aiImport?.result?.dateClassifications?.forEach((classification) =>
+    add(classification.scheduleTempId)
+  );
 
   return [...ids];
 }
