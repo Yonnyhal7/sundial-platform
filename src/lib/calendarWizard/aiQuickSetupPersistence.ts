@@ -16,7 +16,6 @@ import { getAiScheduleDefaultColor, normalizeHexColor } from "@/lib/scheduleColo
 import type { CalendarDayInsertRow } from "./persistence";
 import type {
   CalendarGenerationWarning,
-  CalendarGenerationWarningCode,
   CalendarWizardConfig,
   Weekday,
 } from "./types";
@@ -80,7 +79,11 @@ type ClassifiableCalendarWarning =
   | AiImportWarning
   | (CalendarGenerationWarning & { severity?: AiImportWarning["severity"] });
 
-export type CalendarWarningClassificationKind = "blocking" | "review" | "informational";
+export type CalendarWarningClassificationKind =
+  | "blocking"
+  | "needs_review"
+  | "automatically_resolved"
+  | "informational";
 
 export type ClassifiedCalendarWarning = ClassifiableCalendarWarning & {
   classification: CalendarWarningClassificationKind;
@@ -89,31 +92,49 @@ export type ClassifiedCalendarWarning = ClassifiableCalendarWarning & {
 
 export type CalendarWarningClassification = {
   blockingWarnings: ClassifiedCalendarWarning[];
-  reviewWarnings: ClassifiedCalendarWarning[];
+  needsReviewWarnings: ClassifiedCalendarWarning[];
+  automaticallyResolvedWarnings: ClassifiedCalendarWarning[];
   informationalWarnings: ClassifiedCalendarWarning[];
+  unacknowledgedReviewWarnings: ClassifiedCalendarWarning[];
+  acknowledgedReviewWarnings: ClassifiedCalendarWarning[];
+  /** Compatibility aliases for callers that still use the former names. */
+  reviewWarnings: ClassifiedCalendarWarning[];
   unresolvedReviewWarnings: ClassifiedCalendarWarning[];
   resolvedReviewWarnings: ClassifiedCalendarWarning[];
 };
 
-const blockingGeneratorWarningCodes = new Set<CalendarGenerationWarningCode>([
+const blockingWarningCodes = new Set([
   "start_date_after_end_date",
+  "school_year_dates_reversed",
+  "invalid_school_year_range",
+  "invalid_date_value",
   "no_operating_weekdays",
-  "overlapping_special_days",
-  "special_day_overlaps_no_school",
   "instructional_day_missing_schedule",
   "weekday_pattern_missing_schedule",
   "repeating_pattern_missing_schedules",
+  "unknown_pattern_schedule_reference",
+  "unknown_special_day_schedule_reference",
+  "unresolved_schedule_reference",
+  "schedule_assignment_wrong_school",
+  "orphaned_schedule_reference",
+]);
+
+const needsReviewWarningCodes = new Set([
+  "instructional_day_count_mismatch",
+  "schedule_resolution_required",
+  "special_day_outside_school_year",
+  "no_school_range_outside_year",
+  "overlapping_special_days",
   "duplicate_special_day",
 ]);
 
-const reviewOnlyWarningCodes = new Set([
+const automaticallyResolvedWarningCodes = new Set([
   "duplicate_import_item_removed",
-  "instructional_day_count_mismatch",
   "overlapping_no_school_ranges",
-  "schedule_resolution_required",
-  "special_day_outside_school_year",
-  "unknown_pattern_schedule_reference",
-  "unknown_special_day_schedule_reference",
+  "special_day_overlaps_no_school",
+  "duplicate_label_removed",
+  "punctuation_variant_schedule_name",
+  "duplicate_no_school_coverage",
 ]);
 
 const informationalWarningCodes = new Set([
@@ -134,6 +155,9 @@ function classifyWarningKind(
   const code = String(warning.code || "");
   const message = warning.message.toLowerCase();
 
+  if (blockingWarningCodes.has(code)) return "blocking";
+  if (automaticallyResolvedWarningCodes.has(code)) return "automatically_resolved";
+
   if (
     informationalWarningCodes.has(code) ||
     code.includes("needs_times") ||
@@ -144,27 +168,23 @@ function classifyWarningKind(
   }
 
   if (
-    reviewOnlyWarningCodes.has(code) ||
+    needsReviewWarningCodes.has(code) ||
     message.includes("source-document date typo") ||
     message.includes("source document date typo") ||
     (message.includes("april 30") && message.includes("2026") && message.includes("2027")) ||
     message.includes("confidence") ||
     message.includes("uncertain")
   ) {
-    return "review";
+    return "needs_review";
   }
 
   if ("severity" in warning) {
     if (warning.severity === "info") return "informational";
-    if (warning.severity === "review") return "review";
+    if (warning.severity === "review") return "needs_review";
     if (warning.severity === "blocking") return "blocking";
   }
 
-  if (blockingGeneratorWarningCodes.has(warning.code as CalendarGenerationWarningCode)) {
-    return "blocking";
-  }
-
-  return "review";
+  return "needs_review";
 }
 
 export function classifyCalendarWarnings(
@@ -175,29 +195,45 @@ export function classifyCalendarWarnings(
     warningResolutions.map((resolution) => [resolution.code, resolution])
   );
   const blockingWarnings: ClassifiedCalendarWarning[] = [];
-  const reviewWarnings: ClassifiedCalendarWarning[] = [];
+  const needsReviewWarnings: ClassifiedCalendarWarning[] = [];
+  const automaticallyResolvedWarnings: ClassifiedCalendarWarning[] = [];
   const informationalWarnings: ClassifiedCalendarWarning[] = [];
 
   for (const warning of warnings) {
     const classification = classifyWarningKind(warning);
-    const resolved = resolutionIsComplete(resolutionsByCode.get(warning.code));
+    const resolved =
+      classification === "automatically_resolved" ||
+      resolutionIsComplete(resolutionsByCode.get(warning.code));
     const classified = { ...warning, classification, resolved };
 
     if (classification === "blocking") {
       blockingWarnings.push(classified);
-    } else if (classification === "review") {
-      reviewWarnings.push(classified);
+    } else if (classification === "needs_review") {
+      needsReviewWarnings.push(classified);
+    } else if (classification === "automatically_resolved") {
+      automaticallyResolvedWarnings.push(classified);
     } else {
       informationalWarnings.push(classified);
     }
   }
 
+  const unacknowledgedReviewWarnings = needsReviewWarnings.filter(
+    (warning) => !warning.resolved
+  );
+  const acknowledgedReviewWarnings = needsReviewWarnings.filter(
+    (warning) => warning.resolved
+  );
+
   return {
     blockingWarnings,
-    reviewWarnings,
+    needsReviewWarnings,
+    automaticallyResolvedWarnings,
     informationalWarnings,
-    unresolvedReviewWarnings: reviewWarnings.filter((warning) => !warning.resolved),
-    resolvedReviewWarnings: reviewWarnings.filter((warning) => warning.resolved),
+    unacknowledgedReviewWarnings,
+    acknowledgedReviewWarnings,
+    reviewWarnings: needsReviewWarnings,
+    unresolvedReviewWarnings: unacknowledgedReviewWarnings,
+    resolvedReviewWarnings: acknowledgedReviewWarnings,
   };
 }
 
@@ -216,7 +252,7 @@ export function getAiCreateCalendarReadiness({
     ...classification,
     canCreateCalendar:
       scheduleNameErrorCount === 0 && classification.blockingWarnings.length === 0,
-    needsReviewAcknowledgment: classification.unresolvedReviewWarnings.length > 0,
+    needsReviewAcknowledgment: classification.unacknowledgedReviewWarnings.length > 0,
   };
 }
 
@@ -229,10 +265,13 @@ export function logCalendarWarningClassification(
   console.info("[AI Quick Setup warning classification]", {
     source,
     blocking: classification.blockingWarnings.map((warning) => warning.code),
-    review: classification.reviewWarnings.map((warning) => ({
+    needsReview: classification.needsReviewWarnings.map((warning) => ({
       code: warning.code,
       resolved: warning.resolved,
     })),
+    automaticallyResolved: classification.automaticallyResolvedWarnings.map(
+      (warning) => warning.code
+    ),
     informational: classification.informationalWarnings.map((warning) => warning.code),
   });
 }

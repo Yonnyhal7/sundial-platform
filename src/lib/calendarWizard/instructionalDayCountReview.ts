@@ -166,21 +166,21 @@ export function getInstructionalDayCountReviewState(
   currentInstructionalDayCount: number
 ) {
   if (!review) {
-    return { status: "ready" as const, ready: true, unresolvedDates: [] as string[] };
+    return { status: "resolved" as const, ready: true, unresolvedDates: [] as string[] };
   }
   const unresolvedDates = review.discrepancyDates
     .filter((item) => !item.reviewed)
     .map((item) => item.date);
-  if (unresolvedDates.length > 0) {
-    return { status: "needs_review" as const, ready: false, unresolvedDates };
+  if (unresolvedDates.length === 0) {
+    return { status: "resolved" as const, ready: true, unresolvedDates };
   }
   if (
-    !review.acknowledged ||
-    review.finalApprovedInstructionalDayCount !== currentInstructionalDayCount
+    review.acknowledged &&
+    review.finalApprovedInstructionalDayCount === currentInstructionalDayCount
   ) {
-    return { status: "needs_acknowledgment" as const, ready: false, unresolvedDates };
+    return { status: "acknowledged" as const, ready: true, unresolvedDates };
   }
-  return { status: "acknowledged" as const, ready: true, unresolvedDates };
+  return { status: "pending" as const, ready: false, unresolvedDates };
 }
 
 export function acknowledgeInstructionalDayCountReview(
@@ -191,14 +191,13 @@ export function acknowledgeInstructionalDayCountReview(
 ) {
   const review = importResult.instructionalDayCountReview;
   if (!review) return importResult;
-  const unresolved = review.discrepancyDates.some((item) => !item.reviewed);
   return {
     ...importResult,
     instructionalDayCountReview: {
       ...review,
-      acknowledged: acknowledged && !unresolved,
+      acknowledged,
       finalApprovedInstructionalDayCount:
-        acknowledged && !unresolved ? currentInstructionalDayCount : undefined,
+        acknowledged ? currentInstructionalDayCount : undefined,
       reviewNote: reviewNote?.trim() || undefined,
     },
   };

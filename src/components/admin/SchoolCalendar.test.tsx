@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CalendarDateCell } from "./SchoolCalendar";
+import { CalendarDateCell, SchoolCalendarMonthGrid } from "./SchoolCalendar";
 
 describe("SchoolCalendar date styling", () => {
   it("keeps neutral weekends and unassigned dates out of the no-school treatment", () => {
@@ -40,5 +42,36 @@ describe("SchoolCalendar date styling", () => {
     );
     expect(markup).toContain("ring-amber-400/40");
     expect(markup).toContain("needs review");
+  });
+
+  it("renders explicit empty cells before and after the active month", () => {
+    const markup = renderToStaticMarkup(
+      <SchoolCalendarMonthGrid
+        month={new Date("2026-08-01T00:00:00Z")}
+        days={[]}
+        schedules={[]}
+        selectedDate={null}
+        onSelectDate={() => {}}
+      />
+    );
+
+    expect(markup).toContain('data-calendar-empty="leading"');
+    expect(markup).toContain('data-calendar-empty="trailing"');
+  });
+
+  it("shares AdminCalendarView between production and guided preview", () => {
+    const production = readFileSync(
+      join(process.cwd(), "src/app/[school]/admin/calendar/calendar-client.tsx"),
+      "utf8"
+    );
+    const guided = readFileSync(
+      join(process.cwd(), "src/app/[school]/admin/calendar/wizard/schedule-wizard-client.tsx"),
+      "utf8"
+    );
+
+    expect(production).toContain("<AdminCalendarView");
+    expect(guided).toContain("<AdminCalendarView");
+    expect(guided).not.toContain("function MonthPreview(");
+    expect(guided).not.toContain("function scheduleAccent(");
   });
 });

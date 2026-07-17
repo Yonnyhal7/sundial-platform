@@ -667,7 +667,7 @@ describe("AI quick setup persistence planning", () => {
     expect(classification.blockingWarnings).toHaveLength(1);
   });
 
-  it("classifies special-day and no-school overlap as blocking", () => {
+  it("classifies a special-day and no-school overlap as automatically resolved", () => {
     const warnings: CalendarGenerationWarning[] = [
       {
         code: "special_day_overlaps_no_school",
@@ -678,7 +678,8 @@ describe("AI quick setup persistence planning", () => {
 
     const classification = classifyCalendarWarnings(warnings);
 
-    expect(classification.blockingWarnings).toHaveLength(1);
+    expect(classification.blockingWarnings).toHaveLength(0);
+    expect(classification.automaticallyResolvedWarnings).toHaveLength(1);
   });
 
   it("keeps no-school ranges outside the year as review-only", () => {
@@ -696,7 +697,7 @@ describe("AI quick setup persistence planning", () => {
     expect(classification.reviewWarnings).toHaveLength(1);
   });
 
-  it("keeps overlapping no-school ranges as review-only after normalization", () => {
+  it("automatically resolves overlapping no-school coverage", () => {
     const warnings: CalendarGenerationWarning[] = [
       {
         code: "overlapping_no_school_ranges",
@@ -708,7 +709,7 @@ describe("AI quick setup persistence planning", () => {
     const classification = classifyCalendarWarnings(warnings);
 
     expect(classification.blockingWarnings).toHaveLength(0);
-    expect(classification.reviewWarnings).toHaveLength(1);
+    expect(classification.automaticallyResolvedWarnings).toHaveLength(1);
   });
 
   it("allows calendar creation when only review warnings remain", () => {
@@ -762,8 +763,9 @@ describe("AI quick setup persistence planning", () => {
       },
     ]);
 
-    expect(classification.blockingWarnings).toHaveLength(1);
+    expect(classification.blockingWarnings).toHaveLength(0);
     expect(classification.reviewWarnings).toHaveLength(1);
+    expect(classification.automaticallyResolvedWarnings).toHaveLength(1);
     expect(classification.informationalWarnings).toHaveLength(1);
   });
 });

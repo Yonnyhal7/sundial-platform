@@ -101,7 +101,11 @@ export function includedNoSchoolLabels(
   )];
 }
 
-export type AiReviewReadinessStatus = "pass" | "warning" | "fail";
+export type AiReviewReadinessStatus =
+  | "ready"
+  | "reviewed"
+  | "complete_later"
+  | "blocked";
 
 export type AiReviewReadinessItem = {
   label: string;
@@ -137,48 +141,52 @@ export function buildAiReviewReadiness({
   return [
     {
       label: "School year dates confirmed",
-      status: importResult.schoolYear.startDate && importResult.schoolYear.endDate ? "pass" : "fail",
+      status: importResult.schoolYear.startDate && importResult.schoolYear.endDate ? "ready" : "blocked",
     },
     {
-      label: "Instructional-day count reviewed",
-      status: countReviewState.ready ? "pass" : "fail",
+      label: "Calendar dates generated",
+      status: previewDays.length > 0 ? "ready" : "blocked",
+    },
+    {
+      label: "Instructional-day count acknowledged",
+      status: countReviewState.ready ? (countReview ? "reviewed" : "ready") : "blocked",
       detail: !countReview
         ? `${currentInstructionalDayCount} generated`
-        : countReviewState.status === "acknowledged"
-          ? `Administrator reviewed ${countReview.discrepancyDates.length}-date difference · Final instructional count: ${currentInstructionalDayCount}`
+        : countReviewState.ready
+          ? `${countReviewState.status === "resolved" ? "Dates reviewed individually" : "Difference acknowledged"} · Final instructional count: ${currentInstructionalDayCount}`
           : `PDF declares ${countReview.declaredInstructionalDayCount} days; Sundial currently identifies ${currentInstructionalDayCount}`,
     },
-    { label: "No-school dates reviewed", status: "pass" },
+    { label: "No-school overlaps reviewed", status: "reviewed" },
     {
       label: "Schedule templates detected",
-      status: importResult.detectedSchedules.length > 0 ? "pass" : "fail",
+      status: importResult.detectedSchedules.length > 0 ? "ready" : "blocked",
     },
     {
       label: "First instructional day assigned",
-      status: firstInstructionalDay?.scheduleId ? "pass" : "fail",
+      status: firstInstructionalDay?.scheduleId ? "ready" : "blocked",
     },
     {
       label: "First two instructional weeks verified",
-      status: firstTwoWeeksVerified ? "pass" : "fail",
+      status: firstTwoWeeksVerified ? "ready" : "blocked",
     },
     {
       label: "No unresolved schedule assignments",
-      status: unresolvedAssignmentCount === 0 ? "pass" : "fail",
+      status: unresolvedAssignmentCount === 0 ? "ready" : "blocked",
       detail: unresolvedAssignmentCount > 0 ? `${unresolvedAssignmentCount} unresolved` : undefined,
     },
     {
       label: "No blocking conflicts",
-      status: blockingConflictCount === 0 ? "pass" : "fail",
+      status: blockingConflictCount === 0 ? "ready" : "blocked",
       detail: blockingConflictCount > 0 ? `${blockingConflictCount} blocking` : undefined,
     },
     {
       label: "Preview matches creation payload",
-      status: previewMatchesCreationPayload ? "pass" : "fail",
+      status: previewMatchesCreationPayload ? "ready" : "blocked",
       detail: "Verified again before saving",
     },
     {
       label: "Bell times acknowledged as now or later",
-      status: schedulesNeedingBellTimes > 0 ? "warning" : "pass",
+      status: schedulesNeedingBellTimes > 0 ? "complete_later" : "ready",
       detail: schedulesNeedingBellTimes > 0
         ? `${schedulesNeedingBellTimes} schedule${schedulesNeedingBellTimes === 1 ? "" : "s"} can be completed later`
         : undefined,

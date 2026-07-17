@@ -368,6 +368,27 @@ describe("generateSchoolYearCalendar", () => {
     );
   });
 
+  it("preserves an overlap label and pauses the repeating rotation", () => {
+    const result = generateSchoolYearCalendar(
+      baseConfig({
+        pattern: { type: "repeating", scheduleIds: [BROWN, GOLD] },
+        noSchoolRanges: [{ startDate: "2026-08-11", label: "Recess" }],
+        specialDays: [{
+          startDate: "2026-08-11",
+          scheduleId: RALLY,
+          label: "Named Holiday",
+        }],
+      })
+    );
+
+    expect(day(result, "2026-08-11")).toMatchObject({
+      isSchoolDay: false,
+      scheduleId: null,
+      labels: ["Recess", "Named Holiday"],
+    });
+    expect(day(result, "2026-08-12").scheduleId).toBe(GOLD);
+  });
+
   it("allows informational special labels to coexist with no-school dates", () => {
     const result = generateSchoolYearCalendar(
       baseConfig({

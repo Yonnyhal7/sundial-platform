@@ -25,6 +25,17 @@ describe("AI instructional count review persistence", () => {
     expect(migration).toContain("final_approved_instructional_day_count integer not null");
     expect(migration).toContain("reviewed_by uuid not null references public.users(id)");
     expect(migration).toContain("reviewed_at timestamptz not null");
+    expect(migration).toContain("review_status text not null");
+    expect(migration).toContain("acknowledged_issue_codes text[] not null");
+    expect(actions).toContain("acknowledgedIssueCodes");
+    expect(migration).toContain("create table if not exists public.ai_calendar_import_reviews");
+    expect(actions).toContain("p_review:");
+  });
+
+  it("accepts either an acknowledged group or individually resolved dates", () => {
+    expect(migration).toContain("not in ('acknowledged', 'resolved')");
+    expect(migration).toContain("p_count_review->>'review_status' = 'resolved'");
+    expect(actions).toContain("countReviewState.ready");
   });
 
   it("keeps count-review persistence tenant scoped", () => {

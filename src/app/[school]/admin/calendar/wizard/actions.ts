@@ -118,6 +118,7 @@ export type CreateAiCalendarFromDraftActionInput = {
   launchContext?: CalendarWizardLaunchContext | null;
   previewAssignmentDigest?: string;
   previewClassificationDigest?: string;
+  acknowledgedIssueCodes?: string[];
 };
 
 export type CalendarWizardDraftActionResult =
@@ -1226,6 +1227,28 @@ export async function createAiCalendarFromDraftAction(
       );
     }
 
+    const acknowledgedIssueCodes = new Set(
+      (input.acknowledgedIssueCodes || []).filter(
+        (code): code is string => typeof code === "string" && code.length > 0
+      )
+    );
+    for (const warning of aiWarningClassification.acknowledgedReviewWarnings) {
+      acknowledgedIssueCodes.add(String(warning.code));
+    }
+    if (importResult.instructionalDayCountReview && countReviewState.ready) {
+      acknowledgedIssueCodes.add("instructional_day_count_mismatch");
+    }
+    const missingAcknowledgments = [
+      ...aiWarningClassification.unacknowledgedReviewWarnings,
+      ...generatedWarningClassification.unacknowledgedReviewWarnings,
+    ].filter((warning) => !acknowledgedIssueCodes.has(String(warning.code)));
+    if (missingAcknowledgments.length > 0) {
+      return validationError(
+        "Acknowledge the remaining review notes before creating the calendar.",
+        warningIssueList(missingAcknowledgments)
+      );
+    }
+
     const rows = mapGeneratedCalendarDaysToRows(generated.days, schoolData.id);
     const labelTooLong = rows.find((row) => (row.label?.length || 0) > 1000);
     if (labelTooLong) {
@@ -1270,6 +1293,13 @@ export async function createAiCalendarFromDraftAction(
           label: row.label,
           is_school_day: row.is_school_day,
         })),
+        p_review: {
+          acknowledged_issue_codes: [...acknowledgedIssueCodes],
+          final_approved_instructional_day_count:
+            generated.summary.instructionalDayCount,
+          review_note:
+            importResult.instructionalDayCountReview?.reviewNote || null,
+        },
         p_count_review: importResult.instructionalDayCountReview
           ? {
               reason_code: importResult.instructionalDayCountReview.reasonCode,
@@ -1278,8 +1308,11 @@ export async function createAiCalendarFromDraftAction(
               generated_instructional_day_count:
                 importResult.instructionalDayCountReview.generatedInstructionalDayCount,
               final_approved_instructional_day_count:
-                importResult.instructionalDayCountReview.finalApprovedInstructionalDayCount,
-              acknowledged: importResult.instructionalDayCountReview.acknowledged,
+                importResult.instructionalDayCountReview.finalApprovedInstructionalDayCount ??
+                generated.summary.instructionalDayCount,
+              acknowledged: countReviewState.ready,
+              review_status: countReviewState.status,
+              acknowledged_issue_codes: [...acknowledgedIssueCodes],
               review_note: importResult.instructionalDayCountReview.reviewNote || null,
               classifications: importResult.instructionalDayCountReview.discrepancyDates,
               classification_digest: creationClassificationDigest,

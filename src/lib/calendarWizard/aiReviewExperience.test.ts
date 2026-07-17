@@ -9,6 +9,7 @@ const source = readFileSync(
 );
 const review = source.slice(source.indexOf("function AiImportReview("), source.indexOf("function AiImportedCalendarPreview("));
 const preview = source.slice(source.indexOf("function AiImportedCalendarPreview("), source.indexOf("function ReviewPanel("));
+const modal = source.slice(source.indexOf("function AiCreateCalendarModal("), source.indexOf("function CompletionScreen("));
 
 describe("AI calendar review experience", () => {
   it("renders one shared calendar preview without a duplicate verification grid", () => {
@@ -30,6 +31,23 @@ describe("AI calendar review experience", () => {
     expect((review.match(/Create Calendar/g) || [])).toHaveLength(1);
     expect(review.indexOf("Readiness Checklist")).toBeLessThan(review.indexOf("Create Calendar"));
     expect(review.indexOf("data-ai-review-final-actions")).toBeLessThan(review.indexOf("Create Calendar"));
+  });
+
+  it("confirms remaining nonblocking notes without forcing another edit", () => {
+    expect(modal).toContain("Create calendar with review notes?");
+    expect(modal).toContain("Final instructional count");
+    expect(modal).toContain("Dates left for later");
+    expect(modal).toContain("Return to Review");
+    expect(modal).not.toContain("reviewAcknowledged");
+  });
+
+  it("uses the four readiness groups and reserves blocking for required issues", () => {
+    expect(source).toContain('{ title: "Ready", status: "ready" as const }');
+    expect(source).toContain('{ title: "Reviewed", status: "reviewed" as const }');
+    expect(source).toContain('{ title: "Complete later", status: "complete_later" as const }');
+    expect(source).toContain('{ title: "Blocked", status: "blocked" as const }');
+    expect(source).toContain("Ready with ${reviewNoteCount} review note");
+    expect(source).toContain("Blocked by ${blockingIssueCount} required issue");
   });
 
   it("removes the special-day category and derives summary counts from the preview", () => {

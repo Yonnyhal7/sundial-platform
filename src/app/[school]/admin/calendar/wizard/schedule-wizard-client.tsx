@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScheduleColorField } from "@/components/admin/ScheduleColorField";
 import {
+  AdminCalendarView,
   CalendarMonthNavigation,
   CalendarScheduleDetails,
   SchoolCalendarMonthGrid,
@@ -1633,7 +1634,10 @@ export default function ScheduleWizardClient({
     setShowAiCreateModal(true);
   }
 
-  async function handleCreateAiCalendar(replaceExisting = false) {
+  async function handleCreateAiCalendar(
+    replaceExisting = false,
+    acknowledgedIssueCodes: string[] = []
+  ) {
     if (isSaving) return;
 
     allowIntentionalNavigation();
@@ -1681,6 +1685,7 @@ export default function ScheduleWizardClient({
         launchContext,
         previewAssignmentDigest,
         previewClassificationDigest,
+        acknowledgedIssueCodes,
       });
 
       if (result.status === "success") {
@@ -1969,8 +1974,12 @@ export default function ScheduleWizardClient({
           warningResolutions={draft.aiImport.warningResolutions || []}
           actionResult={aiCreateResult}
           isSaving={isSaving}
-          onConfirm={() => void handleCreateAiCalendar(false)}
-          onReplace={() => void handleCreateAiCalendar(true)}
+          onConfirm={(acknowledgedIssueCodes) =>
+            void handleCreateAiCalendar(false, acknowledgedIssueCodes)
+          }
+          onReplace={(acknowledgedIssueCodes) =>
+            void handleCreateAiCalendar(true, acknowledgedIssueCodes)
+          }
           onClose={() => {
             if (!isSaving) {
               setShowAiCreateModal(false);
@@ -3295,12 +3304,13 @@ function AiImportReview({
     currentInstructionalDayCount: previewResult.summary.instructionalDayCount,
   });
   const blockingWarnings = deduplicateClassifiedWarnings(warningReadiness.blockingWarnings);
-  const reviewWarnings = deduplicateClassifiedWarnings(warningReadiness.unresolvedReviewWarnings);
-  const informationalWarnings = deduplicateClassifiedWarnings([
-    ...warningReadiness.informationalWarnings,
-    ...warningReadiness.resolvedReviewWarnings,
-  ]);
-  const reviewItemCount = reviewWarnings.length;
+  const reviewWarnings = deduplicateClassifiedWarnings(warningReadiness.needsReviewWarnings);
+  const automaticallyResolvedWarnings = deduplicateClassifiedWarnings(
+    warningReadiness.automaticallyResolvedWarnings
+  );
+  const informationalWarnings = deduplicateClassifiedWarnings(
+    warningReadiness.informationalWarnings
+  );
   const automaticResolutions = (importResult.automaticResolutions || []).filter(
     (resolution, index, all) =>
       all.findIndex((candidate) =>
@@ -3309,6 +3319,10 @@ function AiImportReview({
         candidate.message === resolution.message
       ) === index
   );
+  const reviewItemCount =
+    warningReadiness.unacknowledgedReviewWarnings.length +
+    automaticallyResolvedWarnings.length +
+    automaticResolutions.length;
 
   function requestRemoveSchedule(resolution: DetectedScheduleResolution) {
     const usage = getAiScheduleUsageDetails(importResult, resolution.tempId);
@@ -3351,10 +3365,15 @@ function AiImportReview({
         <ul className="mt-2 space-y-2">
           {warnings.map((warning) => {
             const resolution = warningResolutionMap.get(String(warning.code));
-            const reviewable = warning.classification !== "informational";
+            const reviewable = warning.classification === "needs_review";
             return (
               <li key={`${warning.classification}-${warning.code}-${warning.message}`} className="rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-700">
                 <p className="font-semibold text-slate-700 dark:text-slate-200">{warning.message}</p>
+                {warning.classification === "automatically_resolved" && (
+                  <p className="mt-1 text-xs font-bold text-emerald-700 dark:text-emerald-200">
+                    Sundial kept the date safely representable, preserved its labels, and did not require an edit.
+                  </p>
+                )}
                 {reviewable && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button type="button" onClick={() => onWarningResolutionChange(String(warning.code), "accepted_suggestion")} className={[subtleButtonClass, resolution?.status === "accepted_suggestion" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
@@ -3454,7 +3473,7 @@ function AiImportReview({
           {scheduleNameErrors.length > 0
             ? "Resolve duplicate or invalid schedule names before creating the calendar."
             : !instructionalDayCountReviewState.ready
-              ? "Review every flagged instructional-count date and acknowledge the final count before creating the calendar."
+              ? "Review the flagged instructional-count dates individually or acknowledge the discrepancy as a group before creating the calendar."
             : unreviewedRequiredAssignmentDates.length > 0
               ? `Verify the first ${unreviewedRequiredAssignmentDates.length} remaining color-rotation assignments in the calendar preview before creating the calendar.`
             : "Fix blocking calendar issues before creating the calendar."}
@@ -3674,15 +3693,16 @@ function AiImportReview({
       )}
 
       <ReviewPanel title="Warnings" className="mt-4">
-        {blockingWarnings.length === 0 && reviewWarnings.length === 0 && informationalWarnings.length === 0 && automaticResolutions.length === 0 ? (
+        {blockingWarnings.length === 0 && reviewWarnings.length === 0 && automaticallyResolvedWarnings.length === 0 && informationalWarnings.length === 0 && automaticResolutions.length === 0 ? (
           <p className="text-sm text-slate-500">No warnings were found.</p>
         ) : (
           <div className="space-y-5">
             {renderWarningGroup("Blocking", blockingWarnings)}
-            {renderWarningGroup("Needs review", reviewWarnings)}
-            {automaticResolutions.length > 0 && (
+            {renderWarningGroup("Needs your review", reviewWarnings)}
+            {(automaticallyResolvedWarnings.length > 0 || automaticResolutions.length > 0) && (
               <div>
                 <h5 className="text-sm font-bold text-slate-900 dark:text-white">Automatically resolved</h5>
+                {renderWarningGroup("What Sundial resolved", automaticallyResolvedWarnings)}
                 <ul className="mt-2 space-y-2">
                   {automaticResolutions.map((resolution) => (
                     <li key={`${resolution.code}-${resolution.title}`} className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100">
@@ -3746,7 +3766,11 @@ function AiImportReview({
       />
 
       <ReviewPanel title="Readiness Checklist" className="mt-4">
-        <ReadinessChecklist items={readinessItems} />
+        <ReadinessChecklist
+          items={readinessItems}
+          blockingIssueCount={blockingConflictCount}
+          reviewNoteCount={reviewItemCount}
+        />
         <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">
           Bell times are non-blocking and may be completed after calendar creation.
         </p>
@@ -3911,7 +3935,11 @@ function AiImportedCalendarPreview({
             Instructional-Day Count Review
           </h3>
           <p className="mt-2 font-bold text-amber-950 dark:text-amber-100">
-            Instructional-day count needs review
+            {countReviewState.status === "pending"
+              ? "Instructional-day count needs acknowledgment"
+              : countReviewState.status === "acknowledged"
+                ? "Instructional-day count difference acknowledged"
+                : "Instructional-day count dates reviewed"}
           </p>
           <p className="mt-1 text-sm leading-6 text-amber-900 dark:text-amber-100">
             The PDF states {countReview.declaredInstructionalDayCount} instructional days, but Sundial currently identifies {result.summary.instructionalDayCount}. Review the additional dates below and decide how each should be classified.
@@ -3960,28 +3988,35 @@ function AiImportedCalendarPreview({
               )}
             />
           </label>
-          <label className="mt-4 flex items-start gap-3 text-sm font-bold text-amber-950 dark:text-amber-100">
-            <input
-              type="checkbox"
-              className="mt-1"
-              disabled={countReviewState.unresolvedDates.length > 0}
-              checked={countReviewState.status === "acknowledged"}
-              onChange={(event) => onImportResultChange(
-                acknowledgeInstructionalDayCountReview(
-                  importResult,
-                  result.summary.instructionalDayCount,
-                  event.target.checked,
-                  countReview.reviewNote
-                )
-              )}
-            />
-            <span>
-              I reviewed the instructional-day count difference and confirm the calendar classifications.
-              {countReviewState.unresolvedDates.length > 0 && (
-                <span className="mt-1 block font-semibold">Review all {countReviewState.unresolvedDates.length} remaining dates first.</span>
-              )}
-            </span>
-          </label>
+          {countReviewState.status === "resolved" ? (
+            <p className="mt-4 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm font-bold text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100">
+              ✓ Every candidate date was reviewed individually. No additional acknowledgment is required.
+            </p>
+          ) : (
+            <label className="mt-4 flex items-start gap-3 text-sm font-bold text-amber-950 dark:text-amber-100">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={countReviewState.status === "acknowledged"}
+                onChange={(event) => onImportResultChange(
+                  acknowledgeInstructionalDayCountReview(
+                    importResult,
+                    result.summary.instructionalDayCount,
+                    event.target.checked,
+                    countReview.reviewNote
+                  )
+                )}
+              />
+              <span>
+                I acknowledge the instructional-day count difference and approve the current count as a group.
+                {countReviewState.unresolvedDates.length > 0 && (
+                  <span className="mt-1 block font-semibold">
+                    {countReviewState.unresolvedDates.length} candidate date{countReviewState.unresolvedDates.length === 1 ? "" : "s"} will remain available to edit later.
+                  </span>
+                )}
+              </span>
+            </label>
+          )}
         </section>
       )}
       {(brownGoldConflicts.length > 0 || deterministicConflicts.length > 0 || unresolvedDays.length > 0 || unreviewedRequiredAssignmentDates.length > 0) && (
@@ -4197,34 +4232,51 @@ function CompactSummaryItem({ label, value }: { label: string; value: string }) 
 
 function ReadinessChecklist({
   items,
+  blockingIssueCount,
+  reviewNoteCount,
 }: {
   items: ReturnType<typeof buildAiReviewReadiness>;
+  blockingIssueCount: number;
+  reviewNoteCount: number;
 }) {
-  const failedCount = items.filter((item) => item.status === "fail").length;
-  const warningCount = items.filter((item) => item.status === "warning").length;
+  const groups = [
+    { title: "Ready", status: "ready" as const },
+    { title: "Reviewed", status: "reviewed" as const },
+    { title: "Complete later", status: "complete_later" as const },
+    { title: "Blocked", status: "blocked" as const },
+  ].map((group) => ({
+    ...group,
+    items: items.filter((item) => item.status === group.status),
+  })).filter((group) => group.items.length > 0);
   return (
     <div>
       <p className={[
         "rounded-xl border p-3 text-sm font-bold",
-        failedCount > 0
+        blockingIssueCount > 0
           ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-100"
-          : warningCount > 0
+          : reviewNoteCount > 0
             ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100"
             : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100",
       ].join(" ")}>
-        {failedCount > 0
-          ? `Blocked · ${failedCount} item${failedCount === 1 ? "" : "s"} need attention`
-          : warningCount > 0
-            ? `Ready · ${warningCount} non-blocking item${warningCount === 1 ? "" : "s"} can be completed later`
-            : "Ready · All required checks passed"}
+        {blockingIssueCount > 0
+          ? `Blocked by ${blockingIssueCount} required issue${blockingIssueCount === 1 ? "" : "s"}`
+          : reviewNoteCount > 0
+            ? `Ready with ${reviewNoteCount} review note${reviewNoteCount === 1 ? "" : "s"}`
+            : "Ready to create"}
       </p>
-      <ul className="mt-3 grid gap-2 md:grid-cols-2">
-        {items.map((item) => (
+      <div className="mt-4 space-y-4">
+        {groups.map((group) => (
+          <section key={group.status}>
+            <h5 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+              {group.title}
+            </h5>
+            <ul className="mt-2 grid gap-2 md:grid-cols-2">
+        {group.items.map((item) => (
           <li key={item.label} className={[
             "flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold",
-            item.status === "pass"
+            item.status === "ready" || item.status === "reviewed"
               ? "text-emerald-800 dark:text-emerald-200"
-              : item.status === "warning"
+              : item.status === "complete_later"
                 ? "text-amber-800 dark:text-amber-200"
                 : "text-red-700 dark:text-red-200",
           ].join(" ")}>
@@ -4232,19 +4284,22 @@ function ReadinessChecklist({
               aria-hidden="true"
               className={[
                 "grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs font-black",
-                item.status === "pass"
+                item.status === "ready" || item.status === "reviewed"
                   ? "bg-emerald-500 text-white"
-                  : item.status === "warning"
+                  : item.status === "complete_later"
                     ? "bg-amber-400 text-amber-950"
                     : "bg-red-500 text-white",
               ].join(" ")}
             >
-              {item.status === "pass" ? "✓" : item.status === "warning" ? "!" : "×"}
+              {item.status === "ready" || item.status === "reviewed" ? "✓" : item.status === "complete_later" ? "!" : "×"}
             </span>
             <span>{item.label}{item.detail ? ` · ${item.detail}` : ""}</span>
           </li>
         ))}
-      </ul>
+            </ul>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
@@ -5568,18 +5623,6 @@ function ScheduleCounts({
   );
 }
 
-function scheduleAccent(scheduleId: string | null) {
-  if (!scheduleId) return "border-slate-200 bg-slate-100 text-slate-500 dark:border-slate-700 dark:bg-black dark:text-slate-400";
-  const palette = [
-    "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100",
-    "border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100",
-    "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100",
-    "border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-900/60 dark:bg-violet-950/20 dark:text-violet-100",
-  ];
-  const sum = scheduleId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return palette[sum % palette.length];
-}
-
 function CalendarYearPreview({
   result,
   scheduleMap,
@@ -5591,123 +5634,71 @@ function CalendarYearPreview({
   const selectedDay = selectedDate
     ? result.days.find((calendarDay) => calendarDay.date === selectedDate) || null
     : null;
-  const months = useMemo(() => {
-    const grouped = new Map<string, GeneratedCalendarDay[]>();
-    for (const generatedDay of result.days) {
-      const key = generatedDay.date.slice(0, 7);
-      grouped.set(key, [...(grouped.get(key) || []), generatedDay]);
-    }
-    return Array.from(grouped.entries());
-  }, [result.days]);
+  const firstDate = result.days[0]?.date;
+  const lastDate = result.days[result.days.length - 1]?.date;
+  const calendarSchedules = [...scheduleMap.values()].map((schedule) => ({
+    id: schedule.id,
+    name: schedule.name,
+    type: schedule.type,
+    calendarColor: schedule.calendarColor,
+    setupStatus: schedule.setupStatus,
+  }));
+  const selectedSchedule = selectedDay?.scheduleId
+    ? scheduleMap.get(selectedDay.scheduleId) || null
+    : null;
 
   return (
-    <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
-      <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-        {months.map(([monthKey, days]) => (
-          <MonthPreview
-            key={monthKey}
-            monthKey={monthKey}
-            days={days}
-            scheduleMap={scheduleMap}
-            selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
-          />
-        ))}
-      </section>
-      <aside className="h-fit rounded-2xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-black">
-        <h3 className="text-lg font-bold">Date details</h3>
-        {!selectedDay ? (
-          <p className="mt-3 text-sm text-slate-500">Select a date to inspect it.</p>
-        ) : (
-          <div className="mt-4 space-y-3 text-sm">
-            <SummaryRow label="Date" value={formatDateForDisplay(selectedDay.date)} />
-            <SummaryRow label="Status" value={selectedDay.isSchoolDay ? "School day" : "No school"} />
-            <SummaryRow label="Normal pattern" value={getScheduleName(scheduleMap, selectedDay.baseScheduleId)} />
-            <SummaryRow label="Assigned schedule" value={getScheduleName(scheduleMap, selectedDay.scheduleId)} />
-            <SummaryRow label="Labels" value={selectedDay.labels.join(", ") || "None"} />
-            <SummaryRow
-              label="Source"
-              value={
-                selectedDay.sources.noSchoolRangeIds.length
-                  ? "No-school entry"
-                  : selectedDay.sources.specialDayIds.length
-                    ? "Special school day"
-                    : "Normal pattern"
-              }
-            />
-          </div>
-        )}
-      </aside>
+    <div className="mt-6">
+      <AdminCalendarView
+        initialMonth={new Date(`${(selectedDate || firstDate || "1970-01-01").slice(0, 7)}-01T00:00:00Z`)}
+        firstMonth={firstDate ? new Date(`${firstDate.slice(0, 7)}-01T00:00:00Z`) : undefined}
+        lastMonth={lastDate ? new Date(`${lastDate.slice(0, 7)}-01T00:00:00Z`) : undefined}
+        days={result.days.map((day) => ({
+          date: day.date,
+          scheduleId: day.scheduleId,
+          label: day.labels.join(", ") || null,
+          isSchoolDay: day.isSchoolDay,
+          isNoSchoolDay: day.isOperatingDay && !day.isSchoolDay,
+          hasConflict: day.warningCodes.length > 0,
+        }))}
+        schedules={calendarSchedules}
+        selectedDate={selectedDate}
+        onSelectedDateChange={setSelectedDate}
+        details={
+          <>
+            <h3 className="text-xl font-semibold text-slate-950 dark:text-white">Date details</h3>
+            {!selectedDay ? (
+              <p className="mt-3 text-sm text-slate-500">Select a date to inspect it.</p>
+            ) : (
+              <div className="mt-5 space-y-3 text-sm">
+                <SummaryRow label="Date" value={formatDateForDisplay(selectedDay.date)} />
+                <SummaryRow label="Status" value={selectedDay.isSchoolDay ? "School day" : "No school"} />
+                <SummaryRow label="Normal pattern" value={getScheduleName(scheduleMap, selectedDay.baseScheduleId)} />
+                <SummaryRow label="Assigned schedule" value={getScheduleName(scheduleMap, selectedDay.scheduleId)} />
+                <SummaryRow label="Labels" value={selectedDay.labels.join(", ") || "None"} />
+                <SummaryRow
+                  label="Source"
+                  value={selectedDay.sources.noSchoolRangeIds.length
+                    ? "No-school entry"
+                    : selectedDay.sources.specialDayIds.length
+                      ? "Special school day"
+                      : "Normal pattern"}
+                />
+                {selectedSchedule && (
+                  <CalendarScheduleDetails schedule={{
+                    id: selectedSchedule.id,
+                    name: selectedSchedule.name,
+                    type: selectedSchedule.type,
+                    calendarColor: selectedSchedule.calendarColor,
+                    setupStatus: selectedSchedule.setupStatus,
+                  }} />
+                )}
+              </div>
+            )}
+          </>
+        }
+      />
     </div>
-  );
-}
-
-function MonthPreview({
-  monthKey,
-  days,
-  scheduleMap,
-  selectedDate,
-  onSelectDate,
-}: {
-  monthKey: string;
-  days: GeneratedCalendarDay[];
-  scheduleMap: Map<string, WizardScheduleSummary>;
-  selectedDate: string | null;
-  onSelectDate: (date: string) => void;
-}) {
-  const [year, month] = monthKey.split("-").map(Number);
-  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
-  const monthLabel = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    month: "long",
-    year: "numeric",
-  });
-  const cells: Array<GeneratedCalendarDay | null> = [
-    ...Array.from({ length: firstWeekday }, () => null),
-    ...days,
-  ];
-
-  return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-[#242424]">
-      <h3 className="text-center text-base font-bold">{monthLabel}</h3>
-      <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[0.68rem] font-bold text-slate-500">
-        {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
-          <div key={`${day}-${index}`}>{day}</div>
-        ))}
-      </div>
-      <div className="mt-2 grid grid-cols-7 gap-1">
-        {cells.map((calendarDay, index) => {
-          if (!calendarDay) return <div key={`empty-${index}`} className="min-h-12" />;
-          const warning = calendarDay.warningCodes.length > 0;
-          return (
-            <button
-              key={calendarDay.date}
-              type="button"
-              onClick={() => onSelectDate(calendarDay.date)}
-              className={[
-                "min-h-12 rounded-lg border p-1 text-left text-[0.68rem] transition focus:outline-none focus:ring-2 focus:ring-[#D4A017]/40",
-                calendarDay.isSchoolDay
-                  ? scheduleAccent(calendarDay.scheduleId)
-                  : "border-slate-200 bg-slate-50 text-slate-400 dark:border-slate-700 dark:bg-black dark:text-slate-500",
-                selectedDate === calendarDay.date ? "ring-2 ring-[#D4A017]" : "",
-                warning ? "border-red-300" : "",
-              ].join(" ")}
-              aria-label={`${formatDateForDisplay(calendarDay.date)}, ${
-                calendarDay.isSchoolDay ? getScheduleName(scheduleMap, calendarDay.scheduleId) : "No school"
-              }`}
-            >
-              <span className="block font-bold">{Number(calendarDay.date.slice(8, 10))}</span>
-              <span className="mt-0.5 block truncate">
-                {calendarDay.isSchoolDay
-                  ? getScheduleName(scheduleMap, calendarDay.scheduleId)
-                  : calendarDay.labels[0] || "No school"}
-              </span>
-              {warning && <span className="sr-only">Warning on this date</span>}
-            </button>
-          );
-        })}
-      </div>
-    </article>
   );
 }
 
@@ -5850,8 +5841,8 @@ function AiCreateCalendarModal({
   warningResolutions: AiImportWarningResolution[];
   actionResult: GenerateCalendarActionResult | null;
   isSaving: boolean;
-  onConfirm: () => void;
-  onReplace: () => void;
+  onConfirm: (acknowledgedIssueCodes: string[]) => void;
+  onReplace: (acknowledgedIssueCodes: string[]) => void;
   onClose: () => void;
 }) {
   const replacementRequired =
@@ -5868,16 +5859,27 @@ function AiCreateCalendarModal({
   const schedulesToCreate = resolutions.filter(
     (resolution) => !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
   );
+  const modalPreview = generateSchoolYearCalendar(buildAiPreviewConfig(importResult));
   const warningClassification = classifyCalendarWarnings(
-    importResult.warnings,
+    [...importResult.warnings, ...modalPreview.warnings],
     warningResolutions
   );
-  const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
   const hasBlockingWarnings = warningClassification.blockingWarnings.length > 0;
-  const needsReviewAcknowledgment =
-    !hasBlockingWarnings && warningClassification.unresolvedReviewWarnings.length > 0;
-  const canConfirm =
-    !isSaving && !hasBlockingWarnings && (!needsReviewAcknowledgment || reviewAcknowledged);
+  const countReviewState = getInstructionalDayCountReviewState(
+    importResult.instructionalDayCountReview,
+    modalPreview.summary.instructionalDayCount
+  );
+  const datesLeftForLater = countReviewState.unresolvedDates;
+  const reviewNoteCount =
+    warningClassification.needsReviewWarnings.length +
+    warningClassification.automaticallyResolvedWarnings.length;
+  const acknowledgedIssueCodes = [...new Set([
+    ...warningClassification.needsReviewWarnings.map((warning) => String(warning.code)),
+    ...(importResult.instructionalDayCountReview && countReviewState.ready
+      ? ["instructional_day_count_mismatch"]
+      : []),
+  ])];
+  const canConfirm = !isSaving && !hasBlockingWarnings && countReviewState.ready;
   const validationErrors =
     errorResult?.status === "validation_error" && errorResult.fieldErrors
       ? Object.values(errorResult.fieldErrors)
@@ -5954,7 +5956,9 @@ function AiCreateCalendarModal({
           <h2 id="ai-create-calendar-title" className="text-2xl font-bold">
             {replacementRequired
               ? "Replace existing calendar?"
-              : "Create imported calendar?"}
+              : reviewNoteCount > 0
+                ? "Create calendar with review notes?"
+                : "Create calendar?"}
           </h2>
         </div>
 
@@ -5993,8 +5997,8 @@ function AiCreateCalendarModal({
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <MetricCard
-                  label="Instructional days"
-                  value={String(importResult.expectedInstructionalDayCount || "Review")}
+                  label="Final instructional count"
+                  value={String(modalPreview.summary.instructionalDayCount)}
                 />
                 <MetricCard label="Schedules to create" value={String(schedulesToCreate.length)} />
                 <MetricCard label="Schedules matched" value={String(matchedCount)} />
@@ -6005,7 +6009,7 @@ function AiCreateCalendarModal({
                 />
                 <MetricCard
                   label="Review items"
-                  value={String(warningClassification.reviewWarnings.length)}
+                  value={String(reviewNoteCount)}
                 />
                 <MetricCard label="No-school ranges" value={String(importResult.noSchoolRanges.length)} />
               </div>
@@ -6052,18 +6056,17 @@ function AiCreateCalendarModal({
                 </div>
               )}
 
-              {needsReviewAcknowledgment && (
-                <label className="mt-5 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
-                  <input
-                    type="checkbox"
-                    checked={reviewAcknowledged}
-                    onChange={(event) => setReviewAcknowledged(event.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-700 focus:ring-amber-500"
-                  />
-                  <span>
-                    I reviewed these warnings and want to continue.
-                  </span>
-                </label>
+              {!hasBlockingWarnings && reviewNoteCount > 0 && (
+                <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                  <p className="font-bold">
+                    {acknowledgedIssueCodes.length} review item{acknowledgedIssueCodes.length === 1 ? "" : "s"} will be recorded as acknowledged.
+                  </p>
+                  {datesLeftForLater.length > 0 && (
+                    <p className="mt-2">
+                      Dates left for later: {datesLeftForLater.map(formatDateForDisplay).join(", ")}.
+                    </p>
+                  )}
+                </div>
               )}
             </>
           )}
@@ -6099,12 +6102,12 @@ function AiCreateCalendarModal({
               disabled={isSaving}
               className={secondaryButtonClass}
             >
-              Close
+              {replacementRequired ? "Close" : "Return to Review"}
             </button>
             {replacementRequired ? (
               <button
                 type="button"
-                onClick={onReplace}
+                onClick={() => onReplace(acknowledgedIssueCodes)}
                 disabled={isSaving}
                 className="inline-flex items-center justify-center rounded-lg border border-transparent bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -6113,7 +6116,7 @@ function AiCreateCalendarModal({
             ) : (
               <button
                 type="button"
-                onClick={onConfirm}
+                onClick={() => onConfirm(acknowledgedIssueCodes)}
                 disabled={!canConfirm}
                 className={sundialPrimaryButtonClass()}
               >

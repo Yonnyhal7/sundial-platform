@@ -108,7 +108,7 @@ describe("instructional-day count discrepancy review", () => {
     expect(retained.generatedInstructionalDayCount).toBe(5);
   });
 
-  it("blocks readiness until every date is reviewed and permits an acknowledged final count that differs", () => {
+  it("resolves readiness after every date is reviewed even when the final count differs", () => {
     let source = initializedImport();
     expect(getInstructionalDayCountReviewState(source.instructionalDayCountReview, 5).ready).toBe(false);
     source = edit(source, "2026-08-10", "staff_only");
@@ -116,17 +116,24 @@ describe("instructional-day count discrepancy review", () => {
     source = edit(source, "2026-08-17", "instructional", "gold");
     const preview = generateSchoolYearCalendar(buildAiPreviewConfig(source));
     expect(preview.summary.instructionalDayCount).toBe(4);
-    expect(getInstructionalDayCountReviewState(source.instructionalDayCountReview, 4).status).toBe("needs_acknowledgment");
-
-    source = acknowledgeInstructionalDayCountReview(source, 4, true, "May remain above the PDF total.");
     expect(getInstructionalDayCountReviewState(source.instructionalDayCountReview, 4)).toMatchObject({
+      status: "resolved",
+      ready: true,
+    });
+  });
+
+  it("allows a group acknowledgment while candidate dates remain unresolved", () => {
+    let source = initializedImport();
+    source = acknowledgeInstructionalDayCountReview(source, 5, true, "May remain above the PDF total.");
+    expect(getInstructionalDayCountReviewState(source.instructionalDayCountReview, 5)).toMatchObject({
       status: "acknowledged",
       ready: true,
+      unresolvedDates: ["2026-08-10", "2026-08-11", "2026-08-17"],
     });
     expect(source.instructionalDayCountReview).toMatchObject({
       declaredInstructionalDayCount: 3,
       generatedInstructionalDayCount: 5,
-      finalApprovedInstructionalDayCount: 4,
+      finalApprovedInstructionalDayCount: 5,
       reviewNote: "May remain above the PDF total.",
     });
   });

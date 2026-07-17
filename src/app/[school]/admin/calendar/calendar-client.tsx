@@ -2,9 +2,8 @@
 
 import { useMemo, useState } from "react";
 import {
-  CalendarMonthNavigation,
+  AdminCalendarView,
   CalendarScheduleDetails,
-  SchoolCalendarMonthGrid,
 } from "@/components/admin/SchoolCalendar";
 
 type Schedule = {
@@ -45,10 +44,6 @@ export default function CalendarClient({
 }) {
   const today = new Date();
 
-  const [currentDate, setCurrentDate] = useState(
-    new Date(today.getFullYear(), today.getMonth(), 1)
-  );
-
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedScheduleId, setSelectedScheduleId] = useState("");
   const [isSchoolDay, setIsSchoolDay] = useState(true);
@@ -59,9 +54,6 @@ export default function CalendarClient({
   const scheduleMap = useMemo(() => {
     return new Map(schedules.map((schedule) => [schedule.id, schedule]));
   }, [schedules]);
-
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
 
   const selectedCalendarDay = selectedDate
     ? assignedDays.get(selectedDate)
@@ -78,33 +70,21 @@ export default function CalendarClient({
   ? periods.filter((period) => period.schedule_id === activeScheduleId)
   : [];
 
-  function previousMonth() {
-    setCurrentDate(new Date(year, month - 1, 1));
-    setSelectedDate(null);
-  }
-
-  function nextMonth() {
-    setCurrentDate(new Date(year, month + 1, 1));
-    setSelectedDate(null);
-  }
-
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
-      <SchoolCalendarMonthGrid
-        month={new Date(Date.UTC(year, month, 1))}
-        days={calendarDays.map((day) => ({ date: day.date, scheduleId: day.schedule_id, label: day.label, isSchoolDay: day.is_school_day ?? true }))}
-        schedules={schedules.map((schedule) => ({ id: schedule.id, name: schedule.schedule_name, type: schedule.schedule_type, calendarColor: schedule.calendar_color }))}
-        selectedDate={selectedDate}
-        onSelectDate={(dateString) => {
-          const calendarDay = assignedDays.get(dateString);
-          setSelectedDate(dateString);
-          setSelectedScheduleId(calendarDay?.schedule_id || "");
-          setIsSchoolDay(calendarDay?.is_school_day ?? true);
-        }}
-        navigation={<CalendarMonthNavigation month={new Date(Date.UTC(year, month, 1))} onPrevious={previousMonth} onNext={nextMonth} />}
-      />
-
-      <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <AdminCalendarView
+      initialMonth={new Date(Date.UTC(today.getFullYear(), today.getMonth(), 1))}
+      days={calendarDays.map((day) => ({ date: day.date, scheduleId: day.schedule_id, label: day.label, isSchoolDay: day.is_school_day ?? true }))}
+      schedules={schedules.map((schedule) => ({ id: schedule.id, name: schedule.schedule_name, type: schedule.schedule_type, calendarColor: schedule.calendar_color }))}
+      selectedDate={selectedDate}
+      onSelectedDateChange={(dateString) => {
+        const calendarDay = assignedDays.get(dateString);
+        setSelectedDate(dateString);
+        setSelectedScheduleId(calendarDay?.schedule_id || "");
+        setIsSchoolDay(calendarDay?.is_school_day ?? true);
+      }}
+      onMonthChange={() => setSelectedDate(null)}
+      details={
+        <>
         <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Assign Schedule</h2>
 
         {!selectedDate ? (
@@ -191,7 +171,8 @@ export default function CalendarClient({
             </button>
           </form>
         )}
-      </aside>
-    </div>
+        </>
+      }
+    />
   );
 }

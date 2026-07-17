@@ -75,7 +75,7 @@ describe("AI review presentation", () => {
   });
 
   it("groups duplicate warnings and contained no-school labels", () => {
-    const warning = { code: "overlap", message: "Overlapping labels were merged.", severity: "review" as const, classification: "review" as const, resolved: true };
+    const warning = { code: "overlap", message: "Overlapping labels were merged.", severity: "review" as const, classification: "needs_review" as const, resolved: true };
     expect(deduplicateClassifiedWarnings([warning, warning])).toHaveLength(1);
     expect(includedNoSchoolLabels("2026-12-21", "2027-01-01", [{
       code: "no_school_ranges_merged",
@@ -97,8 +97,8 @@ describe("AI review presentation", () => {
       schedulesNeedingBellTimes: 2,
       currentInstructionalDayCount: 1,
     });
-    expect(items.some((item) => item.status === "fail")).toBe(false);
-    expect(items.find((item) => item.label.startsWith("Bell times"))).toMatchObject({ status: "warning" });
+    expect(items.some((item) => item.status === "blocked")).toBe(false);
+    expect(items.find((item) => item.label.startsWith("Bell times"))).toMatchObject({ status: "complete_later" });
   });
 
   it("uses fail states for unresolved assignments and digest conflicts", () => {
@@ -112,6 +112,6 @@ describe("AI review presentation", () => {
       schedulesNeedingBellTimes: 0,
       currentInstructionalDayCount: 1,
     });
-    expect(items.filter((item) => item.status === "fail").length).toBeGreaterThanOrEqual(4);
+    expect(items.filter((item) => item.status === "blocked").length).toBeGreaterThanOrEqual(4);
   });
 });
