@@ -72,6 +72,23 @@ describe("AI calendar review experience", () => {
     expect(review).toContain('warning.status === "unresolved"');
   });
 
+  it("renders warning sections only from the final normalized issue collection", () => {
+    expect(review).toContain("const finalReviewIssues = finalReviewIssueCollection.issues");
+    expect(review).toContain("groupFinalReviewIssues(finalReviewIssues)");
+    expect(review).toContain("const blockingWarnings = finalIssueGroups.blocking");
+    expect(review).not.toContain("automaticResolutions.map");
+    expect(review).not.toContain("warningReadiness");
+    expect(review).not.toContain("blockingIssueIds");
+  });
+
+  it("uses the exact normalized create-disabled inputs", () => {
+    expect(review).toContain("isAiCalendarCreateDisabled({");
+    expect(review).toContain("requiredAcknowledgmentsMissing,");
+    expect(review).toContain("previewDigestMismatch,");
+    expect(review).toContain("creationInProgress,");
+    expect(review).toContain("disabled={createDisabled}");
+  });
+
   it("removes the special-day category and derives summary counts from the preview", () => {
     expect(review).not.toContain("Special School Days");
     expect(review).not.toContain("Special Schedule Days");

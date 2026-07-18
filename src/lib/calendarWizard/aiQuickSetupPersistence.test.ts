@@ -7,6 +7,9 @@ import {
   getAiCreateCalendarReadiness,
   getCalendarWarningIssueId,
   getAiScheduleUsageDetails,
+  getUnresolvedBlockingReviewIssues,
+  groupFinalReviewIssues,
+  isAiCalendarCreateDisabled,
   isNoSchoolLikeDetectedScheduleName,
   normalizeAndDeduplicateReviewIssues,
   planAiSchedulePersistence,
@@ -764,6 +767,77 @@ describe("AI quick setup persistence planning", () => {
     ]);
     expect(review.blockingWarnings).toHaveLength(0);
     expect(review.canCreateCalendar).toBe(true);
+  });
+
+  it("suppresses identical-label Memorial Day self-overlaps on client and server normalization", () => {
+    const importResult = createMockAiCalendarImportResult();
+    importResult.noSchoolRanges = [{
+      id: "memorial-day-range",
+      startDate: "2027-05-31",
+      endDate: "2027-05-31",
+      label: "Memorial Day",
+      type: "Holiday",
+      confidence: "high",
+    }];
+    importResult.informationalDates = [{
+      id: "memorial-day-label",
+      date: "2027-05-31",
+      label: "Memorial Day",
+      confidence: "high",
+    }];
+    importResult.warnings = [];
+
+    const client = normalizeAndDeduplicateReviewIssues({ importResult });
+    const server = normalizeAndDeduplicateReviewIssues({ importResult });
+
+    expect(client.issues.filter((issue) =>
+      issue.affectedDates.includes("2027-05-31")
+    )).toHaveLength(0);
+    expect(client.diagnosticCounts.deduplicatedIssueCount).toBe(
+      server.diagnosticCounts.deduplicatedIssueCount
+    );
+  });
+
+  it("uses final normalized issues for blocker grouping and create enablement", () => {
+    const importResult = createMockAiCalendarImportResult();
+    importResult.warnings = [{
+      code: "instructional_day_count_mismatch",
+      severity: "review",
+      message: "Review the instructional day count.",
+    }];
+    const unresolved = normalizeAndDeduplicateReviewIssues({ importResult });
+    const issue = unresolved.needsReviewWarnings[0];
+    const acknowledged = normalizeAndDeduplicateReviewIssues({
+      importResult,
+      warningResolutions: [{
+        issueId: issue.issueId,
+        issueCode: issue.issueCode,
+        code: issue.issueCode,
+        status: "acknowledged",
+        affectedDates: issue.affectedDates,
+      }],
+    });
+    const manuallyResolved = normalizeAndDeduplicateReviewIssues({
+      importResult,
+      warningResolutions: [{
+        issueId: issue.issueId,
+        issueCode: issue.issueCode,
+        code: issue.issueCode,
+        status: "manually_resolved",
+        affectedDates: issue.affectedDates,
+      }],
+    });
+
+    expect(getUnresolvedBlockingReviewIssues(acknowledged.issues)).toHaveLength(0);
+    expect(groupFinalReviewIssues(acknowledged.issues).needsReview).toHaveLength(0);
+    expect(groupFinalReviewIssues(acknowledged.issues).reviewed).toHaveLength(1);
+    expect(groupFinalReviewIssues(manuallyResolved.issues).needsReview).toHaveLength(0);
+    expect(isAiCalendarCreateDisabled({
+      finalReviewIssues: acknowledged.issues,
+      requiredAcknowledgmentsMissing: false,
+      previewDigestMismatch: false,
+      creationInProgress: false,
+    })).toBe(false);
   });
 
   it("uses stable issue IDs so resolving one date cannot leave or clear a stale sibling", () => {

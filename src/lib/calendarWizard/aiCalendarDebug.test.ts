@@ -1,11 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { buildAiCalendarDebugSnapshot } from "./aiCalendarDebug";
+import {
+  buildAiCalendarDebugSnapshot,
+  hasAiCalendarDebugPresentationMismatch,
+} from "./aiCalendarDebug";
 import { buildAiPreviewConfig } from "./aiImportPreview";
 import { createMockAiCalendarImportResult } from "./mockAiCalendarAnalyzer";
 import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
 import { normalizeAndDeduplicateReviewIssues } from "./aiQuickSetupPersistence";
 
 describe("AI Calendar Debug safe snapshot", () => {
+  it("detects a legacy visible blocker divergence", () => {
+    expect(hasAiCalendarDebugPresentationMismatch({
+      visibleBlockingCardIds: ["legacy-overlap"],
+      normalizedBlockingIssueIds: [],
+      createDisabledBecauseOfBlockers: false,
+    })).toBe(true);
+    expect(hasAiCalendarDebugPresentationMismatch({
+      visibleBlockingCardIds: [],
+      normalizedBlockingIssueIds: [],
+      createDisabledBecauseOfBlockers: false,
+    })).toBe(false);
+  });
+
   it("reports exact normalized blocker metadata without source-document contents", () => {
     const importResult = createMockAiCalendarImportResult();
     importResult.documentTitle = "PRIVATE PDF CONTENT";
@@ -64,6 +80,8 @@ describe("AI Calendar Debug safe snapshot", () => {
     });
 
     expect(snapshot.counts.rawWarningCount).toBe(1);
+    expect(snapshot.counts.unresolvedBlockingCount).toBe(0);
+    expect(snapshot.blockerIds).toEqual([]);
     expect(snapshot.issues).toHaveLength(1);
     expect(snapshot.issues[0]).toMatchObject({
       issueCode: "informational_label_inside_no_school",

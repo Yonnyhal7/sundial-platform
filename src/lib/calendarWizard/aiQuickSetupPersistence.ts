@@ -406,7 +406,13 @@ function safeNoSchoolLabelWarnings(importResult: AiCalendarImportResult) {
   for (const range of importResult.noSchoolRanges) {
     const nested = [
       ...importResult.informationalDates
-        .filter((item) => item.date >= range.startDate && item.date <= range.endDate)
+        .filter(
+          (item) =>
+            item.date >= range.startDate &&
+            item.date <= range.endDate &&
+            normalizeScheduleNameForMatching(item.label) !==
+              normalizeScheduleNameForMatching(range.label)
+        )
         .map((item) => ({
           id: item.id,
           startDate: item.date,
@@ -415,7 +421,11 @@ function safeNoSchoolLabelWarnings(importResult: AiCalendarImportResult) {
         })),
       ...importResult.specialDays
         .filter(
-          (day) => day.startDate <= range.endDate && day.endDate >= range.startDate
+          (day) =>
+            day.startDate <= range.endDate &&
+            day.endDate >= range.startDate &&
+            normalizeScheduleNameForMatching(day.label) !==
+              normalizeScheduleNameForMatching(range.label)
         )
         .map((day) => ({
           id: day.id,
@@ -440,6 +450,53 @@ function safeNoSchoolLabelWarnings(importResult: AiCalendarImportResult) {
     }
   }
   return warnings;
+}
+
+export function getUnresolvedBlockingReviewIssues(
+  issues: ClassifiedCalendarWarning[]
+) {
+  return issues.filter(
+    (issue) => issue.severity === "blocking" && issue.status === "unresolved"
+  );
+}
+
+export function groupFinalReviewIssues(issues: ClassifiedCalendarWarning[]) {
+  return {
+    blocking: getUnresolvedBlockingReviewIssues(issues),
+    needsReview: issues.filter(
+      (issue) => issue.severity === "needs_review" && issue.status === "unresolved"
+    ),
+    reviewed: issues.filter(
+      (issue) =>
+        issue.severity === "needs_review" &&
+        (issue.status === "acknowledged" || issue.status === "manually_resolved")
+    ),
+    automaticallyResolved: issues.filter(
+      (issue) =>
+        issue.severity === "automatically_resolved" &&
+        issue.status === "automatically_resolved"
+    ),
+    informational: issues.filter((issue) => issue.severity === "informational"),
+  };
+}
+
+export function isAiCalendarCreateDisabled({
+  finalReviewIssues,
+  requiredAcknowledgmentsMissing,
+  previewDigestMismatch,
+  creationInProgress,
+}: {
+  finalReviewIssues: ClassifiedCalendarWarning[];
+  requiredAcknowledgmentsMissing: boolean;
+  previewDigestMismatch: boolean;
+  creationInProgress: boolean;
+}) {
+  return (
+    getUnresolvedBlockingReviewIssues(finalReviewIssues).length > 0 ||
+    requiredAcknowledgmentsMissing ||
+    previewDigestMismatch ||
+    creationInProgress
+  );
 }
 
 export function normalizeAndDeduplicateReviewIssues({
@@ -505,9 +562,7 @@ export function normalizeAndDeduplicateReviewIssues({
     }
   }
   const issues = [...retained.values()];
-  const blockingWarnings = issues.filter(
-    (issue) => issue.severity === "blocking" && issue.status === "unresolved"
-  );
+  const blockingWarnings = getUnresolvedBlockingReviewIssues(issues);
   const needsReviewWarnings = issues.filter((issue) => issue.severity === "needs_review");
   const automaticallyResolvedWarnings = issues.filter(
     (issue) => issue.severity === "automatically_resolved"

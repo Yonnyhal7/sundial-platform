@@ -3,7 +3,10 @@ import type {
   AiImportDraftMetadata,
   AiImportWarningResolution,
 } from "./aiImportTypes";
-import type { ClassifiedCalendarWarning } from "./aiQuickSetupPersistence";
+import {
+  getUnresolvedBlockingReviewIssues,
+  type ClassifiedCalendarWarning,
+} from "./aiQuickSetupPersistence";
 import type {
   CalendarGenerationWarning,
   GeneratedCalendarDay,
@@ -99,6 +102,24 @@ export type AiCalendarDebugResolutionEvent = {
   remainingBlockerIds?: string[];
   occurredAt: string;
 };
+
+export function hasAiCalendarDebugPresentationMismatch({
+  visibleBlockingCardIds,
+  normalizedBlockingIssueIds,
+  createDisabledBecauseOfBlockers,
+}: {
+  visibleBlockingCardIds: string[];
+  normalizedBlockingIssueIds: string[];
+  createDisabledBecauseOfBlockers: boolean;
+}) {
+  const visibleIds = [...visibleBlockingCardIds].sort();
+  const normalizedIds = [...normalizedBlockingIssueIds].sort();
+  return (
+    visibleIds.length !== normalizedIds.length ||
+    visibleIds.some((id, index) => id !== normalizedIds[index]) ||
+    createDisabledBecauseOfBlockers !== (normalizedIds.length > 0)
+  );
+}
 
 type ReviewClassification = {
   issues: ClassifiedCalendarWarning[];
@@ -222,6 +243,9 @@ export function buildAiCalendarDebugSnapshot({
   warningResolutions?: AiImportWarningResolution[];
   restore: AiCalendarDebugRestoreInfo;
 }): AiCalendarDebugSnapshot {
+  const unresolvedBlockingIssues = getUnresolvedBlockingReviewIssues(
+    classification.issues
+  );
   const resolutionById = new Map(
     (warningResolutions || []).map((resolution) => [
       resolution.issueId || resolution.code,
@@ -322,13 +346,13 @@ export function buildAiCalendarDebugSnapshot({
     analysisAttemptId: metadata?.analysisAttemptId,
     counts: {
       ...classification.diagnosticCounts,
-      unresolvedBlockingCount: classification.blockingWarnings.length,
+      unresolvedBlockingCount: unresolvedBlockingIssues.length,
       needsReviewCount: classification.needsReviewWarnings.length,
       automaticallyResolvedCount: classification.automaticallyResolvedWarnings.length,
       informationalCount: classification.informationalWarnings.length,
       acknowledgedCount: classification.acknowledgedReviewWarnings.length,
     },
-    blockerIds: classification.blockingWarnings.map((issue) => issue.issueId),
+    blockerIds: unresolvedBlockingIssues.map((issue) => issue.issueId),
     issues,
     restore,
   };

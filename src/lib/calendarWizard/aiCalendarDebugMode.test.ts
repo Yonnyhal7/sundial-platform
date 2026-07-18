@@ -26,6 +26,12 @@ describe("temporary AI Calendar Debug Mode", () => {
     expect(actions).toContain("if (!aiCalendarDebugEnabled())");
     expect(actions).toContain("getCalendarDraftSchoolContext(school)");
     expect(actions).toContain('.eq("school_id", schoolData.id)');
+    expect(actions).toContain(
+      "getUnresolvedBlockingReviewIssues(\n      finalWarningClassification.issues"
+    );
+    expect(client).toContain(
+      "getUnresolvedBlockingReviewIssues(finalReviewIssues)"
+    );
   });
 
   it("renders diagnostics only behind the server-provided capability", () => {
@@ -37,6 +43,10 @@ describe("temporary AI Calendar Debug Mode", () => {
     expect(panel).toContain("Download Debug JSON");
     expect(panel).toContain("Client/server blocker mismatch");
     expect(client).toContain("Create Calendar is disabled because:");
+    expect(client).toContain("debugEnabled && debugPresentationMismatch");
+    expect(client).toContain(
+      "Debug mismatch: visible blocker state differs from normalized blocker state."
+    );
   });
 
   it("logs each requested safe pipeline and resolution event", () => {

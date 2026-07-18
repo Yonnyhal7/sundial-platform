@@ -7,6 +7,7 @@ import { ScheduleColorField } from "@/components/admin/ScheduleColorField";
 import AiCalendarDebugPanel from "./ai-calendar-debug-panel";
 import {
   buildAiCalendarDebugSnapshot,
+  hasAiCalendarDebugPresentationMismatch,
   type AiCalendarDebugResolutionEvent,
   type AiCalendarDebugRestoreInfo,
   type AiCalendarDebugSnapshot,
@@ -56,7 +57,6 @@ import {
 import {
   assignmentSourcePresentation,
   buildAiReviewReadiness,
-  deduplicateClassifiedWarnings,
   getCalendarWarningDateDetails,
   includedNoSchoolLabels,
 } from "@/lib/calendarWizard/aiReviewPresentation";
@@ -86,6 +86,9 @@ import {
 import {
   getCalendarWarningIssueId,
   getAiScheduleUsageDetails,
+  getUnresolvedBlockingReviewIssues,
+  groupFinalReviewIssues,
+  isAiCalendarCreateDisabled,
   normalizeAndDeduplicateReviewIssues,
   isNoSchoolLikeDetectedScheduleName,
   removeAiDetectedSchedule,
@@ -1973,6 +1976,7 @@ export default function ScheduleWizardClient({
               onAddTimesNow={saveAndOpenSchedule}
               onImmediateSave={saveCurrentDraft}
               onCreateCalendar={openAiCreateModal}
+              creationInProgress={isSaving}
               updateDraft={updateDraft}
               onInvalidateAiCache={invalidateAiImportCache}
               debugEnabled={aiCalendarDebugEnabled}
@@ -2251,6 +2255,7 @@ function AiCalendarImportCard({
   onAddTimesNow,
   onImmediateSave,
   onCreateCalendar,
+  creationInProgress,
   updateDraft,
   onInvalidateAiCache,
   debugEnabled,
@@ -2263,6 +2268,7 @@ function AiCalendarImportCard({
   onAddTimesNow: (tempId: string, detectedName: string) => Promise<void>;
   onImmediateSave: (draft: WizardDraft, step: WizardStep) => Promise<CalendarWizardDraftActionResult | null>;
   onCreateCalendar: () => Promise<void>;
+  creationInProgress: boolean;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
   onInvalidateAiCache: (pdfHash: string | undefined, reason: string) => Promise<void>;
   debugEnabled: boolean;
@@ -3351,6 +3357,7 @@ function AiCalendarImportCard({
           onWarningResolutionChange={updateWarningResolution}
           onRemoveSchedule={removeDetectedSchedule}
           onCreateCalendar={onCreateCalendar}
+          creationInProgress={creationInProgress}
           onContinueManually={continueManually}
           onAdvancedEdit={applyImport}
           onBackToReview={() => setReviewMode("review")}
@@ -3387,6 +3394,7 @@ function AiImportReview({
   onWarningResolutionChange,
   onRemoveSchedule,
   onCreateCalendar,
+  creationInProgress,
   onContinueManually,
   onAdvancedEdit,
   onBackToReview,
@@ -3427,6 +3435,7 @@ function AiImportReview({
   ) => Promise<AiWarningResolutionDebugResult>;
   onRemoveSchedule: (tempId: string, action: AiScheduleRemovalAction) => void;
   onCreateCalendar: () => Promise<void>;
+  creationInProgress: boolean;
   onContinueManually: () => void;
   onAdvancedEdit: () => void;
   onBackToReview: () => void;
@@ -3483,7 +3492,7 @@ function AiImportReview({
     importResult.instructionalDayCountReview,
     previewResult.summary.instructionalDayCount
   );
-  const warningReadiness = normalizeAndDeduplicateReviewIssues({
+  const finalReviewIssueCollection = normalizeAndDeduplicateReviewIssues({
     importResult,
     generationWarnings: previewResult.warnings,
     warningResolutions,
@@ -3508,18 +3517,26 @@ function AiImportReview({
     ...unreviewedRequiredAssignmentDates,
     ...unresolvedPreviewDays.map((day) => day.date),
   ]);
-  const blockingIssueIds = new Set([
-    ...warningReadiness.blockingWarnings.map((warning) => warning.issueId),
-    ...scheduleNameErrors.map((item) => `schedule-name::${item.tempId}`),
-    ...brownGoldConflicts.map((conflict) => `brown-gold::${conflict.date}`),
-    ...deterministicConflicts.map((conflict) => `deterministic::${conflict.date}`),
-    ...[...unresolvedAssignmentDates].map((date) => `assignment::${date}`),
-    ...(!instructionalDayCountReviewState.ready ? ["instructional-count::pending"] : []),
-  ]);
-  const blockingConflictCount = blockingIssueIds.size;
-  const canCreateCalendar = blockingConflictCount === 0;
-  const debugBlockingDetails = [
-    ...warningReadiness.blockingWarnings.map((warning) => ({
+  const finalReviewIssues = finalReviewIssueCollection.issues;
+  const finalIssueGroups = groupFinalReviewIssues(finalReviewIssues);
+  const unresolvedBlockingIssues = getUnresolvedBlockingReviewIssues(finalReviewIssues);
+  const requiredAcknowledgmentsMissing =
+    finalIssueGroups.needsReview.length > 0 ||
+    scheduleNameErrors.length > 0 ||
+    unresolvedAssignmentDates.size > 0 ||
+    !instructionalDayCountReviewState.ready;
+  const previewDigestMismatch =
+    brownGoldConflicts.length > 0 || deterministicConflicts.length > 0;
+  const createDisabled = isAiCalendarCreateDisabled({
+    finalReviewIssues,
+    requiredAcknowledgmentsMissing,
+    previewDigestMismatch,
+    creationInProgress,
+  });
+  const canCreateCalendar = !createDisabled;
+  const blockingConflictCount = unresolvedBlockingIssues.length;
+  const debugCreateDisabledDetails = [
+    ...unresolvedBlockingIssues.map((warning) => ({
       id: warning.issueId,
       date: warning.affectedDates[0],
       reason: `${warning.issueCode} is an unresolved blocking issue.`,
@@ -3551,6 +3568,20 @@ function AiImportReview({
           reason: "The instructional-day count review is still pending.",
         }]
       : []),
+    ...(finalIssueGroups.needsReview.length > 0
+      ? finalIssueGroups.needsReview.map((warning) => ({
+          id: `acknowledgment::${warning.issueId}`,
+          date: warning.affectedDates[0],
+          reason: `${warning.issueCode} still requires acknowledgment or manual resolution.`,
+        }))
+      : []),
+    ...(creationInProgress
+      ? [{
+          id: "creation::in-progress",
+          date: undefined,
+          reason: "Calendar creation is already in progress.",
+        }]
+      : []),
   ];
   const firstTwoInstructionalWeeks = previewResult.days
     .filter((day) => day.isSchoolDay)
@@ -3572,19 +3603,27 @@ function AiImportReview({
     schedulesNeedingBellTimes: schedulesNeedingTimes.length,
     currentInstructionalDayCount: previewResult.summary.instructionalDayCount,
   });
-  const blockingWarnings = deduplicateClassifiedWarnings(warningReadiness.blockingWarnings);
-  const reviewWarnings = deduplicateClassifiedWarnings(
-    warningReadiness.unacknowledgedReviewWarnings
+  const blockingWarnings = finalIssueGroups.blocking;
+  const reviewWarnings = finalIssueGroups.needsReview;
+  const acknowledgedWarnings = finalIssueGroups.reviewed;
+  const automaticallyResolvedWarnings = finalIssueGroups.automaticallyResolved;
+  const informationalWarnings = finalIssueGroups.informational;
+  const normalizedBlockingIssueIds = unresolvedBlockingIssues.map(
+    (warning) => warning.issueId
   );
-  const acknowledgedWarnings = deduplicateClassifiedWarnings(
-    warningReadiness.acknowledgedReviewWarnings
-  );
-  const automaticallyResolvedWarnings = deduplicateClassifiedWarnings(
-    warningReadiness.automaticallyResolvedWarnings
-  );
-  const informationalWarnings = deduplicateClassifiedWarnings(
-    warningReadiness.informationalWarnings
-  );
+  const visibleBlockingCardIds = blockingWarnings.map((warning) => warning.issueId);
+  const createDisabledBecauseOfBlockers = unresolvedBlockingIssues.length > 0;
+  const debugPresentationMismatch = hasAiCalendarDebugPresentationMismatch({
+    visibleBlockingCardIds,
+    normalizedBlockingIssueIds,
+    createDisabledBecauseOfBlockers,
+  });
+  const debugPresentationDiagnostics = JSON.stringify({
+    visibleBlockingCardIds,
+    normalizedBlockingIssueIds,
+    createDisabledBecauseOfBlockers,
+    createDisabledReasons: debugCreateDisabledDetails.map((detail) => detail.id),
+  });
   const clientWarningDebugSnapshot = debugEnabled
     ? buildAiCalendarDebugSnapshot({
         schoolSlug,
@@ -3592,7 +3631,7 @@ function AiImportReview({
         importResult,
         generationWarnings: previewResult.warnings,
         previewDays: previewResult.days,
-        classification: warningReadiness,
+        classification: finalReviewIssueCollection,
         metadata: {
           state: "review",
           result: importResult,
@@ -3613,16 +3652,7 @@ function AiImportReview({
         },
       })
     : null;
-  const clientDebugSnapshot = clientWarningDebugSnapshot
-    ? {
-        ...clientWarningDebugSnapshot,
-        blockerIds: [...blockingIssueIds],
-        counts: {
-          ...clientWarningDebugSnapshot.counts,
-          unresolvedBlockingCount: blockingConflictCount,
-        },
-      }
-    : null;
+  const clientDebugSnapshot = clientWarningDebugSnapshot;
   const automaticResolutions = (importResult.automaticResolutions || []).filter(
     (resolution, index, all) =>
       all.findIndex((candidate) =>
@@ -3631,10 +3661,7 @@ function AiImportReview({
         candidate.message === resolution.message
       ) === index
   );
-  const reviewItemCount =
-    warningReadiness.unacknowledgedReviewWarnings.length +
-    automaticallyResolvedWarnings.length +
-    automaticResolutions.length;
+  const reviewItemCount = reviewWarnings.length + acknowledgedWarnings.length;
 
   function refreshServerDebugSnapshot() {
     if (!debugEnabled) return;
@@ -3658,6 +3685,18 @@ function AiImportReview({
       cancelled = true;
     };
   }, [debugEnabled, schoolSlug, serverDebugState]);
+
+  useEffect(() => {
+    if (!debugEnabled || !debugPresentationMismatch) return;
+    console.error(
+      "[AI Calendar Debug] presentation blocker mismatch",
+      JSON.parse(debugPresentationDiagnostics)
+    );
+  }, [
+    debugEnabled,
+    debugPresentationMismatch,
+    debugPresentationDiagnostics,
+  ]);
 
   async function recordIssueResolution(
     warning: ClassifiedCalendarWarning,
@@ -3915,13 +3954,19 @@ function AiImportReview({
 
       {!canCreateCalendar && (
         <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
-          {scheduleNameErrors.length > 0
+          {creationInProgress
+            ? "Calendar creation is already in progress."
+            : scheduleNameErrors.length > 0
             ? "Resolve duplicate or invalid schedule names before creating the calendar."
             : !instructionalDayCountReviewState.ready
               ? "Review the flagged instructional-count dates individually or acknowledge the discrepancy as a group before creating the calendar."
             : unreviewedRequiredAssignmentDates.length > 0
               ? `Verify the first ${unreviewedRequiredAssignmentDates.length} remaining color-rotation assignments in the calendar preview before creating the calendar.`
-            : "Fix blocking calendar issues before creating the calendar."}
+            : reviewWarnings.length > 0
+              ? "Acknowledge or manually resolve the remaining review notes before creating the calendar."
+            : previewDigestMismatch
+              ? "Resolve the preview assignment mismatch before creating the calendar."
+              : "Fix blocking calendar issues before creating the calendar."}
         </p>
       )}
 
@@ -4143,40 +4188,17 @@ function AiImportReview({
             {issueConfirmation}
           </p>
         )}
-        {blockingWarnings.length === 0 && reviewWarnings.length === 0 && acknowledgedWarnings.length === 0 && automaticallyResolvedWarnings.length === 0 && informationalWarnings.length === 0 && automaticResolutions.length === 0 ? (
+        {finalReviewIssues.length === 0 ? (
           <p className="text-sm text-slate-500">No warnings were found.</p>
         ) : (
           <div className="space-y-5">
             {renderWarningGroup("Blocking", blockingWarnings)}
             {renderWarningGroup("Needs your review", reviewWarnings)}
             {renderWarningGroup("Reviewed", acknowledgedWarnings)}
-            {(automaticallyResolvedWarnings.length > 0 || automaticResolutions.length > 0) && (
+            {automaticallyResolvedWarnings.length > 0 && (
               <div>
                 <h5 className="text-sm font-bold text-slate-900 dark:text-white">Automatically resolved</h5>
                 {renderWarningGroup("What Sundial resolved", automaticallyResolvedWarnings)}
-                <ul className="mt-2 space-y-2">
-                  {automaticResolutions.map((resolution) => (
-                    <li key={`${resolution.code}-${resolution.title}`} className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100">
-                      <p className="font-bold">{resolution.title}</p>
-                      <p className="mt-1 font-semibold">{resolution.message}</p>
-                      {resolution.dateRange && importResult.informationalDates
-                        .filter((item) =>
-                          item.date >= resolution.dateRange!.startDate &&
-                          item.date <= resolution.dateRange!.endDate &&
-                          resolution.labelsPreserved?.includes(item.label)
-                        )
-                        .map((item) => (
-                          <p key={`${item.date}-${item.label}`} className="mt-2 text-xs font-semibold">
-                            <span className="font-bold">{formatDateForDisplay(item.date)}:</span>{" "}
-                            {item.label} occurs during {importResult.noSchoolRanges.find((range) => item.date >= range.startDate && item.date <= range.endDate)?.label || "the no-school range"}. Kept as no school and preserved both labels; the schedule rotation pauses.
-                          </p>
-                        ))}
-                      {resolution.labelsPreserved && resolution.labelsPreserved.length > 0 && (
-                        <p className="mt-1 text-xs font-semibold">Labels preserved: {resolution.labelsPreserved.join(", ")}</p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
               </div>
             )}
             {renderWarningGroup("Informational", informationalWarnings)}
@@ -4252,6 +4274,12 @@ function AiImportReview({
         />
       )}
 
+      {debugEnabled && debugPresentationMismatch && (
+        <div role="alert" className="mt-4 rounded-xl border border-red-500 bg-red-50 p-3 text-sm font-bold text-red-900 dark:bg-red-950/30 dark:text-red-100">
+          Debug mismatch: visible blocker state differs from normalized blocker state.
+        </div>
+      )}
+
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 dark:border-slate-700" data-ai-review-final-actions>
         {reviewMode === "advanced" ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -4274,14 +4302,14 @@ function AiImportReview({
           <button type="button" onClick={onStartOver} className={subtleButtonClass}>
             Start Over
           </button>
-          <button type="button" onClick={onCreateCalendar} disabled={!canCreateCalendar} className={sundialPrimaryButtonClass("px-5")}>
+          <button type="button" onClick={onCreateCalendar} disabled={createDisabled} className={sundialPrimaryButtonClass("px-5")}>
             Create Calendar
           </button>
           {debugEnabled && !canCreateCalendar && (
             <div className="basis-full rounded-xl border border-violet-300 bg-violet-50 p-3 text-left text-xs text-violet-950 dark:border-violet-800 dark:bg-violet-950/20 dark:text-violet-100">
               <p className="font-bold">Create Calendar is disabled because:</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 font-mono">
-                {debugBlockingDetails.map((blocker) => (
+                {debugCreateDisabledDetails.map((blocker) => (
                   <li key={blocker.id}>
                     {blocker.date ? `${formatDateForDisplay(blocker.date)}: ` : ""}
                     {blocker.id} — {blocker.reason}
@@ -6641,28 +6669,37 @@ function AiCreateCalendarModal({
     (resolution) => !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
   );
   const modalPreview = generateSchoolYearCalendar(buildAiPreviewConfig(importResult));
-  const warningClassification = normalizeAndDeduplicateReviewIssues({
+  const finalReviewIssueCollection = normalizeAndDeduplicateReviewIssues({
     importResult,
     generationWarnings: modalPreview.warnings,
     warningResolutions,
     analysisVersion: AI_CALENDAR_ANALYSIS_VERSION,
   });
-  const hasBlockingWarnings = warningClassification.blockingWarnings.length > 0;
+  const finalReviewIssues = finalReviewIssueCollection.issues;
+  const finalIssueGroups = groupFinalReviewIssues(finalReviewIssues);
+  const unresolvedBlockingIssues = getUnresolvedBlockingReviewIssues(finalReviewIssues);
+  const hasBlockingWarnings = unresolvedBlockingIssues.length > 0;
   const countReviewState = getInstructionalDayCountReviewState(
     importResult.instructionalDayCountReview,
     modalPreview.summary.instructionalDayCount
   );
   const datesLeftForLater = countReviewState.unresolvedDates;
   const reviewNoteCount =
-    warningClassification.needsReviewWarnings.length +
-    warningClassification.automaticallyResolvedWarnings.length;
+    finalIssueGroups.needsReview.length + finalIssueGroups.reviewed.length;
   const acknowledgedIssueCodes = [...new Set([
-    ...warningClassification.needsReviewWarnings.map((warning) => String(warning.code)),
+    ...finalIssueGroups.reviewed.map((warning) => String(warning.code)),
     ...(importResult.instructionalDayCountReview && countReviewState.ready
       ? ["instructional_day_count_mismatch"]
       : []),
   ])];
-  const canConfirm = !isSaving && !hasBlockingWarnings && countReviewState.ready;
+  const requiredAcknowledgmentsMissing = finalIssueGroups.needsReview.length > 0;
+  const canConfirm = !isAiCalendarCreateDisabled({
+    finalReviewIssues,
+    requiredAcknowledgmentsMissing:
+      requiredAcknowledgmentsMissing || !countReviewState.ready,
+    previewDigestMismatch: false,
+    creationInProgress: isSaving,
+  });
   const validationErrors =
     errorResult?.status === "validation_error" && errorResult.fieldErrors
       ? Object.values(errorResult.fieldErrors)
@@ -6788,7 +6825,7 @@ function AiCreateCalendarModal({
                 <MetricCard label="Need bell times" value={String(schedulesToCreate.length)} />
                 <MetricCard
                   label="Blocking issues"
-                  value={String(warningClassification.blockingWarnings.length)}
+                  value={String(unresolvedBlockingIssues.length)}
                 />
                 <MetricCard
                   label="Review items"
@@ -6824,17 +6861,17 @@ function AiCreateCalendarModal({
                     Fix these calendar issues before creating the calendar:
                   </p>
                   <ul className="mt-2 list-disc space-y-1 pl-5">
-                    {warningClassification.blockingWarnings.map((warning) => (
+                    {unresolvedBlockingIssues.map((warning) => (
                       <li key={warning.code}>{warning.message}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {!hasBlockingWarnings && warningClassification.resolvedReviewWarnings.length > 0 && (
+              {!hasBlockingWarnings && finalIssueGroups.reviewed.length > 0 && (
                 <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100">
-                  {warningClassification.resolvedReviewWarnings.length}{" "}
-                  {warningClassification.resolvedReviewWarnings.length === 1 ? "item was" : "items were"}{" "}
+                  {finalIssueGroups.reviewed.length}{" "}
+                  {finalIssueGroups.reviewed.length === 1 ? "item was" : "items were"}{" "}
                   reviewed and will not prevent calendar creation.
                 </div>
               )}

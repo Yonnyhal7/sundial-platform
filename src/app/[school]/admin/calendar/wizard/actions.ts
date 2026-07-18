@@ -45,6 +45,7 @@ import { mapGeneratedCalendarDaysToRows } from "@/lib/calendarWizard/persistence
 import {
   collectReferencedRemovedScheduleIds,
   collectUnmappedTemporaryScheduleIds,
+  getUnresolvedBlockingReviewIssues,
   logCalendarWarningClassification,
   normalizeAndDeduplicateReviewIssues,
   planAiSchedulePersistence,
@@ -1405,6 +1406,9 @@ export async function createAiCalendarFromDraftAction(
         ? AI_CALENDAR_ANALYSIS_VERSION
         : aiImport.analysisVersion,
     });
+    const unresolvedBlockingIssues = getUnresolvedBlockingReviewIssues(
+      finalWarningClassification.issues
+    );
     logCalendarWarningClassification("final_normalized_issues", finalWarningClassification);
     const debugContext = {
       routeRequestId,
@@ -1429,16 +1433,16 @@ export async function createAiCalendarFromDraftAction(
     });
     logAiCalendarDebug("readiness_calculated", {
       ...debugContext,
-      blockerIds: finalWarningClassification.blockingWarnings.map(
+      blockerIds: unresolvedBlockingIssues.map(
         (issue) => issue.issueId
       ),
       counts: finalWarningClassification.diagnosticCounts,
     });
 
-    if (finalWarningClassification.blockingWarnings.length > 0) {
+    if (unresolvedBlockingIssues.length > 0) {
       logAiCalendarDebug("create_calendar_disabled", {
         ...debugContext,
-        blockers: finalWarningClassification.blockingWarnings.map((issue) => ({
+        blockers: unresolvedBlockingIssues.map((issue) => ({
           issueId: issue.issueId,
           affectedDates: issue.affectedDates,
           severity: issue.severity,
@@ -1448,7 +1452,7 @@ export async function createAiCalendarFromDraftAction(
       });
       return validationError(
         "Fix these calendar issues before creating the calendar:",
-        warningIssueList(finalWarningClassification.blockingWarnings)
+        warningIssueList(unresolvedBlockingIssues)
       );
     }
 
