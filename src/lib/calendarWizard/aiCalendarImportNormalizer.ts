@@ -1,4 +1,5 @@
 import {
+  addDays,
   compareDateStrings,
   eachDateInRange,
   formatDateString,
@@ -309,6 +310,125 @@ function shouldReclassifyNoSchoolAsInformational(range: {
   return isTermEndingLabel(labelText) && !isExplicitNoSchoolLabel(labelText);
 }
 
+function isRallyScheduleException(value: string) {
+  return /\brally\b/i.test(value) && !/\b(no school|no classes|cancelled|canceled)\b/i.test(value);
+}
+
+function isNestedHolidayLabel(value: string) {
+  return /\b(admission day|holiday|holidays|christmas|new year(?:'s)? day)\b/i.test(value) &&
+    !/\b(rally|finals?|minimum day|testing|instruction)\b/i.test(value);
+}
+
+function canonicalCoverageLabel(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function reconcileNestedNoSchoolCoverage({
+  ranges,
+  specialDays,
+  informationalDates,
+  automaticResolutions,
+}: {
+  ranges: AiDetectedNoSchoolRange[];
+  specialDays: Array<{
+    id: string;
+    startDate: string;
+    endDate: string;
+    label: string;
+    type?: string;
+    scheduleTempId?: string;
+    isInstructional: boolean;
+    confidence: AiImportConfidence;
+    evidence?: AiImportEvidence;
+  }>;
+  informationalDates: AiDetectedInformationalDate[];
+  automaticResolutions: AiImportAutomaticResolution[];
+}) {
+  const nextRanges = [...ranges]
+    .map((range) => ({ ...range }))
+    .sort((left, right) => compareDateStrings(left.startDate, right.startDate));
+  const nestedSpecialIds = new Set<string>();
+  const preservedDates = [...informationalDates];
+
+  for (let index = 0; index < nextRanges.length - 1; index += 1) {
+    const current = nextRanges[index];
+    const next = nextRanges[index + 1];
+    if (canonicalCoverageLabel(current.label) !== canonicalCoverageLabel(next.label)) continue;
+    const gapStart = addDays(current.endDate, 1);
+    const gapEnd = addDays(next.startDate, -1);
+    if (compareDateStrings(gapStart, gapEnd) > 0) continue;
+    const gapDates = eachDateInRange(gapStart, gapEnd);
+    const nestedSpecials = specialDays.filter(
+      (day) =>
+        isNestedHolidayLabel(`${day.label} ${day.type || ""}`) &&
+        gapDates.every((date) => date >= day.startDate && date <= day.endDate)
+    );
+    const gapIsLabeled = gapDates.every((date) =>
+      nestedSpecials.some((day) => date >= day.startDate && date <= day.endDate) ||
+      informationalDates.some((item) => item.date === date && isNestedHolidayLabel(item.label))
+    );
+    if (!gapIsLabeled) continue;
+
+    current.endDate = next.endDate;
+    nextRanges.splice(index + 1, 1);
+    index -= 1;
+    for (const day of nestedSpecials) {
+      nestedSpecialIds.add(day.id);
+      for (const date of eachDateInRange(day.startDate, day.endDate)) {
+        preservedDates.push({
+          id: `${day.id}-nested-${date}`,
+          date,
+          label: day.label,
+          confidence: day.confidence,
+          evidence: day.evidence,
+        });
+      }
+    }
+    pushUniqueResolution(automaticResolutions, {
+      code: "informational_label_preserved",
+      title: "Nested no-school label preserved",
+      message: `${nestedSpecials.map((day) => day.label).join(", ") || "A named holiday"} occurs during ${current.label}. Sundial kept one continuous no-school range and preserved the nested label.`,
+      dateRange: { startDate: current.startDate, endDate: current.endDate },
+      labelsPreserved: [current.label, ...nestedSpecials.map((day) => day.label)],
+      originalIds: [current.id, next.id, ...nestedSpecials.map((day) => day.id)],
+    });
+  }
+
+  for (const day of specialDays) {
+    if (nestedSpecialIds.has(day.id) || !isNestedHolidayLabel(`${day.label} ${day.type || ""}`)) {
+      continue;
+    }
+    const containingRange = nextRanges.find(
+      (range) => day.startDate >= range.startDate && day.endDate <= range.endDate
+    );
+    if (!containingRange) continue;
+    nestedSpecialIds.add(day.id);
+    for (const date of eachDateInRange(day.startDate, day.endDate)) {
+      preservedDates.push({
+        id: `${day.id}-nested-${date}`,
+        date,
+        label: day.label,
+        confidence: day.confidence,
+        evidence: day.evidence,
+      });
+    }
+    pushUniqueResolution(automaticResolutions, {
+      code: "informational_label_preserved",
+      title: "Nested no-school label preserved",
+      message: `${day.label} occurs during ${containingRange.label}. Sundial kept the date as no school and preserved both labels.`,
+      dateRange: { startDate: day.startDate, endDate: day.endDate },
+      labelsPreserved: [containingRange.label, day.label],
+      originalIds: [containingRange.id, day.id],
+    });
+  }
+
+  return {
+    ranges: nextRanges,
+    specialDays: specialDays.filter((day) => !nestedSpecialIds.has(day.id)),
+    informationalDates: preservedDates,
+  };
+}
+
 function pushUniqueResolution(
   resolutions: AiImportAutomaticResolution[],
   resolution: AiImportAutomaticResolution
@@ -363,7 +483,7 @@ function mergeNoSchoolCoverage(
       isDateString(current.range.endDate) &&
       isDateString(range.startDate) &&
       isDateString(range.endDate) &&
-      compareDateStrings(range.startDate, current.range.endDate) <= 0
+      compareDateStrings(range.startDate, addDays(current.range.endDate, 1)) <= 0
     ) {
       const nextEndDate =
         compareDateStrings(range.endDate, current.range.endDate) > 0
@@ -625,8 +745,45 @@ export function normalizeAiCalendarExtraction(
 
   const automaticResolutions: AiImportAutomaticResolution[] = [];
   const preservedNoSchoolLabelDates: AiDetectedInformationalDate[] = [];
+  const rallySchedule = rawDetectedSchedules.find((schedule) =>
+    isRallyScheduleException(`${schedule.name} ${schedule.category}`)
+  );
+  const rallyNoSchoolIds = new Set(
+    rawNoSchoolRanges
+      .filter((range) => isRallyScheduleException(`${range.label} ${range.type || ""}`))
+      .map((range) => range.id)
+  );
+  const reclassifiedRallySpecialDays = rawNoSchoolRanges
+    .filter((range) => rallyNoSchoolIds.has(range.id))
+    .map((range) => ({
+      id: `${range.id}-instructional-rally`,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      label: range.label,
+      type: range.type || "Rally",
+      scheduleTempId: rallySchedule?.tempId || null,
+      isInstructional: true,
+      confidence: range.confidence,
+      evidence: range.evidence,
+    }));
+  for (const rally of reclassifiedRallySpecialDays) {
+    pushUniqueResolution(automaticResolutions, {
+      code: "instructional_schedule_exception_reclassified",
+      title: "Rally date kept instructional",
+      message: `${rally.label} is a rally schedule exception, not a no-school day. Sundial kept it instructional and assigned the Rally schedule.`,
+      dateRange: {
+        startDate: normalizeDateValue(rally.startDate),
+        endDate: normalizeRangeEnd(
+          normalizeDateValue(rally.startDate),
+          normalizeDateValue(rally.endDate)
+        ),
+      },
+      labelsPreserved: [rally.label],
+      originalIds: [rally.id],
+    });
+  }
   const normalizedNoSchoolCandidates = dedupeByKey(
-    rawNoSchoolRanges.map((range, index) => ({
+    rawNoSchoolRanges.filter((range) => !rallyNoSchoolIds.has(range.id)).map((range, index) => ({
       id: trimRequired(range.id, makeId("ai-no-school", range.label, index)),
       startDate: normalizeDateValue(range.startDate),
       endDate: normalizeRangeEnd(
@@ -673,7 +830,7 @@ export function normalizeAiCalendarExtraction(
   ).sort((a, b) => compareDateStrings(a.startDate, b.startDate));
 
   const normalizedSpecialDays = dedupeByKey(
-    rawSpecialSchoolDays.map((day, index) => ({
+    [...rawSpecialSchoolDays, ...reclassifiedRallySpecialDays].map((day, index) => ({
       id: trimRequired(day.id, makeId("ai-special", day.label, index)),
       startDate: normalizeDateValue(day.startDate),
       endDate: normalizeRangeEnd(
@@ -709,20 +866,32 @@ export function normalizeAiCalendarExtraction(
       preservedNoSchoolLabelDates
     ).sort((a, b) => compareDateStrings(a.startDate, b.startDate));
   }
-  const specialDays = normalizedSpecialDays.filter((day) => day.isInstructional);
+  let specialDays: AiCalendarImportResult["specialDays"] = normalizedSpecialDays.filter(
+    (day) => day.isInstructional
+  );
 
-  const informationalDates = dedupeByKey(
-    [
-      ...rawInformationalDates.map((date, index) => ({
-        id: trimRequired(date.id, makeId("ai-info", date.label, index)),
-        date: normalizeDateValue(date.date),
-        label: trimRequired(date.label, "Important Date"),
-        confidence: normalizeConfidence(date.confidence),
-        evidence: evidence(date.evidence),
-      })),
+  const normalizedRawInformationalDates = rawInformationalDates.map((date, index) => ({
+    id: trimRequired(date.id, makeId("ai-info", date.label, index)),
+    date: normalizeDateValue(date.date),
+    label: trimRequired(date.label, "Important Date"),
+    confidence: normalizeConfidence(date.confidence),
+    evidence: evidence(date.evidence),
+  }));
+  const reconciledCoverage = reconcileNestedNoSchoolCoverage({
+    ranges: noSchoolRanges,
+    specialDays,
+    informationalDates: [
+      ...normalizedRawInformationalDates,
       ...reclassifiedInformationalDates,
       ...preservedNoSchoolLabelDates,
     ],
+    automaticResolutions,
+  });
+  noSchoolRanges = reconciledCoverage.ranges;
+  specialDays = reconciledCoverage.specialDays;
+
+  const informationalDates = dedupeByKey(
+    reconciledCoverage.informationalDates,
     (date) => `${date.date}|${date.label.toLowerCase()}`,
     warnings
   ).sort((a, b) => compareDateStrings(a.date, b.date));
@@ -887,4 +1056,77 @@ export function normalizeAiCalendarExtraction(
   if (!validation.success) return validation;
 
   return { success: true, importResult: validation.data };
+}
+
+/** Repairs normalized drafts created before the current classification rules without raw PDF data. */
+export function normalizePersistedAiCalendarImportResult(
+  importResult: AiCalendarImportResult
+): AiCalendarImportResult {
+  const automaticResolutions = [...(importResult.automaticResolutions || [])];
+  const rallySchedule = importResult.detectedSchedules.find((schedule) =>
+    isRallyScheduleException(`${schedule.detectedName} ${schedule.category}`)
+  );
+  const rallyRanges = importResult.noSchoolRanges.filter((range) =>
+    isRallyScheduleException(`${range.label} ${range.type || ""}`)
+  );
+  const retainedNoSchoolRanges = importResult.noSchoolRanges.filter(
+    (range) => !rallyRanges.some((rally) => rally.id === range.id)
+  );
+  const rallySpecialDays = rallyRanges.map((range) => ({
+    id: `${range.id}-instructional-rally`,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    label: range.label,
+    type: "Rally",
+    scheduleTempId: rallySchedule?.tempId,
+    isInstructional: true,
+    confidence: range.confidence,
+    evidence: range.evidence,
+  }));
+  for (const rally of rallySpecialDays) {
+    pushUniqueResolution(automaticResolutions, {
+      code: "instructional_schedule_exception_reclassified",
+      title: "Rally date kept instructional",
+      message: `${rally.label} is a rally schedule exception, not a no-school day.`,
+      dateRange: { startDate: rally.startDate, endDate: rally.endDate },
+      labelsPreserved: [rally.label],
+      originalIds: [rally.id],
+    });
+  }
+
+  const mergedPreservedLabels: AiDetectedInformationalDate[] = [];
+  const mergedNoSchoolRanges = mergeNoSchoolCoverage(
+    retainedNoSchoolRanges,
+    automaticResolutions,
+    mergedPreservedLabels
+  );
+  const reconciled = reconcileNestedNoSchoolCoverage({
+    ranges: mergedNoSchoolRanges,
+    specialDays: [...importResult.specialDays, ...rallySpecialDays],
+    informationalDates: [...importResult.informationalDates, ...mergedPreservedLabels],
+    automaticResolutions,
+  });
+  const repairedBase: AiCalendarImportResult = {
+    ...importResult,
+    noSchoolRanges: reconciled.ranges,
+    specialDays: reconciled.specialDays,
+    informationalDates: dedupeByKey(
+      reconciled.informationalDates,
+      (item) => `${item.date}|${item.label.toLowerCase()}`,
+      []
+    ),
+    automaticResolutions,
+    warnings: importResult.warnings.filter((warning) => {
+      const value = `${warning.code} ${warning.message}`.toLowerCase();
+      return !(
+        /no[-\s]?school/.test(value) &&
+        (/special.*overlap/.test(value) || /date remains no[-\s]?school/.test(value))
+      );
+    }),
+    instructionalDayCountReview: undefined,
+  };
+  return initializeInstructionalDayCountReview(
+    repairedBase,
+    generateSchoolYearCalendar(buildAiPreviewConfig(repairedBase))
+  );
 }

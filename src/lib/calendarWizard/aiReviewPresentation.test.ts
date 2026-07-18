@@ -87,6 +87,13 @@ describe("AI review presentation", () => {
       status: "acknowledged" as const,
       classification: "needs_review" as const,
       resolved: true,
+      relevantLabelIdentities: [],
+      createdBy: "review_issue_normalizer" as const,
+      sourceArray: "test",
+      originalSeverity: "review" as const,
+      finalSeverity: "needs_review" as const,
+      finalStatus: "acknowledged" as const,
+      persistedOrGenerated: "normalized" as const,
     };
     expect(deduplicateClassifiedWarnings([warning, warning])).toHaveLength(1);
     expect(includedNoSchoolLabels("2026-12-21", "2027-01-01", [{

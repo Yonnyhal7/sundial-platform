@@ -19,6 +19,16 @@ import {
 } from "@/lib/calendarWizard/draftPersistence";
 import { generateSchoolYearCalendar } from "@/lib/calendarWizard/generateSchoolYearCalendar";
 import {
+  AI_CALENDAR_ANALYSIS_VERSION,
+  AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
+} from "@/lib/calendarWizard/aiCalendarAnalysisVersion";
+import { normalizePersistedAiCalendarImportResult } from "@/lib/calendarWizard/aiCalendarImportNormalizer";
+import {
+  buildAiCalendarDebugSnapshot,
+  type AiCalendarDebugResolutionEvent,
+  type AiCalendarDebugSnapshot,
+} from "@/lib/calendarWizard/aiCalendarDebug";
+import {
   computeAssignmentDigest,
   computeCalendarClassificationDigest,
   computeDatedScheduleAssignmentDigest,
@@ -33,10 +43,10 @@ import {
 } from "@/lib/calendarWizard/aiImportPreview";
 import { mapGeneratedCalendarDaysToRows } from "@/lib/calendarWizard/persistence";
 import {
-  classifyCalendarWarnings,
   collectReferencedRemovedScheduleIds,
   collectUnmappedTemporaryScheduleIds,
   logCalendarWarningClassification,
+  normalizeAndDeduplicateReviewIssues,
   planAiSchedulePersistence,
   resolveAiScheduleReferences,
   validateAiCalendarRpcRows,
@@ -120,6 +130,19 @@ export type CreateAiCalendarFromDraftActionInput = {
   previewClassificationDigest?: string;
   acknowledgedIssueCodes?: string[];
 };
+
+export type AiCalendarDebugSnapshotActionResult =
+  | { status: "success"; snapshot: AiCalendarDebugSnapshot }
+  | { status: "disabled" | "not_found" | "validation_error"; message: string };
+
+function aiCalendarDebugEnabled() {
+  return process.env.AI_CALENDAR_DEBUG === "true";
+}
+
+function logAiCalendarDebug(event: string, metadata: Record<string, unknown>) {
+  if (!aiCalendarDebugEnabled()) return;
+  console.info("AI calendar debug", { event, ...metadata });
+}
 
 export type CalendarWizardDraftActionResult =
   | {
@@ -936,11 +959,175 @@ async function getSetupCalendarCompletionRedirect({
   };
 }
 
+export async function getAiCalendarDebugSnapshotAction(
+  school: string
+): Promise<AiCalendarDebugSnapshotActionResult> {
+  if (!aiCalendarDebugEnabled()) {
+    return { status: "disabled", message: "AI Calendar Debug Mode is disabled." };
+  }
+
+  const routeRequestId = crypto.randomUUID();
+  const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+  const { data: draftRow, error } = await adminUser.supabase
+    .from("calendar_wizard_drafts")
+    .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
+    .eq("school_id", schoolData.id)
+    .eq("draft_type", AI_CALENDAR_WIZARD_DRAFT_TYPE)
+    .maybeSingle();
+
+  if (error || !draftRow) {
+    return { status: "not_found", message: "No saved AI calendar draft is available." };
+  }
+
+  const draft = safeDraftRecord(draftRow);
+  const metadata = draft?.wizard_data.draft.aiImport;
+  if (!draft || !metadata?.result) {
+    return { status: "not_found", message: "No saved AI calendar review is available." };
+  }
+  const validation = validateAiCalendarImportResult(metadata.result);
+  if (!validation.success) {
+    return { status: "validation_error", message: "The saved AI calendar review is malformed." };
+  }
+
+  const staleIssueDefinitions =
+    metadata.analysisVersion !== AI_CALENDAR_ANALYSIS_VERSION ||
+    metadata.issueSchemaVersion !== AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION;
+  const importResult = staleIssueDefinitions
+    ? normalizePersistedAiCalendarImportResult(validation.data)
+    : validation.data;
+  const generated = generateSchoolYearCalendar(buildAiPreviewConfig(importResult));
+  const classification = normalizeAndDeduplicateReviewIssues({
+    importResult,
+    generationWarnings: generated.warnings,
+    warningResolutions: metadata.warningResolutions || [],
+    analysisVersion: staleIssueDefinitions
+      ? AI_CALENDAR_ANALYSIS_VERSION
+      : metadata.analysisVersion,
+  });
+  const snapshot = buildAiCalendarDebugSnapshot({
+    schoolSlug: school,
+    routeRequestId,
+    importResult,
+    generationWarnings: generated.warnings,
+    previewDays: generated.days,
+    classification,
+    metadata: {
+      ...metadata,
+      analysisVersion: staleIssueDefinitions
+        ? AI_CALENDAR_ANALYSIS_VERSION
+        : metadata.analysisVersion,
+    },
+    warningResolutions: metadata.warningResolutions || [],
+    restore: {
+      restoredFromCache: metadata.cacheHit === true,
+      restoredFromWizardDraft: true,
+      cachedResultVersion: metadata.analysisVersion,
+      draftVersion: draft.wizard_data.version,
+      currentAnalysisAttemptId: metadata.analysisAttemptId,
+      draftAnalysisAttemptId: metadata.analysisAttemptId,
+      staleDraftDetected: staleIssueDefinitions,
+    },
+  });
+  snapshot.issues = snapshot.issues.map((issue) => ({
+    ...issue,
+    lastModifiedAtStage: "server creation validation",
+    history: [
+      ...issue.history,
+      {
+        stage: "serverCreationValidation",
+        severity: issue.severity,
+        status: issue.status,
+      },
+    ],
+  }));
+
+  const logContext = {
+    routeRequestId,
+    analysisAttemptId: metadata.analysisAttemptId,
+    school: schoolData.id,
+  };
+  logAiCalendarDebug("review_issues_raw", {
+    ...logContext,
+    count: classification.diagnosticCounts.rawWarningCount,
+    warningCodes: [...importResult.warnings, ...generated.warnings].map((warning) => warning.code),
+  });
+  logAiCalendarDebug("review_issues_normalized", {
+    ...logContext,
+    count: classification.diagnosticCounts.normalizedIssueCount,
+  });
+  logAiCalendarDebug("review_issues_deduplicated", {
+    ...logContext,
+    count: classification.diagnosticCounts.deduplicatedIssueCount,
+    issues: snapshot.issues.map((issue) => ({
+      issueId: issue.issueId,
+      affectedDates: issue.affectedDates,
+      severity: issue.severity,
+      status: issue.status,
+    })),
+  });
+  logAiCalendarDebug("readiness_calculated", {
+    ...logContext,
+    blockerIds: snapshot.blockerIds,
+    counts: snapshot.counts,
+  });
+  if (snapshot.blockerIds.length > 0) {
+    logAiCalendarDebug("create_calendar_disabled", {
+      ...logContext,
+      blockerIds: snapshot.blockerIds,
+      reasons: snapshot.issues
+        .filter((issue) => issue.unresolvedBlocker)
+        .map((issue) => issue.blockingReason),
+    });
+  }
+
+  return { status: "success", snapshot };
+}
+
+export async function recordAiCalendarDebugResolutionEventAction(
+  school: string,
+  value: AiCalendarDebugResolutionEvent
+) {
+  if (!aiCalendarDebugEnabled()) return { status: "disabled" as const };
+  const { schoolData } = await getCalendarDraftSchoolContext(school);
+  const allowedEvents = new Set([
+    "issue_resolution_started",
+    "issue_resolution_finished",
+    "issue_resolution_failed",
+  ]);
+  if (
+    !value ||
+    !allowedEvents.has(value.event) ||
+    typeof value.issueId !== "string" ||
+    !value.issueId ||
+    value.issueId.length > 500 ||
+    !Array.isArray(value.affectedDates)
+  ) {
+    return { status: "validation_error" as const };
+  }
+  logAiCalendarDebug(value.event, {
+    routeRequestId: String(value.routeRequestId).slice(0, 100),
+    school: schoolData.id,
+    issueId: value.issueId,
+    affectedDates: value.affectedDates.slice(0, 50),
+    previousSeverity: value.previousSeverity,
+    previousStatus: value.previousStatus,
+    nextSeverity: value.nextSeverity,
+    nextStatus: value.nextStatus,
+    draftSaveResult: value.draftSaveResult,
+    remainingBlockerIds: Array.isArray(value.remainingBlockerIds)
+      ? value.remainingBlockerIds.slice(0, 100)
+      : undefined,
+    occurredAt: value.occurredAt,
+  });
+  return { status: "success" as const };
+}
+
 export async function createAiCalendarFromDraftAction(
   school: string,
   input: CreateAiCalendarFromDraftActionInput = {}
 ): Promise<GenerateCalendarActionResult> {
   try {
+    const routeRequestId = crypto.randomUUID();
     const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
     const { data: draftRow, error: draftError } = await adminUser.supabase
       .from("calendar_wizard_drafts")
@@ -974,18 +1161,24 @@ export async function createAiCalendarFromDraftAction(
     }
 
     const aiImport = draft.wizard_data.draft.aiImport;
-    const importResult = aiImport?.result;
-    if (!importResult) {
+    const persistedImportResult = aiImport?.result;
+    if (!persistedImportResult) {
       return validationError(
         "This draft does not include an AI calendar import. Continue manually or upload the PDF again."
       );
     }
-    const importValidation = validateAiCalendarImportResult(importResult);
+    const importValidation = validateAiCalendarImportResult(persistedImportResult);
     if (!importValidation.success) {
       return validationError(
         "The saved AI calendar review is malformed. Reload the analysis before creating the calendar."
       );
     }
+    const staleIssueDefinitions =
+      aiImport.analysisVersion !== AI_CALENDAR_ANALYSIS_VERSION ||
+      aiImport.issueSchemaVersion !== AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION;
+    const importResult = staleIssueDefinitions
+      ? normalizePersistedAiCalendarImportResult(importValidation.data)
+      : importValidation.data;
     const detectedNameByTempId = new Map(
       importResult.detectedSchedules.map((schedule) => [schedule.tempId, schedule.detectedName])
     );
@@ -1009,19 +1202,6 @@ export async function createAiCalendarFromDraftAction(
       return validationError(
         "Verify the first 10 inferred rotation assignments before creating the calendar.",
         { calendar: `${unreviewedRequiredDates.length} inferred assignments still need explicit review.` }
-      );
-    }
-
-    const aiWarningClassification = classifyCalendarWarnings(
-      importResult.warnings,
-      aiImport.warningResolutions || []
-    );
-    logCalendarWarningClassification("ai_import", aiWarningClassification);
-
-    if (aiWarningClassification.blockingWarnings.length > 0) {
-      return validationError(
-        "Fix these calendar issues before creating the calendar:",
-        warningIssueList(aiWarningClassification.blockingWarnings)
       );
     }
 
@@ -1217,16 +1397,58 @@ export async function createAiCalendarFromDraftAction(
       );
     }
 
-    const generatedWarningClassification = classifyCalendarWarnings(
-      generated.warnings,
-      aiImport.warningResolutions || []
-    );
-    logCalendarWarningClassification("generated_calendar", generatedWarningClassification);
+    const finalWarningClassification = normalizeAndDeduplicateReviewIssues({
+      importResult,
+      generationWarnings: generated.warnings,
+      warningResolutions: aiImport.warningResolutions || [],
+      analysisVersion: staleIssueDefinitions
+        ? AI_CALENDAR_ANALYSIS_VERSION
+        : aiImport.analysisVersion,
+    });
+    logCalendarWarningClassification("final_normalized_issues", finalWarningClassification);
+    const debugContext = {
+      routeRequestId,
+      analysisAttemptId: aiImport.analysisAttemptId,
+      school: schoolData.id,
+    };
+    logAiCalendarDebug("review_issues_raw", {
+      ...debugContext,
+      count: finalWarningClassification.diagnosticCounts.rawWarningCount,
+      warningCodes: [...importResult.warnings, ...generated.warnings].map(
+        (warning) => warning.code
+      ),
+    });
+    logAiCalendarDebug("review_issues_normalized", {
+      ...debugContext,
+      count: finalWarningClassification.diagnosticCounts.normalizedIssueCount,
+    });
+    logAiCalendarDebug("review_issues_deduplicated", {
+      ...debugContext,
+      count: finalWarningClassification.diagnosticCounts.deduplicatedIssueCount,
+      issueIds: finalWarningClassification.issues.map((issue) => issue.issueId),
+    });
+    logAiCalendarDebug("readiness_calculated", {
+      ...debugContext,
+      blockerIds: finalWarningClassification.blockingWarnings.map(
+        (issue) => issue.issueId
+      ),
+      counts: finalWarningClassification.diagnosticCounts,
+    });
 
-    if (generatedWarningClassification.blockingWarnings.length > 0) {
+    if (finalWarningClassification.blockingWarnings.length > 0) {
+      logAiCalendarDebug("create_calendar_disabled", {
+        ...debugContext,
+        blockers: finalWarningClassification.blockingWarnings.map((issue) => ({
+          issueId: issue.issueId,
+          affectedDates: issue.affectedDates,
+          severity: issue.severity,
+          status: issue.status,
+          reason: `${issue.issueCode} is unresolved and blocking after final normalization.`,
+        })),
+      });
       return validationError(
         "Fix these calendar issues before creating the calendar:",
-        warningIssueList(generatedWarningClassification.blockingWarnings)
+        warningIssueList(finalWarningClassification.blockingWarnings)
       );
     }
 
@@ -1236,13 +1458,11 @@ export async function createAiCalendarFromDraftAction(
       )
     );
     const persistedResolvedIssueIds = new Set([
-      ...aiWarningClassification.acknowledgedReviewWarnings,
-      ...generatedWarningClassification.acknowledgedReviewWarnings,
+      ...finalWarningClassification.acknowledgedReviewWarnings,
     ].map((warning) => warning.issueId));
     const acknowledgedIssueCodes = new Set(explicitlyAcknowledgedIssueCodes);
     for (const warning of [
-      ...aiWarningClassification.acknowledgedReviewWarnings,
-      ...generatedWarningClassification.acknowledgedReviewWarnings,
+      ...finalWarningClassification.acknowledgedReviewWarnings,
     ]) {
       acknowledgedIssueCodes.add(warning.issueCode);
     }
@@ -1250,8 +1470,7 @@ export async function createAiCalendarFromDraftAction(
       acknowledgedIssueCodes.add("instructional_day_count_mismatch");
     }
     const missingAcknowledgments = [
-      ...aiWarningClassification.unacknowledgedReviewWarnings,
-      ...generatedWarningClassification.unacknowledgedReviewWarnings,
+      ...finalWarningClassification.unacknowledgedReviewWarnings,
     ].filter(
       (warning) =>
         !persistedResolvedIssueIds.has(warning.issueId) &&
@@ -1477,8 +1696,7 @@ export async function createAiCalendarFromDraftAction(
             ? setupCompletion.schedulesNeedingTimes
             : plan.schedulesNeedingTimes,
         warningsRemaining:
-          aiWarningClassification.unresolvedReviewWarnings.length +
-          generatedWarningClassification.reviewWarnings.length,
+          finalWarningClassification.unacknowledgedReviewWarnings.length,
       },
     };
   } catch (error) {

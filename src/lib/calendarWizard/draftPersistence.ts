@@ -159,6 +159,10 @@ function normalizeAiImport(aiImport: unknown): AiImportDraftMetadata | null {
       typeof stripped.analysisVersion === "string"
         ? stripped.analysisVersion
         : undefined,
+    issueSchemaVersion:
+      typeof stripped.issueSchemaVersion === "number"
+        ? stripped.issueSchemaVersion
+        : undefined,
     analysisAttemptId:
       typeof stripped.analysisAttemptId === "string"
         ? stripped.analysisAttemptId

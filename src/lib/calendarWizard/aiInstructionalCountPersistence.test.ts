@@ -17,7 +17,10 @@ describe("AI instructional count review persistence", () => {
     expect(actions).toContain("Review the instructional-day count difference before creating the calendar.");
     expect(actions).toContain("previewClassificationDigest");
     expect(actions).toContain("p_count_review:");
-    expect(actions).toContain("generated.warnings,\n      aiImport.warningResolutions || []");
+    expect(actions).toContain("normalizeAndDeduplicateReviewIssues({");
+    expect(actions).toContain("generationWarnings: generated.warnings");
+    expect(actions).toContain("normalizePersistedAiCalendarImportResult(importValidation.data)");
+    expect(actions).toContain("aiImport.issueSchemaVersion !== AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION");
   });
 
   it("stores separate declared, generated, and final counts with reviewer audit fields", () => {

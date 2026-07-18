@@ -3,7 +3,7 @@ import {
   getDetectedScheduleUsageCounts,
   getRequiredDetectedScheduleIds,
 } from "./aiImportConversion";
-import { isDateString } from "./dateUtils";
+import { eachDateInRange, isDateString } from "./dateUtils";
 import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
 import type {
   AiCalendarImportResult,
@@ -76,8 +76,15 @@ export type AiScheduleRemovalResult =
     };
 
 type ClassifiableCalendarWarning =
-  | AiImportWarning
-  | (CalendarGenerationWarning & { severity?: AiImportWarning["severity"] });
+  (
+    | AiImportWarning
+    | (CalendarGenerationWarning & { severity?: AiImportWarning["severity"] })
+  ) & {
+    createdBy?: "ai_response" | "import_normalizer" | "calendar_generator" | "review_issue_normalizer";
+    sourceArray?: string;
+    persistedOrGenerated?: "persisted" | "generated" | "normalized";
+    analysisVersion?: string;
+  };
 
 export type CalendarWarningClassificationKind =
   | "blocking"
@@ -103,6 +110,14 @@ export type ClassifiedCalendarWarning = Omit<ClassifiableCalendarWarning, "sever
   resolution?: string;
   reviewedBy?: string;
   reviewedAt?: string;
+  relevantLabelIdentities: string[];
+  createdBy: "ai_response" | "import_normalizer" | "calendar_generator" | "review_issue_normalizer";
+  sourceArray: string;
+  originalSeverity: AiImportWarning["severity"] | "unspecified";
+  finalSeverity: CalendarWarningClassificationKind;
+  finalStatus: CalendarReviewIssueStatus;
+  persistedOrGenerated: "persisted" | "generated" | "normalized";
+  analysisVersion?: string;
 };
 
 export type CalendarWarningClassification = {
@@ -147,6 +162,7 @@ const automaticallyResolvedWarningCodes = new Set([
   "duplicate_import_item_removed",
   "overlapping_no_school_ranges",
   "special_day_overlaps_no_school",
+  "informational_label_inside_no_school",
   "duplicate_label_removed",
   "punctuation_variant_schedule_name",
   "duplicate_no_school_coverage",
@@ -180,10 +196,27 @@ function warningSourceIds(warning: ClassifiableCalendarWarning) {
     : [];
 }
 
+function isSemanticSafeNoSchoolOverlap(warning: ClassifiableCalendarWarning) {
+  const value = `${warning.code || ""} ${warning.message || ""}`.toLowerCase();
+  const mentionsNoSchool = /no[-\s]?school/.test(value);
+  const mentionsNestedLabel =
+    /special.*overlap/.test(value) ||
+    /informational.*(?:inside|overlap|occurs during)/.test(value) ||
+    /date remains no[-\s]?school/.test(value) ||
+    /kept (?:the date )?as no[-\s]?school/.test(value);
+  return mentionsNoSchool && mentionsNestedLabel;
+}
+
+function normalizedWarningCode(warning: ClassifiableCalendarWarning) {
+  return isSemanticSafeNoSchoolOverlap(warning)
+    ? "informational_label_inside_no_school"
+    : String(warning.code || "calendar_warning");
+}
+
 export function getCalendarWarningIssueId(warning: ClassifiableCalendarWarning) {
   const dates = warningDates(warning);
   const sources = warningSourceIds(warning);
-  return [String(warning.code || "calendar_warning"), dates.join(","), sources.join(",")]
+  return [normalizedWarningCode(warning), dates.join(","), sources.join(",")]
     .map((part) => part || "none")
     .join("::");
 }
@@ -224,6 +257,7 @@ function classifyWarningKind(
   if (blockingWarningCodes.has(code)) return "blocking";
   if (
     automaticallyResolvedWarningCodes.has(code) ||
+    isSemanticSafeNoSchoolOverlap(warning) ||
     (message.includes("special school day overlaps") &&
       message.includes("no-school day") &&
       message.includes("remains no school"))
@@ -281,6 +315,7 @@ export function classifyCalendarWarnings(
 
   for (const warning of warnings) {
     const classification = classifyWarningKind(warning);
+    const issueCode = normalizedWarningCode(warning);
     const issueId = getCalendarWarningIssueId(warning);
     const resolution =
       resolutionsByIssueId.get(issueId) || legacyResolutionsByCode.get(warning.code);
@@ -289,7 +324,7 @@ export function classifyCalendarWarnings(
     const classified: ClassifiedCalendarWarning = {
       ...warning,
       issueId,
-      issueCode: String(warning.code),
+      issueCode,
       affectedDates: warningDates(warning),
       severity: classification,
       status,
@@ -299,6 +334,21 @@ export function classifyCalendarWarnings(
       resolution: resolution?.resolution,
       reviewedBy: resolution?.reviewedBy,
       reviewedAt: resolution?.reviewedAt,
+      relevantLabelIdentities: [],
+      createdBy:
+        warning.createdBy ||
+        (warningDates(warning).length > 0 ? "calendar_generator" : "ai_response"),
+      sourceArray:
+        warning.sourceArray ||
+        (warningDates(warning).length > 0 ? "generationWarnings" : "importResult.warnings"),
+      originalSeverity:
+        "severity" in warning && warning.severity ? warning.severity : "unspecified",
+      finalSeverity: classification,
+      finalStatus: status,
+      persistedOrGenerated:
+        warning.persistedOrGenerated ||
+        (warningDates(warning).length > 0 ? "generated" : "persisted"),
+      analysisVersion: warning.analysisVersion,
     };
 
     if (classification === "blocking") {
@@ -332,6 +382,176 @@ export function classifyCalendarWarnings(
   };
 }
 
+function labelsForIssue(importResult: AiCalendarImportResult, dates: string[]) {
+  const labels = new Set<string>();
+  for (const date of dates) {
+    for (const range of importResult.noSchoolRanges) {
+      if (date >= range.startDate && date <= range.endDate) labels.add(range.label);
+    }
+    for (const day of importResult.specialDays) {
+      if (date >= day.startDate && date <= day.endDate) labels.add(day.label);
+    }
+    for (const item of importResult.informationalDates) {
+      if (item.date === date) labels.add(item.label);
+    }
+  }
+  return [...labels]
+    .map((label) => normalizeScheduleNameForMatching(label))
+    .filter(Boolean)
+    .sort();
+}
+
+function safeNoSchoolLabelWarnings(importResult: AiCalendarImportResult) {
+  const warnings: ClassifiableCalendarWarning[] = [];
+  for (const range of importResult.noSchoolRanges) {
+    const nested = [
+      ...importResult.informationalDates
+        .filter((item) => item.date >= range.startDate && item.date <= range.endDate)
+        .map((item) => ({
+          id: item.id,
+          startDate: item.date,
+          endDate: item.date,
+          label: item.label,
+        })),
+      ...importResult.specialDays
+        .filter(
+          (day) => day.startDate <= range.endDate && day.endDate >= range.startDate
+        )
+        .map((day) => ({
+          id: day.id,
+          startDate: day.startDate < range.startDate ? range.startDate : day.startDate,
+          endDate: day.endDate > range.endDate ? range.endDate : day.endDate,
+          label: day.label,
+        })),
+    ];
+    for (const item of nested) {
+      for (const date of eachDateInRange(item.startDate, item.endDate)) {
+        warnings.push({
+          code: "informational_label_inside_no_school",
+          severity: "info",
+          message: `${item.label} occurs during ${range.label}. Sundial kept the date as no school, preserved both labels, removed the student schedule assignment, and paused rotation.`,
+          dates: [date],
+          sourceIds: [range.id, item.id],
+          createdBy: "review_issue_normalizer",
+          sourceArray: "normalizedSafeNoSchoolLabels",
+          persistedOrGenerated: "normalized",
+        } as ClassifiableCalendarWarning);
+      }
+    }
+  }
+  return warnings;
+}
+
+export function normalizeAndDeduplicateReviewIssues({
+  importResult,
+  generationWarnings = [],
+  warningResolutions = [],
+  scheduleNameErrorCount = 0,
+  analysisVersion,
+}: {
+  importResult: AiCalendarImportResult;
+  generationWarnings?: CalendarGenerationWarning[];
+  warningResolutions?: AiImportWarningResolution[];
+  scheduleNameErrorCount?: number;
+  analysisVersion?: string;
+}) {
+  const normalizedSafeWarnings = safeNoSchoolLabelWarnings(importResult).map((warning) => ({
+    ...warning,
+    analysisVersion,
+  }));
+  const hasNormalizedSafeIssue = normalizedSafeWarnings.length > 0;
+  const persistedWarnings = importResult.warnings
+    .filter((warning) => !(hasNormalizedSafeIssue && isSemanticSafeNoSchoolOverlap(warning)))
+    .map((warning) => ({
+      ...warning,
+      createdBy: "import_normalizer" as const,
+      sourceArray: "importResult.warnings",
+      persistedOrGenerated: "persisted" as const,
+      analysisVersion,
+    }));
+  const generatedWarnings = generationWarnings.map((warning) => ({
+    ...warning,
+    createdBy: "calendar_generator" as const,
+    sourceArray: "generationWarnings",
+    persistedOrGenerated: "generated" as const,
+    analysisVersion,
+  }));
+  const classified = classifyCalendarWarnings(
+    [...persistedWarnings, ...generatedWarnings, ...normalizedSafeWarnings],
+    warningResolutions
+  );
+  const allIssues = [
+    ...classified.blockingWarnings,
+    ...classified.needsReviewWarnings,
+    ...classified.automaticallyResolvedWarnings,
+    ...classified.informationalWarnings,
+  ];
+  const retained = new Map<string, ClassifiedCalendarWarning>();
+  for (const issue of allIssues) {
+    const relevantLabelIdentities = labelsForIssue(importResult, issue.affectedDates);
+    const normalizedIssue = { ...issue, relevantLabelIdentities };
+    const key = [
+      issue.issueCode,
+      [...issue.affectedDates].sort().join(",") || "none",
+      relevantLabelIdentities.join(",") || "none",
+    ].join("::");
+    const current = retained.get(key);
+    if (
+      !current ||
+      (normalizedIssue.severity === "automatically_resolved" &&
+        current.severity !== "automatically_resolved")
+    ) {
+      retained.set(key, normalizedIssue);
+    }
+  }
+  const issues = [...retained.values()];
+  const blockingWarnings = issues.filter(
+    (issue) => issue.severity === "blocking" && issue.status === "unresolved"
+  );
+  const needsReviewWarnings = issues.filter((issue) => issue.severity === "needs_review");
+  const automaticallyResolvedWarnings = issues.filter(
+    (issue) => issue.severity === "automatically_resolved"
+  );
+  const informationalWarnings = issues.filter(
+    (issue) => issue.severity === "informational"
+  );
+  const unacknowledgedReviewWarnings = needsReviewWarnings.filter(
+    (issue) => issue.status === "unresolved"
+  );
+  const acknowledgedReviewWarnings = needsReviewWarnings.filter(
+    (issue) => issue.status !== "unresolved"
+  );
+
+  return {
+    issues,
+    diagnosticCounts: {
+      rawWarningCount: importResult.warnings.length + generationWarnings.length,
+      normalizedIssueCount: allIssues.length,
+      deduplicatedIssueCount: issues.length,
+    },
+    blockingWarnings,
+    needsReviewWarnings,
+    automaticallyResolvedWarnings,
+    informationalWarnings,
+    unacknowledgedReviewWarnings,
+    acknowledgedReviewWarnings,
+    reviewWarnings: needsReviewWarnings,
+    unresolvedReviewWarnings: unacknowledgedReviewWarnings,
+    resolvedReviewWarnings: acknowledgedReviewWarnings,
+    canCreateCalendar: scheduleNameErrorCount === 0 && blockingWarnings.length === 0,
+    needsReviewAcknowledgment: unacknowledgedReviewWarnings.length > 0,
+  } satisfies CalendarWarningClassification & {
+    issues: ClassifiedCalendarWarning[];
+    diagnosticCounts: {
+      rawWarningCount: number;
+      normalizedIssueCount: number;
+      deduplicatedIssueCount: number;
+    };
+    canCreateCalendar: boolean;
+    needsReviewAcknowledgment: boolean;
+  };
+}
+
 export function getAiCreateCalendarReadiness({
   warnings,
   warningResolutions,
@@ -355,10 +575,25 @@ export function logCalendarWarningClassification(
   source: string,
   classification: CalendarWarningClassification
 ) {
-  if (process.env.NODE_ENV === "production") return;
-
   console.info("[AI Quick Setup warning classification]", {
     source,
+    issues: [
+      ...classification.blockingWarnings,
+      ...classification.needsReviewWarnings,
+      ...classification.automaticallyResolvedWarnings,
+      ...classification.informationalWarnings,
+    ].map((issue) => ({
+      issueId: issue.issueId,
+      issueCode: issue.issueCode,
+      createdBy: issue.createdBy,
+      affectedDates: issue.affectedDates,
+      sourceArray: issue.sourceArray,
+      originalSeverity: issue.originalSeverity,
+      finalSeverity: issue.finalSeverity,
+      finalStatus: issue.finalStatus,
+      persistedOrGenerated: issue.persistedOrGenerated,
+      analysisVersion: issue.analysisVersion,
+    })),
     blocking: classification.blockingWarnings.map((warning) => warning.code),
     needsReview: classification.needsReviewWarnings.map((warning) => ({
       code: warning.code,

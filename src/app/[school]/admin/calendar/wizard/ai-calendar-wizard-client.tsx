@@ -17,6 +17,7 @@ export default function AiCalendarWizardClient(props: {
   schedules: WizardScheduleSummary[];
   existingCalendarRange: ExistingCalendarRangeSummary;
   initialSavedDraft: CalendarWizardDraftRecord | null;
+  aiCalendarDebugEnabled: boolean;
 }) {
   return <ScheduleWizardClient {...props} flowMode="ai" />;
 }

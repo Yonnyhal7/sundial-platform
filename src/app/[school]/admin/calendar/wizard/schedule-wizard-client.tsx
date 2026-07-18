@@ -4,6 +4,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScheduleColorField } from "@/components/admin/ScheduleColorField";
+import AiCalendarDebugPanel from "./ai-calendar-debug-panel";
+import {
+  buildAiCalendarDebugSnapshot,
+  type AiCalendarDebugResolutionEvent,
+  type AiCalendarDebugRestoreInfo,
+  type AiCalendarDebugSnapshot,
+} from "@/lib/calendarWizard/aiCalendarDebug";
 import {
   AdminCalendarView,
   CalendarMonthNavigation,
@@ -30,7 +37,11 @@ import {
   parseAiImportStatusResponse,
   type AiImportStatusResponse,
 } from "@/lib/calendarWizard/aiImportClient";
-import { AI_CALENDAR_ANALYSIS_VERSION } from "@/lib/calendarWizard/aiCalendarAnalysisVersion";
+import {
+  AI_CALENDAR_ANALYSIS_VERSION,
+  AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
+} from "@/lib/calendarWizard/aiCalendarAnalysisVersion";
+import { normalizePersistedAiCalendarImportResult } from "@/lib/calendarWizard/aiCalendarImportNormalizer";
 import {
   computeAssignmentDigest,
   computeCalendarClassificationDigest,
@@ -73,10 +84,9 @@ import {
   type CalendarWizardLaunchContext,
 } from "@/lib/calendarWizard/launchContext";
 import {
-  classifyCalendarWarnings,
   getCalendarWarningIssueId,
   getAiScheduleUsageDetails,
-  getAiCreateCalendarReadiness,
+  normalizeAndDeduplicateReviewIssues,
   isNoSchoolLikeDetectedScheduleName,
   removeAiDetectedSchedule,
   type AiScheduleRemovalAction,
@@ -122,6 +132,8 @@ import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
 import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 import {
   createAiCalendarFromDraftAction,
+  getAiCalendarDebugSnapshotAction,
+  recordAiCalendarDebugResolutionEventAction,
   createGuidedScheduleName,
   deleteUnusedGuidedScheduleName,
   generateCalendarAction,
@@ -163,6 +175,12 @@ type AiImportProcessingReasonCode =
   | "draft_save_failed"
   | "review_generation_failed"
   | "calendar_validation_failed";
+type AiWarningResolutionDebugResult = {
+  nextSeverity: string;
+  nextStatus: string;
+  draftSaveResult: string;
+  remainingBlockerIds: string[];
+};
 type PatternMode = "same" | "alternate" | "repeating" | "weekday";
 type NoSchoolType =
   | "Holiday"
@@ -733,6 +751,20 @@ function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[
   if (!value || typeof value !== "object") return null;
   const fallback = createDefaultDraft(schedules);
   const record = value as Partial<WizardDraft>;
+  const restoredAiImport = record.aiImport && typeof record.aiImport === "object"
+    ? record.aiImport
+    : null;
+  const staleIssueDefinitions = Boolean(
+    restoredAiImport &&
+      (restoredAiImport.analysisVersion !== AI_CALENDAR_ANALYSIS_VERSION ||
+        restoredAiImport.issueSchemaVersion !== AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION)
+  );
+  const restoredImportResult = restoredAiImport?.result &&
+    typeof restoredAiImport.result === "object"
+      ? staleIssueDefinitions
+        ? normalizePersistedAiCalendarImportResult(restoredAiImport.result)
+        : restoredAiImport.result
+      : restoredAiImport?.result;
 
   return {
     ...fallback,
@@ -768,73 +800,83 @@ function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[
       ? record.informationalDates
       : [],
     aiImport:
-      record.aiImport && typeof record.aiImport === "object"
+      restoredAiImport
         ? {
-            state: isAiImportReviewState(record.aiImport.state)
-              ? record.aiImport.state
+            state: isAiImportReviewState(restoredAiImport.state)
+              ? restoredAiImport.state
               : "idle",
             fileName:
-              typeof record.aiImport.fileName === "string"
-                ? record.aiImport.fileName
+              typeof restoredAiImport.fileName === "string"
+                ? restoredAiImport.fileName
                 : undefined,
             result:
-              record.aiImport.result && typeof record.aiImport.result === "object"
+              restoredImportResult && typeof restoredImportResult === "object"
                 ? {
-                    ...record.aiImport.result,
-                    noSchoolRanges: Array.isArray(record.aiImport.result.noSchoolRanges)
-                      ? record.aiImport.result.noSchoolRanges.map(normalizeDraftRangeEnd)
+                    ...restoredImportResult,
+                    noSchoolRanges: Array.isArray(restoredImportResult.noSchoolRanges)
+                      ? restoredImportResult.noSchoolRanges.map(normalizeDraftRangeEnd)
                       : [],
-                    specialDays: Array.isArray(record.aiImport.result.specialDays)
-                      ? record.aiImport.result.specialDays.map(normalizeDraftRangeEnd)
+                    specialDays: Array.isArray(restoredImportResult.specialDays)
+                      ? restoredImportResult.specialDays.map(normalizeDraftRangeEnd)
                       : [],
                   }
-                : record.aiImport.result,
-            resolutions: Array.isArray(record.aiImport.resolutions)
-              ? record.aiImport.resolutions
+                : restoredImportResult,
+            resolutions: Array.isArray(restoredAiImport.resolutions)
+              ? restoredAiImport.resolutions
               : [],
             appliedAt:
-              typeof record.aiImport.appliedAt === "string"
-                ? record.aiImport.appliedAt
+              typeof restoredAiImport.appliedAt === "string"
+                ? restoredAiImport.appliedAt
                 : undefined,
             banner:
-              typeof record.aiImport.banner === "string"
-                ? record.aiImport.banner
+              typeof restoredAiImport.banner === "string"
+                ? restoredAiImport.banner
                 : undefined,
             pdfHash:
-              typeof record.aiImport.pdfHash === "string" &&
-              /^[0-9a-f]{64}$/i.test(record.aiImport.pdfHash)
-                ? record.aiImport.pdfHash
+              typeof restoredAiImport.pdfHash === "string" &&
+              /^[0-9a-f]{64}$/i.test(restoredAiImport.pdfHash)
+                ? restoredAiImport.pdfHash
                 : undefined,
-            cacheHit: record.aiImport.cacheHit === true,
+            cacheHit: restoredAiImport.cacheHit === true,
             cacheAnalyzedAt:
-              typeof record.aiImport.cacheAnalyzedAt === "string"
-                ? record.aiImport.cacheAnalyzedAt
+              typeof restoredAiImport.cacheAnalyzedAt === "string"
+                ? restoredAiImport.cacheAnalyzedAt
                 : undefined,
             cacheStrategy:
-              record.aiImport.cacheStrategy === "text-gpt5-mini" ||
-              record.aiImport.cacheStrategy === "pdf-gpt5"
-                ? record.aiImport.cacheStrategy
+              restoredAiImport.cacheStrategy === "text-gpt5-mini" ||
+              restoredAiImport.cacheStrategy === "pdf-gpt5"
+                ? restoredAiImport.cacheStrategy
                 : undefined,
-            analysisVersion:
-              typeof record.aiImport.analysisVersion === "string"
-                ? record.aiImport.analysisVersion
-                : undefined,
+            analysisVersion: staleIssueDefinitions
+              ? AI_CALENDAR_ANALYSIS_VERSION
+              : restoredAiImport.analysisVersion,
+            issueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
             analysisAttemptId:
-              typeof record.aiImport.analysisAttemptId === "string"
-                ? record.aiImport.analysisAttemptId
+              typeof restoredAiImport.analysisAttemptId === "string"
+                ? restoredAiImport.analysisAttemptId
                 : undefined,
             unresolvedRequiredScheduleIds: Array.isArray(
-              record.aiImport.unresolvedRequiredScheduleIds
+              restoredAiImport.unresolvedRequiredScheduleIds
             )
-              ? record.aiImport.unresolvedRequiredScheduleIds.filter(
+              ? restoredAiImport.unresolvedRequiredScheduleIds.filter(
                   (id): id is string => typeof id === "string"
                 )
               : [],
-            warnings: Array.isArray(record.aiImport.warnings)
-              ? record.aiImport.warnings
+            warnings: staleIssueDefinitions
+              ? restoredImportResult?.warnings || []
+              : Array.isArray(restoredAiImport.warnings)
+                ? restoredAiImport.warnings
               : [],
-            warningResolutions: Array.isArray(record.aiImport.warningResolutions)
-              ? record.aiImport.warningResolutions
+            warningResolutions: Array.isArray(restoredAiImport.warningResolutions)
+              ? restoredAiImport.warningResolutions.filter(
+                  (resolution) =>
+                    !staleIssueDefinitions ||
+                    Boolean(
+                      resolution.issueId &&
+                        resolution.status !== "unresolved" &&
+                        resolution.status !== "unreviewed"
+                    )
+                )
               : [],
           }
         : null,
@@ -1244,6 +1286,7 @@ export default function ScheduleWizardClient({
   flowMode = "guided",
   launchContext = null,
   setupChooserHref,
+  aiCalendarDebugEnabled = false,
 }: {
   schoolId: string;
   schoolSlug: string;
@@ -1255,6 +1298,7 @@ export default function ScheduleWizardClient({
   flowMode?: CalendarWizardFlowType;
   launchContext?: CalendarWizardLaunchContext | null;
   setupChooserHref: string;
+  aiCalendarDebugEnabled?: boolean;
 }) {
   const draftType = getDraftTypeForCalendarWizardFlow(flowMode);
   const isAiMode = flowMode === "ai";
@@ -1300,6 +1344,11 @@ export default function ScheduleWizardClient({
   const lastSavedDraftSnapshotRef = useRef<string | null>(null);
   const [completionSummary, setCompletionSummary] =
     useState<CalendarCompletionSummary | null>(null);
+  const [aiDebugRestoreInfo, setAiDebugRestoreInfo] = useState<AiCalendarDebugRestoreInfo>({
+    restoredFromCache: false,
+    restoredFromWizardDraft: false,
+    staleDraftDetected: false,
+  });
 
   const currentStepIndex = WIZARD_STEPS.findIndex((step) => step.id === currentStep);
   const scheduleMap = useMemo(
@@ -1404,6 +1453,7 @@ export default function ScheduleWizardClient({
       let restoredStep: WizardStep = "school-year";
       let restoredUpdatedAt: string | null = null;
       let shouldSaveLocalOverDatabase = false;
+      let restoredStoredData: CalendarWizardStoredData | undefined;
 
       if (
         source === "session" &&
@@ -1419,6 +1469,7 @@ export default function ScheduleWizardClient({
           restoredStep = normalizeGuidedWizardStep(localStored.data.currentStep);
           restoredUpdatedAt = localStored.updatedAt;
           shouldSaveLocalOverDatabase = Boolean(initialSavedDraft);
+          restoredStoredData = localStored.data;
         }
       } else if (initialSavedDraft) {
         restoredDraft =
@@ -1426,6 +1477,22 @@ export default function ScheduleWizardClient({
           createDefaultDraft(schedules);
         restoredStep = normalizeGuidedWizardStep(initialSavedDraft.wizard_data.currentStep);
         restoredUpdatedAt = initialSavedDraft.updated_at;
+        restoredStoredData = initialSavedDraft.wizard_data;
+      }
+
+      const restoredAiMetadata = restoredStoredData?.draft.aiImport;
+      if (aiCalendarDebugEnabled && restoredAiMetadata) {
+        setAiDebugRestoreInfo({
+          restoredFromCache: restoredAiMetadata.cacheHit === true,
+          restoredFromWizardDraft: true,
+          cachedResultVersion: restoredAiMetadata.analysisVersion,
+          draftVersion: restoredStoredData?.version,
+          currentAnalysisAttemptId: restoredAiMetadata.analysisAttemptId,
+          draftAnalysisAttemptId: restoredAiMetadata.analysisAttemptId,
+          staleDraftDetected:
+            restoredAiMetadata.analysisVersion !== AI_CALENDAR_ANALYSIS_VERSION ||
+            restoredAiMetadata.issueSchemaVersion !== AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
+        });
       }
 
       if (restoredDraft) {
@@ -1908,6 +1975,9 @@ export default function ScheduleWizardClient({
               onCreateCalendar={openAiCreateModal}
               updateDraft={updateDraft}
               onInvalidateAiCache={invalidateAiImportCache}
+              debugEnabled={aiCalendarDebugEnabled}
+              debugRestoreInfo={aiDebugRestoreInfo}
+              onDebugRestoreInfoChange={setAiDebugRestoreInfo}
             />
           ) : currentStep === "school-year" && (
             <div className="space-y-7">
@@ -2183,6 +2253,9 @@ function AiCalendarImportCard({
   onCreateCalendar,
   updateDraft,
   onInvalidateAiCache,
+  debugEnabled,
+  debugRestoreInfo,
+  onDebugRestoreInfoChange,
 }: {
   schoolSlug: string;
   schedules: WizardScheduleSummary[];
@@ -2192,6 +2265,9 @@ function AiCalendarImportCard({
   onCreateCalendar: () => Promise<void>;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
   onInvalidateAiCache: (pdfHash: string | undefined, reason: string) => Promise<void>;
+  debugEnabled: boolean;
+  debugRestoreInfo: AiCalendarDebugRestoreInfo;
+  onDebugRestoreInfoChange: (value: AiCalendarDebugRestoreInfo) => void;
 }) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [status, setStatus] = useState<AiImportReviewState>(
@@ -2502,6 +2578,17 @@ function AiCalendarImportCard({
           cacheAnalyzedAt
         )}. Strategy: ${cacheStrategyLabel(cacheStrategy)}.`
       : null;
+    if (debugEnabled) {
+      onDebugRestoreInfoChange({
+        restoredFromCache: cacheHit,
+        restoredFromWizardDraft: false,
+        cachedResultVersion: result.cache?.version,
+        draftVersion: 1,
+        currentAnalysisAttemptId: attemptId,
+        draftAnalysisAttemptId: attemptId,
+        staleDraftDetected: false,
+      });
+    }
     setMessage(
       nextState === "complete_with_warnings"
         ? "Analysis completed with warnings. Review before creating your calendar."
@@ -2521,7 +2608,8 @@ function AiCalendarImportCard({
           cacheHit,
           cacheAnalyzedAt,
           cacheStrategy,
-          analysisVersion: result.cache?.version,
+          analysisVersion: result.cache?.version || AI_CALENDAR_ANALYSIS_VERSION,
+          issueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
           analysisAttemptId: attemptId,
           banner:
             cacheBanner ||
@@ -2961,13 +3049,20 @@ function AiCalendarImportCard({
     });
   }
 
-  function updateWarningResolution(
+  async function updateWarningResolution(
     issue: Pick<ClassifiedCalendarWarning, "issueId" | "issueCode" | "affectedDates">,
     status: AiImportWarningResolution["status"],
     resolution?: string
-  ) {
-    updateDraft((previousDraft) => {
-      if (!previousDraft.aiImport?.result) return previousDraft;
+  ): Promise<AiWarningResolutionDebugResult> {
+    const previousDraft = draft;
+    if (!previousDraft.aiImport?.result) {
+      return {
+        nextSeverity: "unknown",
+        nextStatus: "unresolved",
+        draftSaveResult: "no_import_result",
+        remainingBlockerIds: [],
+      };
+    }
       const existing =
         previousDraft.aiImport.warningResolutions ||
         createDefaultWarningResolutions(previousDraft.aiImport.result.warnings);
@@ -2990,7 +3085,7 @@ function AiCalendarImportCard({
           )
         : [...existing, nextResolution];
 
-      return {
+      const nextDraft: WizardDraft = {
         ...previousDraft,
         aiImport: {
           ...previousDraft.aiImport,
@@ -2998,7 +3093,24 @@ function AiCalendarImportCard({
           warningResolutions: nextResolutions,
         },
       };
-    });
+      updateDraft(() => nextDraft);
+      const saveResult = await onImmediateSave(nextDraft, "review");
+      const preview = generateSchoolYearCalendar(
+        buildAiPreviewConfig(previousDraft.aiImport.result)
+      );
+      const readiness = normalizeAndDeduplicateReviewIssues({
+        importResult: previousDraft.aiImport.result,
+        generationWarnings: preview.warnings,
+        warningResolutions: nextResolutions,
+        analysisVersion: previousDraft.aiImport.analysisVersion,
+      });
+      const nextIssue = readiness.issues.find((candidate) => candidate.issueId === issue.issueId);
+      return {
+        nextSeverity: nextIssue?.severity || "removed",
+        nextStatus: nextIssue?.status || "removed",
+        draftSaveResult: saveResult?.status || "not_saved",
+        remainingBlockerIds: readiness.blockingWarnings.map((warning) => warning.issueId),
+      };
   }
 
   function removeDetectedSchedule(
@@ -3217,6 +3329,7 @@ function AiCalendarImportCard({
         draft.aiImport?.state !== "applied" &&
         draft.aiImport?.state !== "failed" && (
         <AiImportReview
+          schoolSlug={schoolSlug}
           importResult={importResult}
           reviewMode={reviewMode}
           cacheMetadata={{
@@ -3224,6 +3337,8 @@ function AiCalendarImportCard({
             cacheAnalyzedAt: draft.aiImport?.cacheAnalyzedAt,
             cacheStrategy: draft.aiImport?.cacheStrategy,
             analysisVersion: draft.aiImport?.analysisVersion,
+            analysisAttemptId: draft.aiImport?.analysisAttemptId,
+            issueSchemaVersion: draft.aiImport?.issueSchemaVersion,
           }}
           resolutions={resolutions}
           schedules={schedules}
@@ -3248,6 +3363,8 @@ function AiCalendarImportCard({
           onStartOver={startAiReviewOver}
           onAnalyzeAgain={analyzeAgainFromReview}
           onRejectAnalysis={rejectAnalysis}
+          debugEnabled={debugEnabled}
+          debugRestoreInfo={debugRestoreInfo}
         />
       )}
     </div>
@@ -3255,6 +3372,7 @@ function AiCalendarImportCard({
 }
 
 function AiImportReview({
+  schoolSlug,
   importResult,
   reviewMode,
   cacheMetadata,
@@ -3277,7 +3395,10 @@ function AiImportReview({
   onStartOver,
   onAnalyzeAgain,
   onRejectAnalysis,
+  debugEnabled,
+  debugRestoreInfo,
 }: {
+  schoolSlug: string;
   importResult: AiCalendarImportResult;
   reviewMode: AiReviewMode;
   cacheMetadata?: {
@@ -3285,6 +3406,8 @@ function AiImportReview({
     cacheAnalyzedAt?: string;
     cacheStrategy?: "text-gpt5-mini" | "pdf-gpt5";
     analysisVersion?: string;
+    analysisAttemptId?: string;
+    issueSchemaVersion?: number;
   };
   resolutions: DetectedScheduleResolution[];
   schedules: WizardScheduleSummary[];
@@ -3301,7 +3424,7 @@ function AiImportReview({
     issue: Pick<ClassifiedCalendarWarning, "issueId" | "issueCode" | "affectedDates">,
     status: AiImportWarningResolution["status"],
     resolution?: string
-  ) => void;
+  ) => Promise<AiWarningResolutionDebugResult>;
   onRemoveSchedule: (tempId: string, action: AiScheduleRemovalAction) => void;
   onCreateCalendar: () => Promise<void>;
   onContinueManually: () => void;
@@ -3312,6 +3435,8 @@ function AiImportReview({
   onStartOver: () => void | Promise<void>;
   onAnalyzeAgain: () => void;
   onRejectAnalysis: () => void | Promise<void>;
+  debugEnabled: boolean;
+  debugRestoreInfo: AiCalendarDebugRestoreInfo;
 }) {
   const [removalTarget, setRemovalTarget] = useState<{
     tempId: string;
@@ -3325,6 +3450,17 @@ function AiImportReview({
     requestId: number;
   } | null>(null);
   const [issueConfirmation, setIssueConfirmation] = useState<string | null>(null);
+  const [debugResolutionEvents, setDebugResolutionEvents] = useState<
+    AiCalendarDebugResolutionEvent[]
+  >([]);
+  const [serverDebugSnapshot, setServerDebugSnapshot] =
+    useState<AiCalendarDebugSnapshot | null>(null);
+  const [serverDebugState, setServerDebugState] = useState<
+    "idle" | "loading" | "loaded" | "failed"
+  >(debugEnabled ? "loading" : "idle");
+  const [debugRouteRequestId] = useState(() =>
+    debugEnabled ? crypto.randomUUID() : ""
+  );
   const schedulesNeedingTimes = resolutions.filter(
     (resolution) =>
       !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
@@ -3347,10 +3483,12 @@ function AiImportReview({
     importResult.instructionalDayCountReview,
     previewResult.summary.instructionalDayCount
   );
-  const warningReadiness = getAiCreateCalendarReadiness({
-    warnings: [...importResult.warnings, ...previewResult.warnings],
+  const warningReadiness = normalizeAndDeduplicateReviewIssues({
+    importResult,
+    generationWarnings: previewResult.warnings,
     warningResolutions,
     scheduleNameErrorCount: scheduleNameErrors.length,
+    analysisVersion: cacheMetadata?.analysisVersion,
   });
   const brownGoldConflicts = getBrownGoldVerificationConflicts(
     previewResult,
@@ -3380,6 +3518,40 @@ function AiImportReview({
   ]);
   const blockingConflictCount = blockingIssueIds.size;
   const canCreateCalendar = blockingConflictCount === 0;
+  const debugBlockingDetails = [
+    ...warningReadiness.blockingWarnings.map((warning) => ({
+      id: warning.issueId,
+      date: warning.affectedDates[0],
+      reason: `${warning.issueCode} is an unresolved blocking issue.`,
+    })),
+    ...scheduleNameErrors.map((item) => ({
+      id: `schedule-name::${item.tempId}`,
+      date: undefined,
+      reason: item.error || "The detected schedule name is invalid or duplicated.",
+    })),
+    ...brownGoldConflicts.map((conflict) => ({
+      id: `brown-gold::${conflict.date}`,
+      date: conflict.date,
+      reason: `Brown/Gold verification expected ${conflict.expected} but found ${conflict.actual}.`,
+    })),
+    ...deterministicConflicts.map((conflict) => ({
+      id: `deterministic::${conflict.date}`,
+      date: conflict.date,
+      reason: "The preview differs from the deterministic PDF assignment.",
+    })),
+    ...[...unresolvedAssignmentDates].map((date) => ({
+      id: `assignment::${date}`,
+      date,
+      reason: "The instructional date still needs a verified schedule assignment.",
+    })),
+    ...(!instructionalDayCountReviewState.ready
+      ? [{
+          id: "instructional-count::pending",
+          date: undefined,
+          reason: "The instructional-day count review is still pending.",
+        }]
+      : []),
+  ];
   const firstTwoInstructionalWeeks = previewResult.days
     .filter((day) => day.isSchoolDay)
     .slice(0, 10);
@@ -3413,6 +3585,44 @@ function AiImportReview({
   const informationalWarnings = deduplicateClassifiedWarnings(
     warningReadiness.informationalWarnings
   );
+  const clientWarningDebugSnapshot = debugEnabled
+    ? buildAiCalendarDebugSnapshot({
+        schoolSlug,
+        routeRequestId: debugRouteRequestId,
+        importResult,
+        generationWarnings: previewResult.warnings,
+        previewDays: previewResult.days,
+        classification: warningReadiness,
+        metadata: {
+          state: "review",
+          result: importResult,
+          resolutions,
+          cacheHit: cacheMetadata?.cacheHit,
+          cacheAnalyzedAt: cacheMetadata?.cacheAnalyzedAt,
+          cacheStrategy: cacheMetadata?.cacheStrategy,
+          analysisVersion: cacheMetadata?.analysisVersion,
+          analysisAttemptId: cacheMetadata?.analysisAttemptId,
+          issueSchemaVersion: cacheMetadata?.issueSchemaVersion,
+          warningResolutions,
+        },
+        warningResolutions,
+        restore: {
+          ...debugRestoreInfo,
+          restoredFromCache: cacheMetadata?.cacheHit === true,
+          currentAnalysisAttemptId: cacheMetadata?.analysisAttemptId,
+        },
+      })
+    : null;
+  const clientDebugSnapshot = clientWarningDebugSnapshot
+    ? {
+        ...clientWarningDebugSnapshot,
+        blockerIds: [...blockingIssueIds],
+        counts: {
+          ...clientWarningDebugSnapshot.counts,
+          unresolvedBlockingCount: blockingConflictCount,
+        },
+      }
+    : null;
   const automaticResolutions = (importResult.automaticResolutions || []).filter(
     (resolution, index, all) =>
       all.findIndex((candidate) =>
@@ -3426,17 +3636,82 @@ function AiImportReview({
     automaticallyResolvedWarnings.length +
     automaticResolutions.length;
 
-  function recordIssueResolution(
+  function refreshServerDebugSnapshot() {
+    if (!debugEnabled) return;
+    setServerDebugSnapshot(null);
+    setServerDebugState("loading");
+  }
+
+  useEffect(() => {
+    if (!debugEnabled || serverDebugState !== "loading") return undefined;
+    let cancelled = false;
+    void getAiCalendarDebugSnapshotAction(schoolSlug).then((result) => {
+      if (cancelled) return;
+      if (result.status === "success") {
+        setServerDebugSnapshot(result.snapshot);
+        setServerDebugState("loaded");
+      } else {
+        setServerDebugState("failed");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [debugEnabled, schoolSlug, serverDebugState]);
+
+  async function recordIssueResolution(
     warning: ClassifiedCalendarWarning,
     status: AiImportWarningResolution["status"],
     resolution: string
   ) {
-    onWarningResolutionChange(warning, status, resolution);
-    setIssueConfirmation(
-      status === "acknowledged"
-        ? "Review item acknowledged. Readiness has been updated."
-        : "Suggested correction applied. Readiness has been updated."
-    );
+    const started: AiCalendarDebugResolutionEvent = {
+      event: "issue_resolution_started",
+      routeRequestId: debugRouteRequestId || crypto.randomUUID(),
+      issueId: warning.issueId,
+      affectedDates: warning.affectedDates,
+      previousSeverity: warning.severity,
+      previousStatus: warning.status,
+      nextStatus: status,
+      occurredAt: new Date().toISOString(),
+    };
+    if (debugEnabled) {
+      setDebugResolutionEvents((events) => [...events, started]);
+      void recordAiCalendarDebugResolutionEventAction(schoolSlug, started);
+    }
+    try {
+      const result = await onWarningResolutionChange(warning, status, resolution);
+      const finished: AiCalendarDebugResolutionEvent = {
+        ...started,
+        event: "issue_resolution_finished",
+        nextSeverity: result.nextSeverity,
+        nextStatus: result.nextStatus,
+        draftSaveResult: result.draftSaveResult,
+        remainingBlockerIds: result.remainingBlockerIds,
+        occurredAt: new Date().toISOString(),
+      };
+      if (debugEnabled) {
+        setDebugResolutionEvents((events) => [...events, finished]);
+        void recordAiCalendarDebugResolutionEventAction(schoolSlug, finished);
+        refreshServerDebugSnapshot();
+      }
+      setIssueConfirmation(
+        status === "acknowledged"
+          ? "Review item acknowledged. Readiness has been updated."
+          : "Suggested correction applied. Readiness has been updated."
+      );
+    } catch {
+      const failed: AiCalendarDebugResolutionEvent = {
+        ...started,
+        event: "issue_resolution_failed",
+        draftSaveResult: "failed",
+        occurredAt: new Date().toISOString(),
+      };
+      if (debugEnabled) {
+        setDebugResolutionEvents((events) => [...events, failed]);
+        void recordAiCalendarDebugResolutionEventAction(schoolSlug, failed);
+      }
+      setIssueConfirmation("The resolution could not be saved. Try again.");
+    }
   }
 
   function editWarningManually(warning: ClassifiedCalendarWarning) {
@@ -3451,7 +3726,7 @@ function AiImportReview({
       (candidate) => candidate.issueId === issueId
     );
     if (resolved && warning) {
-      recordIssueResolution(
+      void recordIssueResolution(
         warning,
         "manually_resolved",
         "Administrator corrected the affected calendar date in the preview."
@@ -3544,10 +3819,10 @@ function AiImportReview({
                 )}
                 {reviewable && (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => recordIssueResolution(warning, "manually_resolved", warning.suggestedCorrection || "Administrator accepted Sundial's suggested correction.")} className={[subtleButtonClass, resolution?.status === "manually_resolved" || resolution?.status === "accepted_suggestion" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
+                    <button type="button" onClick={() => void recordIssueResolution(warning, "manually_resolved", warning.suggestedCorrection || "Administrator accepted Sundial's suggested correction.")} className={[subtleButtonClass, resolution?.status === "manually_resolved" || resolution?.status === "accepted_suggestion" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
                       Use suggested correction
                     </button>
-                    <button type="button" onClick={() => recordIssueResolution(warning, "acknowledged", "Administrator kept the original imported state.")} className={[subtleButtonClass, resolution?.status === "acknowledged" || resolution?.status === "kept_original" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
+                    <button type="button" onClick={() => void recordIssueResolution(warning, "acknowledged", "Administrator kept the original imported state.")} className={[subtleButtonClass, resolution?.status === "acknowledged" || resolution?.status === "kept_original" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
                       Keep original
                     </button>
                     {warning.affectedDates.length > 0 && (
@@ -3967,6 +4242,16 @@ function AiImportReview({
         </p>
       </ReviewPanel>
 
+      {debugEnabled && clientDebugSnapshot && (
+        <AiCalendarDebugPanel
+          clientSnapshot={clientDebugSnapshot}
+          serverSnapshot={serverDebugSnapshot}
+          serverState={serverDebugState}
+          resolutionEvents={debugResolutionEvents}
+          onRefreshServerSnapshot={refreshServerDebugSnapshot}
+        />
+      )}
+
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 dark:border-slate-700" data-ai-review-final-actions>
         {reviewMode === "advanced" ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -3992,6 +4277,19 @@ function AiImportReview({
           <button type="button" onClick={onCreateCalendar} disabled={!canCreateCalendar} className={sundialPrimaryButtonClass("px-5")}>
             Create Calendar
           </button>
+          {debugEnabled && !canCreateCalendar && (
+            <div className="basis-full rounded-xl border border-violet-300 bg-violet-50 p-3 text-left text-xs text-violet-950 dark:border-violet-800 dark:bg-violet-950/20 dark:text-violet-100">
+              <p className="font-bold">Create Calendar is disabled because:</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 font-mono">
+                {debugBlockingDetails.map((blocker) => (
+                  <li key={blocker.id}>
+                    {blocker.date ? `${formatDateForDisplay(blocker.date)}: ` : ""}
+                    {blocker.id} — {blocker.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {!canCreateCalendar && blockingWarnings[0]?.affectedDates[0] && (
             <button
               type="button"
@@ -6343,10 +6641,12 @@ function AiCreateCalendarModal({
     (resolution) => !resolution.matchedExistingScheduleId && resolution.status !== "ignored"
   );
   const modalPreview = generateSchoolYearCalendar(buildAiPreviewConfig(importResult));
-  const warningClassification = classifyCalendarWarnings(
-    [...importResult.warnings, ...modalPreview.warnings],
-    warningResolutions
-  );
+  const warningClassification = normalizeAndDeduplicateReviewIssues({
+    importResult,
+    generationWarnings: modalPreview.warnings,
+    warningResolutions,
+    analysisVersion: AI_CALENDAR_ANALYSIS_VERSION,
+  });
   const hasBlockingWarnings = warningClassification.blockingWarnings.length > 0;
   const countReviewState = getInstructionalDayCountReviewState(
     importResult.instructionalDayCountReview,

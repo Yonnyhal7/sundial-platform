@@ -18,6 +18,7 @@ export default async function AiCalendarWizardPage({
   return (
     <AiCalendarWizardClient
       {...data}
+      aiCalendarDebugEnabled={process.env.AI_CALENDAR_DEBUG === "true"}
       launchContext={launchContext}
       setupChooserHref={await getSchoolSetupStepPath(school, "schedule")}
     />

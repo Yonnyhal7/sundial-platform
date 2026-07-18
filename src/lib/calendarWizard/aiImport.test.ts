@@ -13,8 +13,12 @@ import {
 } from "./aiImportConversion";
 import {
   normalizeAiCalendarExtraction,
+  normalizePersistedAiCalendarImportResult,
   type RawAiCalendarExtraction,
 } from "./aiCalendarImportNormalizer";
+import { buildAiPreviewConfig } from "./aiImportPreview";
+import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
+import { normalizeAndDeduplicateReviewIssues } from "./aiQuickSetupPersistence";
 import {
   matchDetectedSchedules,
   normalizeScheduleNameForMatching,
@@ -418,6 +422,253 @@ describe("AI calendar import normalization", () => {
         expect.objectContaining({ code: "overlapping_no_school_ranges" })
       );
     }
+  });
+
+  it("keeps Rally dates instructional and repairs split Christmas Recess coverage", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        firstInstructionalDate: "2026-08-12",
+        lastInstructionalDate: "2027-06-03",
+        expectedInstructionalDayCount: null,
+        detectedSchedules: [
+          {
+            tempId: "regular",
+            name: "Regular Day",
+            category: "regular",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            tempId: "rally",
+            name: "Rally",
+            category: "special",
+            confidence: "high",
+            evidence: null,
+          },
+        ],
+        noSchoolRanges: [
+          {
+            id: "oct-rally",
+            startDate: "2026-10-02",
+            endDate: null,
+            label: "3rd block rally - Split (in gym)",
+            type: "Rally",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "christmas-recess-a",
+            startDate: "2026-12-21",
+            endDate: "2026-12-22",
+            label: "Christmas Recess",
+            type: "Recess",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "christmas-recess-b",
+            startDate: "2026-12-24",
+            endDate: "2027-01-01",
+            label: "Christmas Recess",
+            type: "Recess",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "feb-rally",
+            startDate: "2027-02-19",
+            endDate: null,
+            label: "3rd block rally - Split (in gym)",
+            type: "Rally",
+            confidence: "high",
+            evidence: null,
+          },
+        ],
+        specialSchoolDays: [
+          {
+            id: "admission-day",
+            startDate: "2026-12-23",
+            endDate: null,
+            label: "Admission Day (In Lieu), Christmas Recess",
+            type: "Holiday",
+            scheduleTempId: null,
+            isInstructional: true,
+            confidence: "high",
+            evidence: null,
+          },
+        ],
+        informationalDates: [
+          {
+            id: "christmas-holidays-24",
+            date: "2026-12-24",
+            label: "Christmas Holidays",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "christmas-holidays-25",
+            date: "2026-12-25",
+            label: "Christmas Holidays",
+            confidence: "high",
+            evidence: null,
+          },
+          {
+            id: "new-years-day",
+            date: "2027-01-01",
+            label: "New Year's Day",
+            confidence: "high",
+            evidence: null,
+          },
+        ],
+        warnings: [
+          {
+            code: "legacy_special_overlap",
+            severity: "blocking",
+            message:
+              "A special school day overlaps a no-school day. The date remains no school.",
+          },
+        ],
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (!normalized.success) return;
+    const result = normalized.importResult;
+    expect(result.noSchoolRanges).toEqual([
+      expect.objectContaining({
+        startDate: "2026-12-21",
+        endDate: "2027-01-01",
+        label: "Christmas Recess",
+      }),
+    ]);
+    expect(result.noSchoolRanges.some((range) => /rally/i.test(range.label))).toBe(false);
+    expect(result.specialDays).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          startDate: "2026-10-02",
+          scheduleTempId: "rally",
+          isInstructional: true,
+          label: "3rd block rally - Split (in gym)",
+        }),
+        expect.objectContaining({
+          startDate: "2027-02-19",
+          scheduleTempId: "rally",
+          isInstructional: true,
+          label: "3rd block rally - Split (in gym)",
+        }),
+      ])
+    );
+    expect(result.informationalDates).toContainEqual(
+      expect.objectContaining({
+        date: "2026-12-23",
+        label: "Admission Day (In Lieu), Christmas Recess",
+      })
+    );
+
+    const preview = generateSchoolYearCalendar(buildAiPreviewConfig(result));
+    expect(preview.days.find((day) => day.date === "2026-10-02")).toMatchObject({
+      isSchoolDay: true,
+      scheduleId: "rally",
+      labels: ["3rd block rally - Split (in gym)"],
+    });
+    expect(preview.days.find((day) => day.date === "2027-02-19")).toMatchObject({
+      isSchoolDay: true,
+      scheduleId: "rally",
+      labels: ["3rd block rally - Split (in gym)"],
+    });
+    expect(preview.days.find((day) => day.date === "2026-12-23")).toMatchObject({
+      isSchoolDay: false,
+      scheduleId: null,
+      baseScheduleId: null,
+      labels: expect.arrayContaining([
+        "Christmas Recess",
+        "Admission Day (In Lieu), Christmas Recess",
+      ]),
+    });
+
+    const review = normalizeAndDeduplicateReviewIssues({
+      importResult: result,
+      generationWarnings: preview.warnings,
+      analysisVersion: "calendar-v12",
+    });
+    const dec23Issues = review.issues.filter((issue) =>
+      issue.affectedDates.includes("2026-12-23")
+    );
+    expect(dec23Issues).toEqual([
+      expect.objectContaining({
+        issueCode: "informational_label_inside_no_school",
+        severity: "automatically_resolved",
+        status: "automatically_resolved",
+      }),
+    ]);
+    expect(review.blockingWarnings).toHaveLength(0);
+    expect(review.canCreateCalendar).toBe(true);
+  });
+
+  it("regenerates stale normalized results without hydrating legacy blocker definitions", () => {
+    const stale = createMockAiCalendarImportResult();
+    stale.noSchoolRanges = [
+      {
+        id: "oct-rally",
+        startDate: "2026-10-02",
+        endDate: "2026-10-02",
+        label: "3rd block rally - Split (in gym)",
+        type: "Rally",
+        confidence: "high",
+      },
+      {
+        id: "christmas-a",
+        startDate: "2026-12-21",
+        endDate: "2026-12-22",
+        label: "Christmas Recess",
+        type: "Recess",
+        confidence: "high",
+      },
+      {
+        id: "christmas-b",
+        startDate: "2026-12-24",
+        endDate: "2027-01-01",
+        label: "Christmas Recess",
+        type: "Recess",
+        confidence: "high",
+      },
+    ];
+    stale.specialDays.push({
+      id: "admission-day",
+      startDate: "2026-12-23",
+      endDate: "2026-12-23",
+      label: "Admission Day (In Lieu), Christmas Recess",
+      type: "Holiday",
+      isInstructional: true,
+      confidence: "high",
+    });
+    stale.warnings.push({
+      code: "legacy_overlap_blocker",
+      severity: "blocking",
+      message:
+        "A special school day overlaps a no-school day. The date remains no school.",
+    });
+
+    const repaired = normalizePersistedAiCalendarImportResult(stale);
+
+    expect(repaired.noSchoolRanges).toEqual([
+      expect.objectContaining({
+        startDate: "2026-12-21",
+        endDate: "2027-01-01",
+        label: "Christmas Recess",
+      }),
+    ]);
+    expect(repaired.specialDays).toContainEqual(
+      expect.objectContaining({
+        startDate: "2026-10-02",
+        scheduleTempId: "ai-schedule-rally",
+        isInstructional: true,
+      })
+    );
+    expect(repaired.warnings).not.toContainEqual(
+      expect.objectContaining({ code: "legacy_overlap_blocker" })
+    );
   });
 
   it("merges partially overlapping no-school ranges into one coverage range", () => {

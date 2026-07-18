@@ -122,7 +122,8 @@ export type AiImportAutomaticResolution = {
   code:
     | "no_school_ranges_merged"
     | "term_end_reclassified"
-    | "informational_label_preserved";
+    | "informational_label_preserved"
+    | "instructional_schedule_exception_reclassified";
   title: string;
   message: string;
   dateRange?: {
@@ -282,6 +283,7 @@ export type AiImportDraftMetadata = {
   cacheAnalyzedAt?: string;
   cacheStrategy?: "text-gpt5-mini" | "pdf-gpt5";
   analysisVersion?: string;
+  issueSchemaVersion?: number;
   analysisAttemptId?: string;
   unresolvedRequiredScheduleIds?: string[];
   removedSchedules?: Array<{

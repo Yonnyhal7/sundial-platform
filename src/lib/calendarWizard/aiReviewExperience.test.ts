@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AI_CALENDAR_ANALYSIS_VERSION } from "./aiCalendarAnalysisVersion";
+import {
+  AI_CALENDAR_ANALYSIS_VERSION,
+  AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
+} from "./aiCalendarAnalysisVersion";
 
 const source = readFileSync(
   resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/schedule-wizard-client.tsx"),
@@ -28,7 +31,7 @@ describe("AI calendar review experience", () => {
   });
 
   it("keeps Create Calendar only in final actions below readiness", () => {
-    expect((review.match(/Create Calendar/g) || [])).toHaveLength(1);
+    expect((review.match(/>\s*Create Calendar\s*</g) || [])).toHaveLength(1);
     expect(review.indexOf("Readiness Checklist")).toBeLessThan(review.indexOf("Create Calendar"));
     expect(review.indexOf("data-ai-review-final-actions")).toBeLessThan(review.indexOf("Create Calendar"));
   });
@@ -84,10 +87,14 @@ describe("AI calendar review experience", () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
 
-  it("invalidates calendar-v10 review caches with calendar-v11", () => {
-    expect(AI_CALENDAR_ANALYSIS_VERSION).toBe("calendar-v11");
+  it("invalidates older review caches with calendar-v12", () => {
+    expect(AI_CALENDAR_ANALYSIS_VERSION).toBe("calendar-v12");
+    expect(AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION).toBe(2);
     const cacheSource = readFileSync(resolve(process.cwd(), "src/lib/calendarWizard/aiCalendarAnalysisCache.server.ts"), "utf8");
     expect(cacheSource).toContain("AI_CALENDAR_ANALYSIS_VERSION");
     expect(cacheSource).toContain('.eq("analysis_version", key.version)');
+    expect(source).toContain("staleIssueDefinitions");
+    expect(source).toContain("normalizePersistedAiCalendarImportResult(restoredAiImport.result)");
+    expect(source).toContain("issueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION");
   });
 });

@@ -8,6 +8,7 @@ import {
   getCalendarWarningIssueId,
   getAiScheduleUsageDetails,
   isNoSchoolLikeDetectedScheduleName,
+  normalizeAndDeduplicateReviewIssues,
   planAiSchedulePersistence,
   removeAiDetectedSchedule,
   validateAiCalendarRpcRows,
@@ -698,6 +699,71 @@ describe("AI quick setup persistence planning", () => {
 
     expect(classification.blockingWarnings).toHaveLength(0);
     expect(classification.automaticallyResolvedWarnings).toHaveLength(1);
+  });
+
+  it("normalizes semantic wording variants to the stable safe-overlap issue code", () => {
+    const classification = classifyCalendarWarnings([{
+      code: "old_generic_conflict",
+      severity: "blocking",
+      message:
+        "An informational date occurs inside a no school range; it is kept as no school.",
+    }]);
+
+    expect(classification.blockingWarnings).toHaveLength(0);
+    expect(classification.automaticallyResolvedWarnings[0]).toMatchObject({
+      issueCode: "informational_label_inside_no_school",
+      severity: "automatically_resolved",
+      status: "automatically_resolved",
+    });
+  });
+
+  it("deduplicates a legacy blocker against the normalized Dec 23 safe-overlap issue", () => {
+    const importResult = createMockAiCalendarImportResult();
+    importResult.noSchoolRanges = [{
+      id: "christmas-recess",
+      startDate: "2026-12-21",
+      endDate: "2027-01-01",
+      label: "Christmas Recess",
+      type: "Recess",
+      confidence: "high",
+    }];
+    importResult.informationalDates = [{
+      id: "admission-day",
+      date: "2026-12-23",
+      label: "Admission Day (In Lieu)",
+      confidence: "high",
+    }];
+    importResult.warnings = [{
+      code: "legacy_overlap_blocker",
+      severity: "blocking",
+      message:
+        "A special school day overlaps a no-school day. The date remains no school.",
+    }];
+
+    const review = normalizeAndDeduplicateReviewIssues({
+      importResult,
+      generationWarnings: [{
+        code: "special_day_overlaps_no_school",
+        message:
+          "Admission Day (In Lieu) occurs during Christmas Recess on 2026-12-23; the date remains no school.",
+        dates: ["2026-12-23"],
+        sourceIds: ["christmas-recess", "admission-day"],
+      }],
+      analysisVersion: "calendar-v12",
+    });
+
+    expect(review.issues.filter((issue) =>
+      issue.affectedDates.includes("2026-12-23")
+    )).toEqual([
+      expect.objectContaining({
+        issueCode: "informational_label_inside_no_school",
+        relevantLabelIdentities: ["admission-in-lieu", "christmas-recess"],
+        severity: "automatically_resolved",
+        status: "automatically_resolved",
+      }),
+    ]);
+    expect(review.blockingWarnings).toHaveLength(0);
+    expect(review.canCreateCalendar).toBe(true);
   });
 
   it("uses stable issue IDs so resolving one date cannot leave or clear a stale sibling", () => {
