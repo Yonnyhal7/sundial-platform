@@ -3,7 +3,10 @@ import {
   type AiWizardDraftShape,
   type AiWizardStep,
 } from "./aiImportConversion";
-import type { AiImportDraftMetadata } from "./aiImportTypes";
+import type {
+  AiImportDraftMetadata,
+  AiImportWarningResolution,
+} from "./aiImportTypes";
 import type { Weekday } from "./types";
 
 export const CALENDAR_WIZARD_DRAFT_VERSION = 1;
@@ -73,6 +76,110 @@ export type SerializedCalendarWizardDraft = {
   data: CalendarWizardStoredData;
   summary: CalendarWizardDraftSummary;
 };
+
+function resolutionTimestamp(resolution: AiImportWarningResolution) {
+  const value = resolution.reviewedAt ? Date.parse(resolution.reviewedAt) : Number.NaN;
+  return Number.isFinite(value) ? value : 0;
+}
+
+export function mergeAiCalendarWarningResolutions(
+  current: AiImportWarningResolution[] = [],
+  incoming: AiImportWarningResolution[] = []
+) {
+  const merged = [...current];
+  for (const resolution of incoming) {
+    if (!resolution.issueId) continue;
+    const index = merged.findIndex(
+      (candidate) => candidate.issueId === resolution.issueId
+    );
+    if (index === -1) {
+      merged.push(resolution);
+      continue;
+    }
+    if (
+      resolutionTimestamp(resolution) >= resolutionTimestamp(merged[index])
+    ) {
+      merged[index] = { ...merged[index], ...resolution };
+    }
+  }
+  return merged;
+}
+
+export function mergeAiCalendarIssueResolution(
+  latest: CalendarWizardStoredData,
+  resolution: AiImportWarningResolution,
+  savedAt = new Date().toISOString()
+) {
+  if (!resolution.issueId || !latest.draft.aiImport) return null;
+  return {
+    ...latest,
+    savedAt,
+    draft: {
+      ...latest.draft,
+      aiImport: {
+        ...latest.draft.aiImport,
+        state: "review" as const,
+        warningResolutions: mergeAiCalendarWarningResolutions(
+          latest.draft.aiImport.warningResolutions,
+          [resolution]
+        ),
+      },
+    },
+  } satisfies CalendarWizardStoredData;
+}
+
+export async function mergeAiCalendarIssueResolutionWithRetry<TSnapshot>({
+  expectedUpdatedAt,
+  resolution,
+  readLatest,
+  writeIfUnchanged,
+}: {
+  expectedUpdatedAt?: string | null;
+  resolution: AiImportWarningResolution;
+  readLatest: () => Promise<{
+    snapshot: TSnapshot;
+    updatedAt: string;
+    wizardData: CalendarWizardStoredData;
+  } | null>;
+  writeIfUnchanged: (
+    latest: TSnapshot,
+    expectedUpdatedAt: string,
+    wizardData: CalendarWizardStoredData
+  ) => Promise<TSnapshot | null>;
+}) {
+  let latestConflictSnapshot: TSnapshot | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const latest = await readLatest();
+    if (!latest) {
+      return { status: "not_found" as const, snapshot: null, retried: attempt > 0 };
+    }
+    latestConflictSnapshot = latest.snapshot;
+    if (
+      attempt === 0 &&
+      expectedUpdatedAt &&
+      latest.updatedAt !== expectedUpdatedAt
+    ) {
+      continue;
+    }
+    const merged = mergeAiCalendarIssueResolution(latest.wizardData, resolution);
+    if (!merged) {
+      return { status: "invalid" as const, snapshot: latest.snapshot, retried: attempt > 0 };
+    }
+    const saved = await writeIfUnchanged(
+      latest.snapshot,
+      latest.updatedAt,
+      merged
+    );
+    if (saved) {
+      return { status: "success" as const, snapshot: saved, retried: attempt > 0 };
+    }
+  }
+  return {
+    status: "conflict" as const,
+    snapshot: latestConflictSnapshot,
+    retried: true,
+  };
+}
 
 const unsafeKeyPattern =
   /^(pdf|pdfBytes|base64|rawOpenAi|rawResponse|responseEnvelope|openAiFileId|file_id|fileId)$/i;

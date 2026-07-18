@@ -12,6 +12,7 @@ import {
   GUIDED_CALENDAR_WIZARD_DRAFT_TYPE,
   LEGACY_CALENDAR_WIZARD_DRAFT_TYPE,
   getCalendarWizardFlowForDraft,
+  mergeAiCalendarIssueResolutionWithRetry,
   serializeCalendarWizardDraft,
   type CalendarWizardDraftType,
   type CalendarWizardDraftRecord,
@@ -35,7 +36,10 @@ import {
   findAssignmentDigestDifferences,
 } from "@/lib/calendarWizard/assignmentDigest";
 import { getInstructionalDayCountReviewState } from "@/lib/calendarWizard/instructionalDayCountReview";
-import { validateAiCalendarImportResult } from "@/lib/calendarWizard/aiImportTypes";
+import {
+  validateAiCalendarImportResult,
+  type AiImportWarningResolution,
+} from "@/lib/calendarWizard/aiImportTypes";
 import { canonicalScheduleName } from "@/lib/calendarWizard/scheduleIdentity";
 import {
   buildAiPreviewConfig,
@@ -149,6 +153,7 @@ export type CalendarWizardDraftActionResult =
   | {
       status: "success";
       draft: CalendarWizardDraftRecord | null;
+      mergeRetried?: boolean;
     }
   | {
       status: "draft_conflict";
@@ -552,17 +557,44 @@ export async function saveCalendarWizardDraft(
       ...(existing ? {} : { created_by: adminUser.profile.id }),
     };
 
-    const { data, error } = await adminUser.supabase
-      .from("calendar_wizard_drafts")
-      .upsert(row, { onConflict: "school_id,draft_type" })
-      .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")
-      .single();
+    const draftSelect =
+      "id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at";
+    const writeResult = existing
+      ? await adminUser.supabase
+          .from("calendar_wizard_drafts")
+          .update(row)
+          .eq("id", existing.id)
+          .eq("school_id", schoolData.id)
+          .eq("draft_type", targetDraftType)
+          .eq("updated_at", existing.updated_at)
+          .select(draftSelect)
+          .maybeSingle()
+      : await adminUser.supabase
+          .from("calendar_wizard_drafts")
+          .insert(row)
+          .select(draftSelect)
+          .single();
+    const { data, error } = writeResult;
 
-    if (error || !data) {
+    if (error) {
       console.error("Save calendar wizard draft error:", JSON.stringify(error, null, 2));
       return {
         status: "server_error",
         message: "Sundial could not save the calendar draft.",
+      };
+    }
+    if (!data) {
+      const { data: newest } = await adminUser.supabase
+        .from("calendar_wizard_drafts")
+        .select(draftSelect)
+        .eq("school_id", schoolData.id)
+        .eq("draft_type", targetDraftType)
+        .maybeSingle();
+      return {
+        status: "draft_conflict",
+        message:
+          "This calendar draft changed while it was being saved. The newer version was preserved.",
+        draft: newest ? safeDraftRecord(newest) : null,
       };
     }
 
@@ -597,6 +629,115 @@ export async function saveCalendarWizardDraft(
     return {
       status: "server_error",
       message: "Sundial could not save the calendar draft.",
+    };
+  }
+}
+
+export async function saveAiCalendarIssueResolutionAction(
+  school: string,
+  input: {
+    resolution: AiImportWarningResolution;
+    lastKnownUpdatedAt?: string | null;
+  }
+): Promise<CalendarWizardDraftActionResult> {
+  const resolution = input.resolution;
+  if (
+    !resolution.issueId ||
+    !resolution.issueCode ||
+    resolution.issueId.length > 1_000 ||
+    resolution.issueCode.length > 200
+  ) {
+    return {
+      status: "validation_error",
+      message: "This review item could not be saved because its issue ID is invalid.",
+    };
+  }
+
+  try {
+    const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    const select =
+      "id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at";
+    const readLatest = async () => {
+      const { data, error } = await adminUser.supabase
+        .from("calendar_wizard_drafts")
+        .select(select)
+        .eq("school_id", schoolData.id)
+        .eq("draft_type", AI_CALENDAR_WIZARD_DRAFT_TYPE)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      const draft = safeDraftRecord(data);
+      if (!draft?.wizard_data.draft.aiImport?.result) return null;
+      return {
+        snapshot: draft,
+        updatedAt: draft.updated_at,
+        wizardData: draft.wizard_data,
+      };
+    };
+
+    const result = await mergeAiCalendarIssueResolutionWithRetry({
+      expectedUpdatedAt: input.lastKnownUpdatedAt,
+      resolution,
+      readLatest,
+      writeIfUnchanged: async (latest, expectedUpdatedAt, wizardData) => {
+        const expectedTime = Date.parse(expectedUpdatedAt);
+        const now = Date.now();
+        const updatedAt = new Date(
+          Number.isFinite(expectedTime) && now <= expectedTime ? expectedTime + 1 : now
+        ).toISOString();
+        const { data, error } = await adminUser.supabase
+          .from("calendar_wizard_drafts")
+          .update({
+            wizard_data: wizardData,
+            school_year_label: wizardData.draft.schoolYear.label || null,
+            updated_by: adminUser.profile.id,
+            updated_at: updatedAt,
+          })
+          .eq("id", latest.id)
+          .eq("school_id", schoolData.id)
+          .eq("draft_type", AI_CALENDAR_WIZARD_DRAFT_TYPE)
+          .eq("updated_at", expectedUpdatedAt)
+          .select(select)
+          .maybeSingle();
+        if (error) throw error;
+        return data ? safeDraftRecord(data) : null;
+      },
+    });
+
+    if (result.status === "success" && result.snapshot) {
+      revalidatePath(`/${school}/admin/calendar`);
+      logAiCalendarDebug("issue_resolution_saved", {
+        school: schoolData.id,
+        issueId: resolution.issueId,
+        retriedAfterConflict: result.retried,
+        updatedAt: result.snapshot.updated_at,
+      });
+      return {
+        status: "success",
+        draft: result.snapshot,
+        mergeRetried: result.retried,
+      };
+    }
+
+    if (result.status === "not_found" || result.status === "invalid") {
+      return {
+        status: "validation_error",
+        message: "The current AI calendar review is no longer available. Reload and try again.",
+      };
+    }
+
+    return {
+      status: "draft_conflict",
+      message:
+        "This review item could not be saved after merging the newest draft. Reload and try again.",
+      draft: result.snapshot,
+    };
+  } catch (error) {
+    if (isNextControlFlowError(error)) throw error;
+    console.error("Save AI calendar issue resolution error:", error);
+    return {
+      status: "server_error",
+      message: "Sundial could not save this review item. Try again.",
     };
   }
 }

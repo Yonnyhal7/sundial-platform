@@ -6,6 +6,10 @@ const actions = readFileSync(
   resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/actions.ts"),
   "utf8"
 );
+const client = readFileSync(
+  resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/schedule-wizard-client.tsx"),
+  "utf8"
+);
 const migration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/20260717150000_ai_calendar_instructional_count_review.sql"),
   "utf8"
@@ -47,5 +51,28 @@ describe("AI instructional count review persistence", () => {
     expect(migration).toContain("current_user_can_manage_school_section(school_id, 'calendar')");
     expect(migration).toContain("p_school_id");
     expect(migration).toContain("auth.uid()");
+  });
+
+  it("merges issue-resolution saves with one tenant-scoped conditional retry", () => {
+    const generalSave = actions.slice(
+      actions.indexOf("export async function saveCalendarWizardDraft"),
+      actions.indexOf("export async function saveAiCalendarIssueResolutionAction")
+    );
+    expect(generalSave).toContain('.eq("updated_at", existing.updated_at)');
+    expect(generalSave).not.toContain(".upsert(");
+    const resolutionAction = actions.slice(
+      actions.indexOf("export async function saveAiCalendarIssueResolutionAction"),
+      actions.indexOf("export async function deleteCalendarWizardDraft")
+    );
+    expect(resolutionAction).toContain("mergeAiCalendarIssueResolutionWithRetry({");
+    expect(resolutionAction).toContain('.eq("school_id", schoolData.id)');
+    expect(resolutionAction).toContain('.eq("updated_at", expectedUpdatedAt)');
+    expect(resolutionAction).not.toContain(".upsert(");
+    const resolutionClient = client.slice(
+      client.indexOf("async function updateWarningResolution"),
+      client.indexOf("function removeDetectedSchedule")
+    );
+    expect(resolutionClient).toContain("onIssueResolutionSave(nextResolution)");
+    expect(resolutionClient).not.toContain("onImmediateSave(");
   });
 });

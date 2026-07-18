@@ -6,6 +6,8 @@ import {
   getDraftTypeForCalendarWizardFlow,
   GUIDED_CALENDAR_WIZARD_DRAFT_TYPE,
   getInitialCalendarWizardHydrationState,
+  mergeAiCalendarIssueResolutionWithRetry,
+  mergeAiCalendarWarningResolutions,
   migrateCalendarWizardStoredData,
   serializeCalendarWizardDraft,
   shouldDebouncedSave,
@@ -237,6 +239,151 @@ describe("calendar wizard draft persistence", () => {
     const lastKnownUpdatedAt: string = "2026-01-01T00:00:00.000Z";
 
     expect(existingUpdatedAt === lastKnownUpdatedAt).toBe(false);
+  });
+
+  it("keys review-resolution merges by issue ID rather than warning code", () => {
+    const first = {
+      issueId: "special_day_outside_school_year::2027-06-04::first",
+      issueCode: "special_day_outside_school_year",
+      code: "special_day_outside_school_year",
+      status: "acknowledged" as const,
+    };
+    const second = {
+      ...first,
+      issueId: "special_day_outside_school_year::2027-06-05::second",
+    };
+
+    expect(mergeAiCalendarWarningResolutions([first], [second])).toHaveLength(2);
+  });
+
+  it("merges two nearly simultaneous issue resolutions without losing preview edits", async () => {
+    const importResult = createMockAiCalendarImportResult();
+    importResult.informationalDates = [{
+      id: "newest-preview-edit",
+      date: "2026-09-01",
+      label: "Newest calendar-preview edit",
+      confidence: "high",
+    }];
+    const serialized = serializeCalendarWizardDraft({
+      currentStep: "review",
+      draft: manualDraft({
+        aiImport: {
+          state: "review",
+          result: importResult,
+          resolutions: [],
+          warningResolutions: [],
+        },
+      }),
+    });
+    expect(serialized).not.toBeNull();
+
+    const firstResolution = {
+      issueId: "instructional_day_count_mismatch::none::none",
+      issueCode: "instructional_day_count_mismatch",
+      code: "instructional_day_count_mismatch",
+      status: "acknowledged" as const,
+      affectedDates: [],
+      reviewedAt: "2026-07-17T20:00:00.000Z",
+    };
+    const secondResolution = {
+      issueId: "special_day_outside_school_year::2027-06-04::special-1",
+      issueCode: "special_day_outside_school_year",
+      code: "special_day_outside_school_year",
+      status: "acknowledged" as const,
+      affectedDates: ["2027-06-04"],
+      reviewedAt: "2026-07-17T20:00:00.001Z",
+    };
+    let revision = 0;
+    let server = {
+      snapshot: { revision },
+      updatedAt: "2026-07-17T20:00:00.000Z",
+      wizardData: structuredClone(serialized!.data),
+    };
+    const readLatest = async () => structuredClone(server);
+    const writeIfUnchanged = async (
+      _latest: { revision: number },
+      expectedUpdatedAt: string,
+      wizardData: typeof server.wizardData
+    ) => {
+      if (server.updatedAt !== expectedUpdatedAt) return null;
+      revision += 1;
+      server = {
+        snapshot: { revision },
+        updatedAt: `2026-07-17T20:00:00.00${revision}Z`,
+        wizardData: structuredClone(wizardData),
+      };
+      return server.snapshot;
+    };
+    const save = (resolution: typeof firstResolution | typeof secondResolution) =>
+      mergeAiCalendarIssueResolutionWithRetry({
+        expectedUpdatedAt: "2026-07-17T20:00:00.000Z",
+        resolution,
+        readLatest,
+        writeIfUnchanged,
+      });
+
+    const results = await Promise.all([
+      save(firstResolution),
+      save(secondResolution),
+    ]);
+    const serverResolutions =
+      server.wizardData.draft.aiImport?.warningResolutions || [];
+    const clientResolutions = mergeAiCalendarWarningResolutions(
+      [firstResolution],
+      [secondResolution]
+    );
+
+    expect(results.every((result) => result.status === "success")).toBe(true);
+    expect(results.some((result) => result.retried)).toBe(true);
+    expect(serverResolutions.map((resolution) => resolution.issueId).sort()).toEqual(
+      clientResolutions.map((resolution) => resolution.issueId).sort()
+    );
+    expect(serverResolutions).toHaveLength(2);
+    expect(serverResolutions.every((resolution) => resolution.status === "acknowledged")).toBe(true);
+    expect(
+      serverResolutions
+        .map(({ issueId, status }) => ({ issueId, status }))
+        .sort((left, right) => String(left.issueId).localeCompare(String(right.issueId)))
+    ).toEqual(
+      clientResolutions
+        .map(({ issueId, status }) => ({ issueId, status }))
+        .sort((left, right) => String(left.issueId).localeCompare(String(right.issueId)))
+    );
+    expect(
+      server.wizardData.draft.aiImport?.result?.informationalDates
+    ).toContainEqual(expect.objectContaining({ id: "newest-preview-edit" }));
+  });
+
+  it("reports a conflict only after the merge retry also loses concurrency", async () => {
+    const importResult = createMockAiCalendarImportResult();
+    const serialized = serializeCalendarWizardDraft({
+      currentStep: "review",
+      draft: manualDraft({
+        aiImport: {
+          state: "review",
+          result: importResult,
+          resolutions: [],
+          warningResolutions: [],
+        },
+      }),
+    });
+    const result = await mergeAiCalendarIssueResolutionWithRetry({
+      expectedUpdatedAt: "2026-07-17T20:00:00.000Z",
+      resolution: {
+        issueId: "instructional_day_count_mismatch::none::none",
+        issueCode: "instructional_day_count_mismatch",
+        code: "instructional_day_count_mismatch",
+        status: "acknowledged",
+      },
+      readLatest: async () => ({
+        snapshot: { id: "draft-1" },
+        updatedAt: "2026-07-17T20:00:00.000Z",
+        wizardData: serialized!.data,
+      }),
+      writeIfUnchanged: async () => null,
+    });
+
+    expect(result).toMatchObject({ status: "conflict", retried: true });
   });
 
   it("can safely call future deletion cleanup more than once", () => {

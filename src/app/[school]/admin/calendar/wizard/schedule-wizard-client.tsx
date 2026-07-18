@@ -74,6 +74,7 @@ import {
 import {
   chooseCalendarWizardDraftSource,
   getDraftTypeForCalendarWizardFlow,
+  mergeAiCalendarWarningResolutions,
   serializeCalendarWizardDraft,
   type CalendarWizardFlowType,
   type CalendarWizardDraftRecord,
@@ -137,6 +138,7 @@ import {
   createAiCalendarFromDraftAction,
   getAiCalendarDebugSnapshotAction,
   recordAiCalendarDebugResolutionEventAction,
+  saveAiCalendarIssueResolutionAction,
   createGuidedScheduleName,
   deleteUnusedGuidedScheduleName,
   generateCalendarAction,
@@ -1413,6 +1415,47 @@ export default function ScheduleWizardClient({
     return result;
   }
 
+  async function saveAiIssueResolution(
+    resolution: AiImportWarningResolution
+  ): Promise<CalendarWizardDraftActionResult> {
+    setDraftSaveStatus("saving");
+    const result = await saveAiCalendarIssueResolutionAction(schoolSlug, {
+      resolution,
+      lastKnownUpdatedAt,
+    });
+
+    if (result.status === "success" && result.draft) {
+      setLastKnownUpdatedAt((current) =>
+        !current || result.draft!.updated_at > current
+          ? result.draft!.updated_at
+          : current
+      );
+      setDraft((current) => {
+        const serverAiImport = result.draft?.wizard_data.draft.aiImport;
+        if (!current.aiImport || !serverAiImport) return current;
+        return {
+          ...current,
+          aiImport: {
+            ...current.aiImport,
+            warningResolutions: mergeAiCalendarWarningResolutions(
+              current.aiImport.warningResolutions,
+              serverAiImport.warningResolutions
+            ),
+          },
+        };
+      });
+      setDraftSaveStatus("saved");
+      setLastSavedMessage("Review item saved");
+      return result;
+    }
+
+    setDraftSaveStatus("error");
+    setLastSavedMessage(
+      result.status === "success" ? "Could not save review item" : result.message
+    );
+    return result;
+  }
+
   async function invalidateAiImportCache(
     pdfHash: string | undefined,
     reason: string
@@ -1976,6 +2019,7 @@ export default function ScheduleWizardClient({
               onAddTimesNow={saveAndOpenSchedule}
               onImmediateSave={saveCurrentDraft}
               onCreateCalendar={openAiCreateModal}
+              onIssueResolutionSave={saveAiIssueResolution}
               creationInProgress={isSaving}
               updateDraft={updateDraft}
               onInvalidateAiCache={invalidateAiImportCache}
@@ -2255,6 +2299,7 @@ function AiCalendarImportCard({
   onAddTimesNow,
   onImmediateSave,
   onCreateCalendar,
+  onIssueResolutionSave,
   creationInProgress,
   updateDraft,
   onInvalidateAiCache,
@@ -2268,6 +2313,9 @@ function AiCalendarImportCard({
   onAddTimesNow: (tempId: string, detectedName: string) => Promise<void>;
   onImmediateSave: (draft: WizardDraft, step: WizardStep) => Promise<CalendarWizardDraftActionResult | null>;
   onCreateCalendar: () => Promise<void>;
+  onIssueResolutionSave: (
+    resolution: AiImportWarningResolution
+  ) => Promise<CalendarWizardDraftActionResult>;
   creationInProgress: boolean;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
   onInvalidateAiCache: (pdfHash: string | undefined, reason: string) => Promise<void>;
@@ -3069,54 +3117,89 @@ function AiCalendarImportCard({
         remainingBlockerIds: [],
       };
     }
-      const existing =
-        previousDraft.aiImport.warningResolutions ||
-        createDefaultWarningResolutions(previousDraft.aiImport.result.warnings);
-      const matchesIssue = (candidate: AiImportWarningResolution) =>
-        candidate.issueId === issue.issueId ||
-        (!candidate.issueId && candidate.code === issue.issueCode);
-      const nextResolution: AiImportWarningResolution = {
-        issueId: issue.issueId,
-        issueCode: issue.issueCode,
-        code: issue.issueCode,
-        status,
-        affectedDates: issue.affectedDates,
-        resolution,
-        reviewedBy: "current_administrator",
-        reviewedAt: new Date().toISOString(),
-      };
-      const nextResolutions = existing.some(matchesIssue)
-        ? existing.map((resolution) =>
-            matchesIssue(resolution) ? { ...resolution, ...nextResolution } : resolution
-          )
-        : [...existing, nextResolution];
-
-      const nextDraft: WizardDraft = {
-        ...previousDraft,
+    const existing =
+      previousDraft.aiImport.warningResolutions ||
+      createDefaultWarningResolutions(previousDraft.aiImport.result.warnings);
+    const previousResolution = existing.find(
+      (candidate) => candidate.issueId === issue.issueId
+    );
+    const nextResolution: AiImportWarningResolution = {
+      issueId: issue.issueId,
+      issueCode: issue.issueCode,
+      code: issue.issueCode,
+      status,
+      affectedDates: issue.affectedDates,
+      resolution,
+      reviewedBy: "current_administrator",
+      reviewedAt: new Date().toISOString(),
+    };
+    updateDraft((current) => {
+      if (!current.aiImport) return current;
+      return {
+        ...current,
         aiImport: {
-          ...previousDraft.aiImport,
+          ...current.aiImport,
           state: "review",
-          warningResolutions: nextResolutions,
+          warningResolutions: mergeAiCalendarWarningResolutions(
+            current.aiImport.warningResolutions,
+            [nextResolution]
+          ),
         },
       };
-      updateDraft(() => nextDraft);
-      const saveResult = await onImmediateSave(nextDraft, "review");
-      const preview = generateSchoolYearCalendar(
-        buildAiPreviewConfig(previousDraft.aiImport.result)
-      );
-      const readiness = normalizeAndDeduplicateReviewIssues({
-        importResult: previousDraft.aiImport.result,
-        generationWarnings: preview.warnings,
-        warningResolutions: nextResolutions,
-        analysisVersion: previousDraft.aiImport.analysisVersion,
+    });
+
+    const saveResult = await onIssueResolutionSave(nextResolution);
+    if (saveResult.status !== "success" || !saveResult.draft) {
+      updateDraft((current) => {
+        if (!current.aiImport) return current;
+        const currentResolution = current.aiImport.warningResolutions?.find(
+          (candidate) => candidate.issueId === issue.issueId
+        );
+        if (currentResolution?.reviewedAt !== nextResolution.reviewedAt) return current;
+        const withoutFailedResolution = (
+          current.aiImport.warningResolutions || []
+        ).filter((candidate) => candidate.issueId !== issue.issueId);
+        return {
+          ...current,
+          aiImport: {
+            ...current.aiImport,
+            warningResolutions: previousResolution
+              ? mergeAiCalendarWarningResolutions(withoutFailedResolution, [previousResolution])
+              : withoutFailedResolution,
+          },
+        };
       });
-      const nextIssue = readiness.issues.find((candidate) => candidate.issueId === issue.issueId);
-      return {
-        nextSeverity: nextIssue?.severity || "removed",
-        nextStatus: nextIssue?.status || "removed",
-        draftSaveResult: saveResult?.status || "not_saved",
-        remainingBlockerIds: readiness.blockingWarnings.map((warning) => warning.issueId),
-      };
+      throw new Error(
+        saveResult.status === "success" ? "Review item was not saved." : saveResult.message
+      );
+    }
+
+    const savedAiImport = saveResult.draft.wizard_data.draft.aiImport;
+    const savedImportResult = savedAiImport?.result || previousDraft.aiImport.result;
+    const savedResolutions = mergeAiCalendarWarningResolutions(
+      existing,
+      savedAiImport?.warningResolutions || [nextResolution]
+    );
+    const preview = generateSchoolYearCalendar(buildAiPreviewConfig(savedImportResult));
+    const readiness = normalizeAndDeduplicateReviewIssues({
+      importResult: savedImportResult,
+      generationWarnings: preview.warnings,
+      warningResolutions: savedResolutions,
+      analysisVersion: savedAiImport?.analysisVersion,
+    });
+    const nextIssue = readiness.issues.find(
+      (candidate) => candidate.issueId === issue.issueId
+    );
+    return {
+      nextSeverity: nextIssue?.severity || "removed",
+      nextStatus: nextIssue?.status || "removed",
+      draftSaveResult: saveResult.mergeRetried
+        ? "success_after_merge_retry"
+        : "success",
+      remainingBlockerIds: getUnresolvedBlockingReviewIssues(readiness.issues).map(
+        (warning) => warning.issueId
+      ),
+    };
   }
 
   function removeDetectedSchedule(
@@ -3738,7 +3821,7 @@ function AiImportReview({
           ? "Review item acknowledged. Readiness has been updated."
           : "Suggested correction applied. Readiness has been updated."
       );
-    } catch {
+    } catch (error) {
       const failed: AiCalendarDebugResolutionEvent = {
         ...started,
         event: "issue_resolution_failed",
@@ -3749,7 +3832,11 @@ function AiImportReview({
         setDebugResolutionEvents((events) => [...events, failed]);
         void recordAiCalendarDebugResolutionEventAction(schoolSlug, failed);
       }
-      setIssueConfirmation("The resolution could not be saved. Try again.");
+      setIssueConfirmation(
+        error instanceof Error
+          ? error.message
+          : "The resolution could not be saved. Try again."
+      );
     }
   }
 
