@@ -1673,7 +1673,12 @@ export async function createAiCalendarFromDraftAction(
           is_school_day: row.is_school_day,
         })),
         p_review: {
+          analysis_attempt_id: aiImport.analysisAttemptId || null,
+          analysis_version: staleIssueDefinitions
+            ? AI_CALENDAR_ANALYSIS_VERSION
+            : aiImport.analysisVersion || AI_CALENDAR_ANALYSIS_VERSION,
           acknowledged_issue_codes: [...acknowledgedIssueCodes],
+          classification_digest: creationClassificationDigest,
           final_approved_instructional_day_count:
             generated.summary.instructionalDayCount,
           review_note:
