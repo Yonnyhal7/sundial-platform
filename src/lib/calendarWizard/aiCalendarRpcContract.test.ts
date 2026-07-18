@@ -39,7 +39,7 @@ function serverRpcArgumentNames() {
   const rpcEnd = actions.indexOf("if (rpcError)", rpcStart);
   expect(rpcStart).toBeGreaterThanOrEqual(0);
   expect(rpcEnd).toBeGreaterThan(rpcStart);
-  return [...actions.slice(rpcStart, rpcEnd).matchAll(/^\s{8}(p_[a-z_]+):/gm)].map(
+  return [...actions.slice(rpcStart, rpcEnd).matchAll(/^\s+(p_[a-z_]+):/gm)].map(
     (match) => match[1]
   );
 }

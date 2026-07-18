@@ -13,6 +13,13 @@ const actions = readFileSync(
   resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/actions.ts"),
   "utf8"
 );
+const serializer = readFileSync(
+  resolve(
+    process.cwd(),
+    "src/lib/calendarWizard/aiCalendarReviewAuditPayload.ts"
+  ),
+  "utf8"
+);
 const digestMigration = readFileSync(
   resolve(
     process.cwd(),
@@ -95,9 +102,10 @@ describe("AI calendar import review audit contract", () => {
         (column) => !["id", "created_at", "updated_at"].includes(column)
       )
     );
-    expect(actions).toContain("analysis_attempt_id: aiImport.analysisAttemptId || null");
-    expect(actions).toContain("analysis_version: staleIssueDefinitions");
-    expect(actions).toContain("classification_digest: creationClassificationDigest");
+    expect(actions).toContain("serializeAiCalendarReviewAuditPayload({");
+    expect(serializer).toContain("analysis_attempt_id: analysisAttemptId || null");
+    expect(serializer).toContain("analysis_version: analysisVersion || null");
+    expect(serializer).toContain("classification_digest: classificationDigest || null");
     expect(migration).toContain("p_count_review->>'review_status'");
     expect(migration).toContain("coalesce(p_count_review->'classifications', '[]'::jsonb)");
   });

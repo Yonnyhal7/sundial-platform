@@ -37,6 +37,10 @@ import {
 } from "@/lib/calendarWizard/assignmentDigest";
 import { getInstructionalDayCountReviewState } from "@/lib/calendarWizard/instructionalDayCountReview";
 import {
+  callWithAiCalendarReviewAuditPreflight,
+  serializeAiCalendarReviewAuditPayload,
+} from "@/lib/calendarWizard/aiCalendarReviewAuditPayload";
+import {
   validateAiCalendarImportResult,
   type AiImportWarningResolution,
 } from "@/lib/calendarWizard/aiImportTypes";
@@ -111,6 +115,8 @@ export type GenerateCalendarActionResult =
       status: "validation_error";
       message: string;
       fieldErrors?: Record<string, string>;
+      reasonCode?: "review_audit_payload_incomplete";
+      missingKeys?: string[];
     }
   | {
       status: "permission_error";
@@ -1415,7 +1421,7 @@ export async function createAiCalendarFromDraftAction(
       importResult.instructionalDayCountReview,
       generated.summary.instructionalDayCount
     );
-    if (!countReviewState.ready) {
+    if (!countReviewState.ready || countReviewState.status === "pending") {
       return validationError(
         "Review the instructional-day count difference before creating the calendar.",
         {
@@ -1648,70 +1654,70 @@ export async function createAiCalendarFromDraftAction(
       );
     }
 
-    const { data: rpcData, error: rpcError } = await adminUser.supabase.rpc(
-      "create_available_ai_calendar_from_draft",
-      {
-        p_school_id: schoolData.id,
-        p_draft_id: draft.id,
-        p_expected_draft_updated_at: draft.updated_at,
-        p_start_date: config.schoolYear.startDate,
-        p_end_date: config.schoolYear.endDate,
-        p_replace_existing: Boolean(input.replaceExisting),
-        p_schedules: plan.schedulesToCreate.map((schedule) => ({
-          id: schedule.id,
-          temp_id: schedule.tempId,
-          schedule_name: schedule.scheduleName,
-          schedule_type: schedule.scheduleType,
-          calendar_color: schedule.calendarColor,
-          setup_status: schedule.setupStatus,
-        })),
-        p_calendar_days: rows.map((row) => ({
-          date: row.date,
-          schedule_id: row.schedule_id,
-          base_schedule_id: row.base_schedule_id,
-          label: row.label,
-          is_school_day: row.is_school_day,
-        })),
-        p_review: {
-          analysis_attempt_id: aiImport.analysisAttemptId || null,
-          analysis_version: staleIssueDefinitions
-            ? AI_CALENDAR_ANALYSIS_VERSION
-            : aiImport.analysisVersion || AI_CALENDAR_ANALYSIS_VERSION,
-          acknowledged_issue_codes: [...acknowledgedIssueCodes],
-          classification_digest: creationClassificationDigest,
-          final_approved_instructional_day_count:
-            generated.summary.instructionalDayCount,
-          review_note:
-            importResult.instructionalDayCountReview?.reviewNote || null,
-        },
-        p_count_review: importResult.instructionalDayCountReview
-          ? {
-              reason_code: importResult.instructionalDayCountReview.reasonCode,
-              declared_instructional_day_count:
-                importResult.instructionalDayCountReview.declaredInstructionalDayCount,
-              generated_instructional_day_count:
-                importResult.instructionalDayCountReview.generatedInstructionalDayCount,
-              final_approved_instructional_day_count:
-                importResult.instructionalDayCountReview.finalApprovedInstructionalDayCount ??
-                generated.summary.instructionalDayCount,
-              acknowledged: countReviewState.ready,
-              review_status: countReviewState.status,
-              acknowledged_issue_codes: [...acknowledgedIssueCodes],
-              review_note: importResult.instructionalDayCountReview.reviewNote || null,
-              classifications: importResult.instructionalDayCountReview.discrepancyDates,
-              classification_digest: creationClassificationDigest,
-              calendar_coverage_start:
-                importResult.schoolYear.calendarCoverageStart || importResult.schoolYear.startDate,
-              calendar_coverage_end:
-                importResult.schoolYear.calendarCoverageEnd || importResult.schoolYear.endDate,
-              instructional_start:
-                importResult.schoolYear.instructionalStart || importResult.schoolYear.startDate,
-              instructional_end:
-                importResult.schoolYear.instructionalEnd || importResult.schoolYear.endDate,
-            }
-          : null,
-      }
-    );
+    const reviewAuditPayload = serializeAiCalendarReviewAuditPayload({
+      analysisAttemptId: aiImport.analysisAttemptId,
+      analysisVersion: staleIssueDefinitions
+        ? AI_CALENDAR_ANALYSIS_VERSION
+        : aiImport.analysisVersion || AI_CALENDAR_ANALYSIS_VERSION,
+      classificationDigest: creationClassificationDigest,
+      acknowledgedIssueCodes,
+      finalInstructionalDayCount: generated.summary.instructionalDayCount,
+      reviewNote: importResult.instructionalDayCountReview?.reviewNote,
+      countReview: importResult.instructionalDayCountReview
+        ? {
+            reasonCode: importResult.instructionalDayCountReview.reasonCode,
+            declaredInstructionalDayCount:
+              importResult.instructionalDayCountReview.declaredInstructionalDayCount,
+            generatedInstructionalDayCount:
+              importResult.instructionalDayCountReview.generatedInstructionalDayCount,
+            finalInstructionalDayCount:
+              importResult.instructionalDayCountReview.finalApprovedInstructionalDayCount ??
+              generated.summary.instructionalDayCount,
+            acknowledged: countReviewState.ready,
+            status: countReviewState.status,
+            classifications: importResult.instructionalDayCountReview.discrepancyDates,
+          }
+        : null,
+    });
+    const rpcPreflight = await callWithAiCalendarReviewAuditPreflight({
+      payload: reviewAuditPayload,
+      logDiagnostics: (diagnostics) => console.info(diagnostics),
+      call: () =>
+        adminUser.supabase.rpc("create_available_ai_calendar_from_draft", {
+          p_school_id: schoolData.id,
+          p_draft_id: draft.id,
+          p_expected_draft_updated_at: draft.updated_at,
+          p_start_date: config.schoolYear.startDate,
+          p_end_date: config.schoolYear.endDate,
+          p_replace_existing: Boolean(input.replaceExisting),
+          p_schedules: plan.schedulesToCreate.map((schedule) => ({
+            id: schedule.id,
+            temp_id: schedule.tempId,
+            schedule_name: schedule.scheduleName,
+            schedule_type: schedule.scheduleType,
+            calendar_color: schedule.calendarColor,
+            setup_status: schedule.setupStatus,
+          })),
+          p_calendar_days: rows.map((row) => ({
+            date: row.date,
+            schedule_id: row.schedule_id,
+            base_schedule_id: row.base_schedule_id,
+            label: row.label,
+            is_school_day: row.is_school_day,
+          })),
+          p_review: reviewAuditPayload.p_review,
+          p_count_review: reviewAuditPayload.p_count_review,
+        }),
+    });
+    if (!rpcPreflight.success) {
+      return {
+        status: "validation_error",
+        message: "The AI calendar review audit payload is incomplete.",
+        reasonCode: rpcPreflight.reasonCode,
+        missingKeys: rpcPreflight.missingKeys,
+      };
+    }
+    const { data: rpcData, error: rpcError } = rpcPreflight.result;
 
     if (rpcError) {
       console.error("AI calendar RPC error:", JSON.stringify(rpcError, null, 2));
