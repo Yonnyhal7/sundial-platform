@@ -70,10 +70,10 @@ export default function SchoolLogo({
   return (
     <span
       className={[
-        "grid shrink-0 place-items-center overflow-hidden font-black",
+        "grid shrink-0 place-items-center font-black",
         hasLogo
-          ? "border-0 bg-transparent text-transparent"
-          : "rounded-2xl border border-slate-200 bg-white text-slate-950 dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white",
+          ? "overflow-visible border-0 bg-transparent text-transparent"
+          : "overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white",
         variantClasses[variant] || sizeClasses[size],
         variant === "default" ? sizeClasses[size] : "",
         className,
@@ -85,7 +85,7 @@ export default function SchoolLogo({
           alt={`${schoolName} logo`}
           onError={() => setImageFailed(true)}
           className={[
-            "object-contain",
+            "max-h-full max-w-full object-contain object-center",
             artworkClasses[variant] || artworkClasses.default,
           ].join(" ")}
         />

@@ -21,4 +21,11 @@ describe("public mobile navigation accessibility", () => {
     expect(source).toContain("xl:hidden");
     expect(source).toContain("hidden items-center gap-1 xl:flex");
   });
+
+  it("does not expose website appearance controls", () => {
+    expect(source).not.toContain("ThemeToggle");
+    expect(source).not.toContain('aria-label="Appearance"');
+    expect(source).not.toContain(">Appearance<");
+    expect(source).not.toContain('variant="segmented"');
+  });
 });
