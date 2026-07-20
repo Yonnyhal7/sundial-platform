@@ -125,20 +125,20 @@ export default function AdminLoginShell({
               onChange={(event) => onEmailChange(event.target.value)}
               className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#D4A017] focus:ring-2 focus:ring-[#D4A017]/25 dark:border-white/10 dark:bg-[#0b1220] dark:text-white dark:placeholder:text-slate-500 dark:focus:border-[#D4A017] dark:focus:ring-[#D4A017]/35"
             />
-            <div className="mt-2 text-right">
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-4">
+              <label
+                htmlFor="admin-login-password"
+                className="text-sm font-semibold text-slate-700 dark:text-slate-200"
+              >
+                Password
+              </label>
               <Link className="text-sm font-semibold text-[#9A7209] hover:underline dark:text-[#F6C64A]" href={forgotPasswordHref}>
                 Forgot password?
               </Link>
             </div>
-          </div>
-
-          <div>
-            <label
-              htmlFor="admin-login-password"
-              className="text-sm font-semibold text-slate-700 dark:text-slate-200"
-            >
-              Password
-            </label>
             <input
               id="admin-login-password"
               type="password"
