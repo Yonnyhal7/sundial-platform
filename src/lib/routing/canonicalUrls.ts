@@ -45,3 +45,33 @@ export function getCanonicalSchoolLoginUrl({
   base.pathname = `${prefix}/${encodeURIComponent(schoolSubdomain)}/login`;
   return base.toString();
 }
+
+export function getCanonicalPasswordRecoveryUrl({
+  adminUrl,
+  returnPath,
+}: {
+  adminUrl: string;
+  returnPath: string;
+}) {
+  const base = canonicalBaseUrl(adminUrl);
+  const safeReturnPath = validatePasswordRecoveryReturnPath(returnPath);
+  const prefix = base.pathname === "/" ? "" : base.pathname.replace(/\/$/, "");
+  base.pathname = `${prefix}/auth/recovery`;
+  base.searchParams.set("returnTo", safeReturnPath);
+  return base.toString();
+}
+
+export function validatePasswordRecoveryReturnPath(value: string | null | undefined) {
+  if (!value) return "/admin";
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    return "/admin";
+  }
+  if (decoded === "/admin") return decoded;
+  if (/^\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\/login$/.test(decoded)) {
+    return decoded;
+  }
+  return "/admin";
+}

@@ -4,14 +4,16 @@ import { createBrowserClient } from "@supabase/ssr";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminLoginShell from "@/components/admin/AdminLoginShell";
-import { getSchoolLoginDestination } from "@/lib/routing/paths";
+import { getSchoolForgotPasswordPath, getSchoolLoginDestination } from "@/lib/routing/paths";
 
 export default function LoginForm({
   school,
   setupComplete,
+  passwordUpdated = false,
 }: {
   school: string;
   setupComplete: boolean;
+  passwordUpdated?: boolean;
 }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -56,6 +58,8 @@ export default function LoginForm({
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
       onSubmit={handleLogin}
+      forgotPasswordHref={getSchoolForgotPasswordPath(school)}
+      success={passwordUpdated ? "Your password was updated successfully. Sign in with your new password." : null}
     />
   );
 }

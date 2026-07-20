@@ -173,3 +173,15 @@ export function getAdminUtilityPath(pathname: string, hostname: string, path: st
 
   return normalizedPath;
 }
+
+export function getSchoolLoginPath(school: string) {
+  return `/${encodeURIComponent(school)}/login`;
+}
+
+export function getSchoolForgotPasswordPath(school: string) {
+  return `/${encodeURIComponent(school)}/forgot-password`;
+}
+
+export function getSuperAdminForgotPasswordPath(pathname: string, hostname: string) {
+  return getAdminUtilityPath(pathname, hostname, "/forgot-password");
+}

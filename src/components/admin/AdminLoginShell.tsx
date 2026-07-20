@@ -9,6 +9,7 @@ import {
   resolveAppearanceTheme,
 } from "@/lib/themeScope";
 import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
+import Link from "next/link";
 
 export type AdminLoginShellProps = {
   email: string;
@@ -18,6 +19,8 @@ export type AdminLoginShellProps = {
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  forgotPasswordHref: string;
+  success?: string | null;
 };
 
 export default function AdminLoginShell({
@@ -28,6 +31,8 @@ export default function AdminLoginShell({
   onEmailChange,
   onPasswordChange,
   onSubmit,
+  forgotPasswordHref,
+  success,
 }: AdminLoginShellProps) {
   const [themeReady, setThemeReady] = useState(false);
 
@@ -120,6 +125,11 @@ export default function AdminLoginShell({
               onChange={(event) => onEmailChange(event.target.value)}
               className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[#D4A017] focus:ring-2 focus:ring-[#D4A017]/25 dark:border-white/10 dark:bg-[#0b1220] dark:text-white dark:placeholder:text-slate-500 dark:focus:border-[#D4A017] dark:focus:ring-[#D4A017]/35"
             />
+            <div className="mt-2 text-right">
+              <Link className="text-sm font-semibold text-[#9A7209] hover:underline dark:text-[#F6C64A]" href={forgotPasswordHref}>
+                Forgot password?
+              </Link>
+            </div>
           </div>
 
           <div>
@@ -148,6 +158,8 @@ export default function AdminLoginShell({
               {error}
             </p>
           )}
+
+          {success && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-200">{success}</p>}
 
           <button
             type="submit"

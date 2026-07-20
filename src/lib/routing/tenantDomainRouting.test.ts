@@ -83,6 +83,14 @@ describe("tenant domain routing", () => {
     expect(mockedAvailability).not.toHaveBeenCalled();
   });
 
+  it("exposes recovery routes on the production admin host", async () => {
+    const forgot = await proxy(request("admin.sundialk12.com", "/forgot-password"));
+    expect(forgot.headers.get("x-middleware-rewrite")).toBe("https://admin.sundialk12.com/admin/forgot-password");
+    const recovery = await proxy(request("admin.sundialk12.com", "/auth/recovery?returnTo=%2Fnorth%2Flogin"));
+    expect(recovery.status).toBe(200);
+    expect(recovery.headers.get("location")).toBeNull();
+  });
+
   it.each(["unknown-school", "archived-school", "deleted-school"])(
     "does not redirect unavailable legacy tenant %s",
     async (school) => {

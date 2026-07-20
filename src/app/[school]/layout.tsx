@@ -7,6 +7,10 @@ import {
   type AppearancePreference,
 } from "@/lib/themeScope";
 import { getSchoolLifecycleBySubdomain } from "@/lib/schools";
+import PublicFooterRoute from "@/components/public-site/PublicFooterRoute";
+import { requirePublicSchool } from "@/lib/publicSite";
+import { getContrastTextColor } from "@/lib/schoolTheme";
+import type { CSSProperties } from "react";
 
 async function getSchoolDefaultAppearance(
   school: string
@@ -50,16 +54,28 @@ export default async function SchoolLayout({
   const schoolDefaultAppearance = showPublicNav
     ? await getSchoolDefaultAppearance(school)
     : "system";
+  const publicSchool = showPublicNav ? (await requirePublicSchool(school)).school : null;
 
   return (
-    <div className="school-public-theme min-h-screen bg-slate-100 text-slate-950 dark:bg-black dark:text-white">
+    <div
+      className="school-public-theme min-h-screen bg-[#f7f7f5] text-slate-950 dark:bg-[#101214] dark:text-white"
+      style={publicSchool ? ({
+        "--school-primary": publicSchool.primary_color || "#2563eb",
+        "--school-secondary": publicSchool.secondary_color || publicSchool.primary_color || "#64748b",
+        "--school-primary-text": getContrastTextColor(publicSchool.primary_color || "#2563eb"),
+      } as CSSProperties) : undefined}
+    >
       {showPublicNav && (
         <SchoolPublicNav
           school={school}
+          base={parsedHost.kind === "school" ? "" : `/${school}`}
+          schoolName={publicSchool!.name}
+          logoUrl={publicSchool!.logo_url}
           schoolDefaultAppearance={schoolDefaultAppearance}
         />
       )}
       {children}
+      {showPublicNav && publicSchool && <PublicFooterRoute school={publicSchool} base={parsedHost.kind === "school" ? "" : `/${school}`} />}
     </div>
   );
 }

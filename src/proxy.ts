@@ -13,6 +13,7 @@ const RESERVED_ADMIN_PATHS = new Set([
   "api",
   "dashboard",
   "invitations",
+  "forgot-password",
   "schools",
   "select-school",
   "status",
@@ -131,6 +132,19 @@ export async function proxy(req: NextRequest) {
   // subdomain. It only exposes SuperAdmin routes and must run before generic
   // school subdomain handling.
   if (parsedHost.kind === "admin") {
+    if (pathname === "/auth/recovery") {
+      return nextPreservingPath();
+    }
+
+    if (pathname === "/forgot-password") {
+      url.pathname = "/admin/forgot-password";
+      return rewritePreservingHost(url);
+    }
+
+    if (pathname === "/admin/forgot-password") {
+      url.pathname = "/forgot-password";
+      return NextResponse.redirect(url);
+    }
     if (pathname === "/") {
       url.pathname = "/admin";
       return NextResponse.rewrite(url);
@@ -220,7 +234,7 @@ export async function proxy(req: NextRequest) {
       return nextPreservingPath();
     }
 
-    if (school === "dashboard" || school === "select-school" || school === "invitations") {
+    if (school === "dashboard" || school === "select-school" || school === "invitations" || school === "forgot-password") {
       return nextPreservingPath();
     }
 

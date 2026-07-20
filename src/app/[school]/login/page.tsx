@@ -4,8 +4,10 @@ import { getSchoolForSetup, getSchoolSetupStatus } from "@/lib/schools";
 
 export default async function LoginPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ school: string }>;
+  searchParams: Promise<{ passwordUpdated?: string }>;
 }) {
   const { school } = await params;
   const schoolData = await getSchoolForSetup(school);
@@ -18,6 +20,7 @@ export default async function LoginPage({
     <LoginForm
       school={school}
       setupComplete={getSchoolSetupStatus(schoolData) === "active"}
+      passwordUpdated={(await searchParams).passwordUpdated === "1"}
     />
   );
 }

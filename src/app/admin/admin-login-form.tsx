@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import AdminLoginShell from "@/components/admin/AdminLoginShell";
 import { getAdminUtilityPath } from "@/lib/routing/paths";
 
-export default function AdminLoginForm() {
+export default function AdminLoginForm({ passwordUpdated = false }: { passwordUpdated?: boolean }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -49,6 +49,8 @@ export default function AdminLoginForm() {
       onEmailChange={setEmail}
       onPasswordChange={setPassword}
       onSubmit={handleLogin}
+      forgotPasswordHref="/admin/forgot-password"
+      success={passwordUpdated ? "Your password was updated successfully. Sign in with your new password." : null}
     />
   );
 }

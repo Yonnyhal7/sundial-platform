@@ -1,88 +1,9 @@
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { PublicContainer, PublicEmptyState, PublicPageHeader } from "@/components/public-site/PublicSite";
+import { requirePublicSchool } from "@/lib/publicSite";
+import { safePublicUrl } from "@/lib/publicUrl";
 
-type Resource = {
-  id: string;
-  title: string;
-  description: string | null;
-  url: string | null;
-  file_url: string | null;
-  category: string | null;
-};
-
-export default async function ResourcesPage({
-  params,
-}: {
-  params: Promise<{ school: string }>;
-}) {
-  const { school } = await params;
-  const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_available_school_by_subdomain", { subdomain_input: school })
-    .single<{ id: string }>();
-
-  if (!schoolData) return null;
-
-  const { data: resources } = await supabase
-    .from("resources")
-    .select("id, title, description, url, file_url, category")
-    .eq("school_id", schoolData.id)
-    .eq("is_active", true)
-    .order("category", { ascending: true })
-    .order("title", { ascending: true });
-
-  return (
-    <main className="p-8">
-      <h1 className="text-4xl font-bold">Resources</h1>
-
-      <div className="mt-8 grid gap-6 md:grid-cols-2">
-        {resources?.map((resource) => (
-          <article
-            key={resource.id}
-            className="rounded-2xl border border-neutral-800 bg-neutral-900 p-6"
-          >
-            {resource.category && (
-              <p className="text-sm uppercase tracking-widest text-neutral-500">
-                {resource.category}
-              </p>
-            )}
-
-            <h2 className="mt-2 text-2xl font-semibold">{resource.title}</h2>
-
-            {resource.description && (
-              <p className="mt-3 text-neutral-300">{resource.description}</p>
-            )}
-
-            <div className="mt-5 flex gap-3">
-              {resource.url && (
-                <a
-                  href={resource.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black"
-                >
-                  Open Link
-                </a>
-              )}
-
-              {resource.file_url && (
-                <a
-                  href={resource.file_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-lg border border-neutral-700 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-white dark:hover:bg-[#181818]"
-                >
-                  Open File
-                </a>
-              )}
-            </div>
-          </article>
-        ))}
-
-        {!resources?.length && (
-          <p className="text-neutral-400">No resources available.</p>
-        )}
-      </div>
-    </main>
-  );
+export default async function ResourcesPage({ params }: { params: Promise<{ school: string }> }) {
+  const { school: slug } = await params; const { supabase, school } = await requirePublicSchool(slug);
+  const { data } = await supabase.from("resources").select("id,title,description,url,file_url,category").eq("school_id", school.id).eq("is_active", true).order("category").order("title");
+  return <main><PublicPageHeader eyebrow={school.name} title="Resources" description="Helpful links and documents for students, families, staff, and visitors." /><PublicContainer className="py-12 sm:py-16">{data?.length ? <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{data.map((resource) => { const href = safePublicUrl(resource.url) || safePublicUrl(resource.file_url); return <article key={resource.id} className="flex min-h-56 flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-[#1b1e21] dark:ring-white/10"><p className="text-xs font-bold uppercase tracking-wider text-[var(--school-primary)]">{resource.category || "Resource"}</p><h2 className="mt-3 text-xl font-black">{resource.title}</h2>{resource.description && <p className="mt-3 leading-7 text-slate-600 dark:text-slate-300">{resource.description}</p>}{href && <a href={href} target="_blank" rel="noreferrer" className="mt-auto pt-6 text-sm font-black text-[var(--school-primary)]">Open resource <span aria-label="Opens in a new tab">↗</span></a>}</article>; })}</div> : <PublicEmptyState>No resources are available yet.</PublicEmptyState>}</PublicContainer></main>;
 }
