@@ -380,3 +380,22 @@ body {
 .kiosk-theme svg circle[stroke="#f5b400"] {
   stroke: var(--school-primary);
 }
+@keyframes public-menu-enter {
+  from { opacity: 0; transform: translateY(-0.75rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes public-sheet-enter {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.public-mobile-menu-backdrop { animation: public-menu-enter 180ms ease-out both; }
+.public-mobile-menu-panel { animation: public-menu-enter 220ms ease-out both; }
+.public-appearance-sheet { animation: public-sheet-enter 240ms cubic-bezier(.2,.8,.2,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .public-mobile-menu-backdrop,
+  .public-mobile-menu-panel,
+  .public-appearance-sheet { animation: none; }
+}

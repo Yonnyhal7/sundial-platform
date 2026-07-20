@@ -16,6 +16,7 @@ describe("public homepage mobile contracts", () => {
     expect(homepage).toContain("py-10 sm:py-14 lg:min-h-[34rem]");
     expect(homepage).toContain("mt-3 break-words");
     expect(homepage).toContain("min-h-12");
+    expect(homepage).toContain('className="h-6 sm:hidden"');
   });
 
   it("uses real resources in a responsive two-column quick-link grid", () => {

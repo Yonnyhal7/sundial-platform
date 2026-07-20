@@ -12,20 +12,38 @@ describe("public mobile navigation accessibility", () => {
     expect(source).toContain('aria-expanded={open}');
     expect(source).toContain('aria-controls="public-mobile-menu"');
     expect(source).toContain('event.key === "Escape"');
-    expect(source).toContain('window.addEventListener("keydown", closeOnEscape)');
+    expect(source).toContain('window.addEventListener("keydown", handleKeyDown)');
   });
 
   it("keeps mobile targets large and desktop navigation breakpoint-scoped", () => {
     expect(source).toContain("h-11 w-11");
-    expect(source).toContain("min-h-11");
+    expect(source).toContain("min-h-12");
     expect(source).toContain("xl:hidden");
     expect(source).toContain("hidden items-center gap-1 xl:flex");
   });
 
-  it("does not expose website appearance controls", () => {
+  it("keeps appearance out of the header and opens it from the mobile menu", () => {
     expect(source).not.toContain("ThemeToggle");
-    expect(source).not.toContain('aria-label="Appearance"');
-    expect(source).not.toContain(">Appearance<");
+    expect(source).toContain('aria-haspopup="dialog"');
+    expect(source).toContain('aria-label="Website appearance"');
+    expect(source).toContain('setStoredAppearancePreference("site"');
+    expect(source).toContain('applyTheme(resolveAppearanceTheme(nextAppearance), "site"');
     expect(source).not.toContain('variant="segmented"');
+  });
+
+  it("renders a fixed overlay with backdrop dismissal and focus management", () => {
+    expect(source).toContain("fixed inset-x-0 bottom-0 top-20");
+    expect(source).toContain('aria-modal="true"');
+    expect(source).toContain('document.body.style.overflow = "hidden"');
+    expect(source).toContain('event.key !== "Tab"');
+    expect(source).toContain("public-mobile-menu-panel");
+  });
+
+  it("uses existing icons and includes public navigation identity", () => {
+    expect(source).toContain("HomeIcon");
+    expect(source).toContain("MegaphoneIcon");
+    expect(source).toContain("ResourcesIcon");
+    expect(source).toContain("Powered by Sundial");
+    expect(source).toContain('className="h-14 w-14 p-1"');
   });
 });
