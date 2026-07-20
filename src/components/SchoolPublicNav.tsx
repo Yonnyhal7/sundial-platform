@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import SchoolLogo from "@/components/SchoolLogo";
 import KioskMenuControls from "@/components/KioskMenuControls";
@@ -121,14 +122,16 @@ export default function SchoolPublicNav({ school, schoolName, logoUrl, base, sch
   if (pathname === `${base}/app` || pathname.startsWith(`${base}/app/`) || pathname === `${base}/admin` || pathname.startsWith(`${base}/admin/`) || pathname.startsWith(`/admin/${school}`)) return null;
   if (pathname === `${base}/kiosk` || pathname.startsWith(`${base}/kiosk/`)) return <nav className="school-menu-bar border-b border-slate-200 bg-white px-6 py-3 dark:border-neutral-800 dark:bg-black"><div className="flex justify-end"><KioskMenuControls school={school} schoolDefaultAppearance={schoolDefaultAppearance} /></div></nav>;
 
-  return <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 text-slate-950 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-[#141618]/90 dark:text-white">
+  return <><header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 text-slate-950 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-[#141618]/90 dark:text-white">
     <div className="mx-auto flex min-h-20 max-w-[1360px] items-center gap-5 px-5 sm:px-8 lg:px-12">
       <Link href={homeHref} className="flex min-w-0 items-center gap-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)]"><SchoolLogo schoolName={schoolName} logoUrl={logoUrl} variant="websiteHeader" allowArtworkOverflow className="h-[3.15rem] w-[3.15rem] p-1" /><span className="max-w-[13rem] truncate text-sm font-black sm:max-w-[17rem]">{schoolName}</span></Link>
       <nav aria-label="Primary" className="ml-auto hidden items-center gap-1 xl:flex">{items.map(({ label, desktopLabel, href }) => <Link key={href} href={href} aria-current={active(href) ? "page" : undefined} className={`rounded-full px-3 py-2 text-sm font-bold transition ${active(href) ? "bg-[color-mix(in_srgb,var(--school-primary)_14%,transparent)] text-[var(--school-primary)]" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"}`}>{desktopLabel || label}</Link>)}</nav>
       <button ref={menuButtonRef} type="button" className="ml-auto grid h-11 w-11 place-items-center rounded-full border border-slate-300 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] xl:hidden dark:border-white/20 dark:hover:bg-white/10" aria-expanded={open} aria-controls="public-mobile-menu" aria-label={open ? "Close navigation" : "Open navigation"} onClick={() => open ? closeMenu() : setOpen(true)}>{open ? <CloseIcon /> : <MenuIcon className="h-6 w-6" />}</button>
     </div>
 
-    {open && <div className="fixed inset-x-0 bottom-0 top-20 z-40 xl:hidden" role="dialog" aria-modal="true" aria-label="Site navigation">
+  </header>
+
+    {open && createPortal(<div className="fixed inset-x-0 bottom-0 top-20 z-40 text-slate-950 xl:hidden dark:text-white" role="dialog" aria-modal="true" aria-label="Site navigation">
       <button type="button" aria-label="Close navigation" className="public-mobile-menu-backdrop absolute inset-0 cursor-default bg-slate-950/25 backdrop-blur-[2px] dark:bg-black/45" onClick={closeMenu} />
       <div ref={menuPanelRef} id="public-mobile-menu" className="public-mobile-menu-panel relative max-h-full overflow-y-auto border-b border-slate-200 bg-white/95 px-5 pb-5 pt-4 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#17191b]/95">
         <div className="mx-auto max-w-[1360px]">
@@ -147,6 +150,6 @@ export default function SchoolPublicNav({ school, schoolName, logoUrl, base, sch
           <button type="button" onClick={closeAppearance} className="mt-3 min-h-12 w-full rounded-2xl bg-slate-100 text-sm font-black hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] dark:bg-white/10 dark:hover:bg-white/15">Done</button>
         </div>
       </div>}
-    </div>}
-  </header>;
+    </div>, document.body)}
+  </>;
 }

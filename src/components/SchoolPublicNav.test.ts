@@ -33,6 +33,8 @@ describe("public mobile navigation accessibility", () => {
 
   it("renders a fixed overlay with backdrop dismissal and focus management", () => {
     expect(source).toContain("fixed inset-x-0 bottom-0 top-20");
+    expect(source).toContain("createPortal(");
+    expect(source).toContain("document.body)");
     expect(source).toContain('aria-modal="true"');
     expect(source).toContain('document.body.style.overflow = "hidden"');
     expect(source).toContain('event.key !== "Tab"');
