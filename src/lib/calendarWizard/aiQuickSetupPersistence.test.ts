@@ -54,6 +54,62 @@ describe("AI quick setup persistence planning", () => {
     expect(plan.tempToScheduleId["ai-schedule-brown"]).toBe("brown-real");
   });
 
+  it("matches all regular/default aliases to an existing regular schedule", () => {
+    for (const alias of ["sched_regular", "regular", "default", "normal", "standard", "all_periods"]) {
+      const [resolution] = matchDetectedSchedules(
+        [{
+          tempId: "sched-regular",
+          detectedName: alias,
+          normalizedName: alias,
+          category: "regular",
+          confidence: "high",
+          needsSetup: true,
+        }],
+        [{ id: uuidOne, name: "Regular Schedule" }]
+      );
+      expect(resolution.matchedExistingScheduleId).toBe(uuidOne);
+      expect(resolution.status).toBe("matched_automatically");
+    }
+  });
+
+  it("classifies inferred regular schedules identically across repeated runs", () => {
+    const warning: AiImportWarning = {
+      code: "unknown_pattern_schedule_reference",
+      severity: "info",
+      message: "Sundial assigned standard instructional days to the regular schedule.",
+    };
+    const snapshots = Array.from({ length: 10 }, () =>
+      classifyCalendarWarnings([warning]).automaticallyResolvedWarnings.map((issue) => ({
+        code: issue.issueCode,
+        severity: issue.finalSeverity,
+        status: issue.finalStatus,
+        message: issue.message,
+      }))
+    );
+
+    expect(new Set(snapshots.map((snapshot) => JSON.stringify(snapshot))).size).toBe(1);
+    expect(snapshots[0]).toEqual([{
+      code: "unknown_pattern_schedule_reference",
+      severity: "automatically_resolved",
+      status: "automatically_resolved",
+      message: "Sundial assigned standard instructional days to the regular schedule.",
+    }]);
+    expect(JSON.stringify(snapshots)).not.toContain("sched_regular");
+  });
+
+  it("keeps a genuinely unknown named pattern schedule blocking", () => {
+    const classification = classifyCalendarWarnings([{
+      code: "unknown_pattern_schedule_reference",
+      severity: "review",
+      message: "The PDF referenced a normal pattern schedule that was not listed: Assembly.",
+    }]);
+
+    expect(classification.blockingWarnings[0]).toMatchObject({
+      finalSeverity: "blocking",
+      finalStatus: "unresolved",
+    });
+  });
+
   it("creates missing schedules as active concepts needing bell times", () => {
     const importResult = createMockAiCalendarImportResult();
     const resolutions = matchDetectedSchedules(importResult.detectedSchedules, []);

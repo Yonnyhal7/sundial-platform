@@ -10,6 +10,7 @@ import {
   claimCalendarAnalysisAttempt,
   dedupeCalendarAnalysis,
   invalidateCalendarAnalysisCache,
+  readCalendarAnalysisCacheEntry,
   recordCalendarAnalysisFailure,
   setCalendarAnalysisStage,
   writeCalendarAnalysisCache,
@@ -25,6 +26,10 @@ import { AI_IMPORT_ROUTE_PROCESSING_DEADLINE_MS } from "@/lib/calendarWizard/aiI
 import { getSchoolForSetup } from "@/lib/schools";
 import { extractPdfVectorCalendar } from "@/lib/calendarWizard/pdfVectorCalendarExtraction.server";
 import { computeDatedScheduleAssignmentDigest } from "@/lib/calendarWizard/assignmentDigest";
+import { computeCalendarClassificationDigest } from "@/lib/calendarWizard/assignmentDigest";
+import { buildAiPreviewConfig } from "@/lib/calendarWizard/aiImportPreview";
+import { generateSchoolYearCalendar } from "@/lib/calendarWizard/generateSchoolYearCalendar";
+import { classifyCalendarWarnings } from "@/lib/calendarWizard/aiQuickSetupPersistence";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -230,6 +235,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
     const upload = formData.get("calendarPdf");
     const submittedAttemptId = formData.get("analysisAttemptId");
+    const cacheMode = parseCacheMode(formData);
     if (typeof submittedAttemptId === "string" && UUID_PATTERN.test(submittedAttemptId)) {
       analysisAttemptId = submittedAttemptId;
     }
@@ -266,6 +272,31 @@ export async function POST(request: Request, context: RouteContext) {
         schoolId: schoolData.id,
         pdfHash: earlyPdfHash,
       });
+      if (cacheMode === "default") {
+        for (const cacheKey of earlyCacheKeys.preferred) {
+          const cached = await readCalendarAnalysisCacheEntry(cacheKey);
+          if (cached) {
+            logAiImportRouteDiagnostic({
+              event: "verified_cache_hit", requestId, analysisAttemptId, school,
+              durationMs: Date.now() - startedAt, status: "success",
+            });
+            return respond({
+              status: "success",
+              importResult: cached.result,
+              analysisStrategy: cached.strategy as "text-gpt5-mini" | "pdf-gpt5",
+              outcome: cached.result.warnings.some((warning) => warning.severity === "review")
+                ? "reviewable"
+                : "successful",
+              cache: {
+                hit: true,
+                analyzedAt: cached.createdAt,
+                strategy: cached.strategy as "text-gpt5-mini" | "pdf-gpt5",
+                version: cached.version,
+              },
+            });
+          }
+        }
+      }
       const claims = await Promise.all(earlyCacheKeys.preferred.map((cacheKey) =>
         claimCalendarAnalysisAttempt(cacheKey, analysisAttemptId, requestId, startedAt)
       ));
@@ -376,7 +407,6 @@ export async function POST(request: Request, context: RouteContext) {
         .map((byte) => byte.toString(16).padStart(2, "0"))
         .join("");
     const cacheKeys = getCacheKeys({ schoolId: schoolData.id, pdfHash });
-    const cacheMode = parseCacheMode(formData);
     for (const cacheKey of cacheKeys.preferred) {
       await setCalendarAnalysisStage(cacheKey, "hashing_pdf", {
         routeRequestId: requestId,
@@ -434,8 +464,7 @@ export async function POST(request: Request, context: RouteContext) {
       result = await Promise.race([
         dedupeCalendarAnalysis(
           pipelineKey,
-          () => analyzeCalendarPdf(upload, { onStageChange: setStage, requestId }),
-          analysisAttemptId
+          () => analyzeCalendarPdf(upload, { onStageChange: setStage, requestId })
         ),
         routeDeadline.promise,
       ]);
@@ -555,4 +584,49 @@ export async function POST(request: Request, context: RouteContext) {
 // Next only exposes POST over HTTP; this property is not a route method.
 Object.assign(POST, {
   __runBuiltVectorBenchmark: extractPdfVectorCalendar,
+  __runBuiltFullAnalyzerBenchmark: async (file: File) => {
+    const stageTimeline: Array<{ stage: string; strategy?: string; elapsedMs: number }> = [];
+    const startedAt = Date.now();
+    const result = await analyzeCalendarPdf(file, {
+      requestId: crypto.randomUUID(),
+      onStageChange(stage, strategy) {
+        stageTimeline.push({ stage, strategy, elapsedMs: Date.now() - startedAt });
+      },
+    });
+    if (result.status !== "success") {
+      return { result, elapsedMs: Date.now() - startedAt, stageTimeline };
+    }
+    const preview = generateSchoolYearCalendar(buildAiPreviewConfig(result.importResult));
+    const scheduleNameForId = (id: string) =>
+      result.importResult.detectedSchedules.find((schedule) => schedule.tempId === id)?.detectedName;
+    const classified = classifyCalendarWarnings([
+      ...result.importResult.warnings,
+      ...preview.warnings,
+    ]);
+    return {
+      result,
+      elapsedMs: Date.now() - startedAt,
+      stageTimeline,
+      summary: {
+        selectedPages: result.importResult.pageSelection?.selectedPages || [],
+        excludedPages: result.importResult.pageSelection?.excludedPages || [],
+        analysisRoute: result.analysisStrategy,
+        model: result.importResult.usage?.model,
+        vectorExtractionStatus: result.importResult.vectorExtraction?.status || "not_reported",
+        fullPdfFallbackUsed: result.analysisStrategy === AI_CALENDAR_PDF_STRATEGY,
+        instructionalDayCount: preview.summary.instructionalDayCount,
+        schedulesDetected: result.importResult.detectedSchedules
+          .map((schedule) => schedule.detectedName).sort(),
+        blockerCodes: classified.blockingWarnings.map((issue) => issue.issueCode).sort(),
+        reviewItemCodes: classified.needsReviewWarnings.map((issue) => issue.issueCode).sort(),
+        assignmentDigest: await computeDatedScheduleAssignmentDigest(
+          result.importResult.datedScheduleAssignments || []
+        ),
+        classificationDigest: await computeCalendarClassificationDigest(
+          preview.days,
+          scheduleNameForId
+        ),
+      },
+    };
+  },
 });

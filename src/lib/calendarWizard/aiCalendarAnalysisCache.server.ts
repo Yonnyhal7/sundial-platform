@@ -227,8 +227,8 @@ export async function invalidateCalendarAnalysisCache(
   );
 }
 
-export async function dedupeCalendarAnalysis<T>(key: CalendarAnalysisCacheKey, analyze: () => Promise<T>, analysisAttemptId?: string): Promise<T> {
-  const id = `${keyString(key)}:${analysisAttemptId || "legacy"}`;
+export async function dedupeCalendarAnalysis<T>(key: CalendarAnalysisCacheKey, analyze: () => Promise<T>): Promise<T> {
+  const id = keyString(key);
   const existing = inFlight.get(id) as Promise<T> | undefined;
   if (existing) return existing;
   const pending = analyze().finally(() => {

@@ -94,6 +94,7 @@ export type AiCalendarImportFailureReasonCode =
   | "invalid_date_range"
   | "invalid_schedule_reference"
   | "malformed_calendar_structure"
+  | "unsupported_document"
   | "client_timeout";
 
 export type CalendarImportMode = "mock" | "openai" | "disabled";

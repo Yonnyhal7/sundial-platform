@@ -157,7 +157,7 @@ describe("AI import API route", () => {
     );
   });
 
-  it("always analyzes fresh, even when a prior cache entry exists for this exact PDF", async () => {
+  it("returns a verified cached result for the same school and PDF", async () => {
     mocks.readCalendarAnalysisCacheEntry.mockResolvedValue({
       result: createMockAiCalendarImportResult(),
       createdAt: "2026-07-16T12:00:00.000Z",
@@ -170,9 +170,9 @@ describe("AI import API route", () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ status: "success" });
-    expect(body.cache).toBeUndefined();
-    expect(mocks.analyzeCalendarPdf).toHaveBeenCalledOnce();
-    expect(mocks.readCalendarAnalysisCacheEntry).not.toHaveBeenCalled();
+    expect(body.cache).toMatchObject({ hit: true, strategy: "pdf-gpt5" });
+    expect(mocks.analyzeCalendarPdf).not.toHaveBeenCalled();
+    expect(mocks.readCalendarAnalysisCacheEntry).toHaveBeenCalledOnce();
   });
 
   it("bypasses a successful cache entry when Analyze Again is requested", async () => {

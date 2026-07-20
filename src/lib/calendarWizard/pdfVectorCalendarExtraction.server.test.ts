@@ -105,7 +105,7 @@ describe("vector calendar extraction", () => {
     expect(merged.detectedSchedules.filter((item) => item.detectedName.toLowerCase().includes("all"))).toHaveLength(1);
   });
 
-  it("blocks pattern-only first-day inference", () => {
+  it("requires review for pattern-only first-day inference", () => {
     const base = {
       schemaVersion: 1, source: "openai", analyzedAt: "2026-07-16",
       schoolYear: { startDate: "2026-08-12", endDate: "2027-06-01", operatingWeekdays: [1, 2, 3, 4, 5], confidence: "high" },
@@ -115,6 +115,6 @@ describe("vector calendar extraction", () => {
     } satisfies AiCalendarImportResult;
     const anchored = ensureFirstInstructionalAnchor(base);
     expect(anchored.firstInstructionalAssignment?.source).toBe("unresolved");
-    expect(anchored.warnings).toContainEqual(expect.objectContaining({ code: "first_instructional_schedule_unresolved", severity: "blocking" }));
+    expect(anchored.warnings).toContainEqual(expect.objectContaining({ code: "first_instructional_schedule_unresolved", severity: "review" }));
   });
 });

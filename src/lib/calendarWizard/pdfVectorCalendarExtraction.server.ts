@@ -322,7 +322,7 @@ export function ensurePdfjsNodeCanvasPolyfills() {
   }
 }
 
-export async function extractPdfVectorCalendar(file: File): Promise<PdfVectorCalendarResult> {
+export async function extractPdfVectorCalendar(file: File, selectedPages?: number[]): Promise<PdfVectorCalendarResult> {
   const startedAt = Date.now();
   ensurePdfjsNodeCanvasPolyfills();
   // pdf.js creates a "fake worker" in Node, but still resolves GlobalWorkerOptions.workerSrc.
@@ -336,7 +336,9 @@ export async function extractPdfVectorCalendar(file: File): Promise<PdfVectorCal
   const rectangles: ColoredRect[] = [];
   try {
     if (document.numPages > MAX_CALENDAR_IMPORT_PAGES) throw new Error(`Calendar PDFs must be ${MAX_CALENDAR_IMPORT_PAGES} pages or fewer.`);
+    const includedPages = new Set(selectedPages || Array.from({ length: document.numPages }, (_, index) => index + 1));
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      if (!includedPages.has(pageNumber)) continue;
       const page = await document.getPage(pageNumber);
       const [content, operators] = await Promise.all([page.getTextContent(), page.getOperatorList()]);
       for (const item of content.items) {

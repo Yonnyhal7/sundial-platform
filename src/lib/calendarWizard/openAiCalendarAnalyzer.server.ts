@@ -59,6 +59,13 @@ import {
   hasAiImportRepairBudget,
   hasAiImportPdfFallbackBudget,
 } from "./aiImportTimeouts";
+import {
+  classifyCalendarPages,
+  selectExtractedCalendarText,
+  selectPdfPages,
+  type CalendarPageSelection,
+} from "./pdfPageSelection.server";
+import { extractDeterministicStudentCalendar } from "./deterministicStudentCalendarExtraction";
 
 export { DEFAULT_OPENAI_CALENDAR_MODEL };
 
@@ -136,7 +143,36 @@ function getOpenAiClient(apiKey: string) {
 }
 
 async function sleepForRetry() {
-  await new Promise((resolve) => setTimeout(resolve, 350 + Math.floor(Math.random() * 350)));
+  await new Promise((resolve) => setTimeout(resolve, 500));
+}
+
+function applyDeterministicPageSelection(
+  result: CalendarAnalyzerResult,
+  selection: CalendarPageSelection
+): CalendarAnalyzerResult {
+  if (result.status !== "success") return result;
+  return {
+    ...result,
+    importResult: {
+      ...result.importResult,
+      pageClassifications: selection.classifications.map(({ page, role }) => ({
+        page,
+        role: role === "student_calendar"
+          ? "student_attendance_calendar"
+          : role === "supporting_legend"
+            ? "informational_appendix"
+            : role === "unrelated_personnel_calendar"
+              ? "personnel_holidays"
+              : "unrelated",
+        confidence: "high",
+      })),
+      pageSelection: {
+        version: selection.version,
+        selectedPages: selection.selectedPages,
+        excludedPages: selection.excludedPages,
+      },
+    },
+  };
 }
 
 function parseStructuredOutput(outputText: string): RawAiCalendarExtraction | null {
@@ -1010,6 +1046,8 @@ export async function analyzeCalendarPdf(
   let quality: CalendarTextQuality | null = null;
   let vectorResult: PdfVectorCalendarResult | null = null;
   let vectorFailureReasonCodes: string[] = [];
+  let pageSelection: CalendarPageSelection | null = null;
+  let analysisFile = file;
 
   try {
     await options.onStageChange?.("extracting_text", "text-gpt5-mini");
@@ -1017,12 +1055,28 @@ export async function analyzeCalendarPdf(
       fileSize: file.size,
       durationMs: Date.now() - startedAt,
     });
-    const [textExtraction, vectorExtraction] = await Promise.allSettled([
-      extractCalendarPdfText(file),
-      extractPdfVectorCalendar(file),
-    ]);
-    if (textExtraction.status === "rejected") throw textExtraction.reason;
-    extracted = textExtraction.value;
+    extracted = await extractCalendarPdfText(file);
+    pageSelection = classifyCalendarPages(extracted.pages || []);
+    logPipelineDiagnostic("pdf_pages_classified", {
+      pageSelectionVersion: pageSelection.version,
+      selectedPages: pageSelection.selectedPages,
+      excludedPages: pageSelection.excludedPages,
+      classifications: pageSelection.classifications,
+      durationMs: Date.now() - startedAt,
+    });
+    if (!pageSelection.selectedPages.length) {
+      return {
+        status: "analysis_failed",
+        message: "This PDF does not contain a student attendance calendar.",
+        retryable: false,
+        reasonCode: "unsupported_document",
+      };
+    }
+    extracted = selectExtractedCalendarText(extracted, pageSelection);
+    analysisFile = await selectPdfPages(file, pageSelection.selectedPages);
+    const vectorExtraction = await Promise.allSettled([
+      extractPdfVectorCalendar(file, pageSelection.selectedPages),
+    ]).then(([result]) => result);
     if (vectorExtraction.status === "fulfilled") {
       vectorResult = vectorExtraction.value;
       vectorFailureReasonCodes = vectorResult.supported ? [] : vectorResult.reasonCodes;
@@ -1071,6 +1125,38 @@ export async function analyzeCalendarPdf(
 
   const directVisualStrategy = Boolean(extracted && quality?.likelyVisualLayoutDependency);
   await options.onStageChange?.("selecting_strategy", "text-gpt5-mini");
+
+  if (extracted && pageSelection) {
+    const deterministicRaw = extractDeterministicStudentCalendar(extracted.text);
+    if (deterministicRaw) {
+      await options.onStageChange?.("validating_text_result", "text-gpt5-mini");
+      const normalized = normalizeAiCalendarExtraction(deterministicRaw, {
+        source: "openai",
+        usage: { model: "deterministic-text-v1", durationMs: Date.now() - startedAt },
+      });
+      if (normalized.success) {
+        const anchored = ensureFirstInstructionalAnchor({
+          ...normalized.importResult,
+          deterministicExtraction: { status: "succeeded", reasonCodes: [] },
+          vectorExtraction: {
+            status: vectorResult?.supported ? "supported" : "unsupported",
+            reasonCodes: vectorFailureReasonCodes,
+          },
+        });
+        logPipelineDiagnostic("deterministic_calendar_extraction_succeeded", {
+          strategy: "text-gpt5-mini",
+          model: "deterministic-text-v1",
+          durationMs: Date.now() - startedAt,
+        });
+        return applyDeterministicPageSelection({
+          status: "success",
+          importResult: anchored,
+          analysisStrategy: "text-gpt5-mini",
+          outcome: "successful",
+        }, pageSelection);
+      }
+    }
+  }
 
   if (extracted && (quality?.usable || vectorResult?.supported)) {
     const textDeadline = createOpenAiCalendarTimeoutController(
@@ -1122,7 +1208,7 @@ export async function analyzeCalendarPdf(
           durationMs: Date.now() - startedAt,
         }
       );
-      return textResult;
+      return pageSelection ? applyDeterministicPageSelection(textResult, pageSelection) : textResult;
     }
 
     // A high-confidence vector result already contains the visual schedule truth.
@@ -1198,7 +1284,7 @@ export async function analyzeCalendarPdf(
   try {
     pdfResult = await analyzeCalendarPdfFallback({
       client,
-      file,
+      file: analysisFile,
       model: pdfModel,
       deadline: pdfDeadline,
       startedAt,
@@ -1219,14 +1305,14 @@ export async function analyzeCalendarPdf(
     }
   );
   if (pdfResult.status === "success" && !vectorResult?.supported) {
-    return {
+    return applyDeterministicPageSelection({
       ...pdfResult,
       outcome: "reviewable",
       importResult: requireColorRotationFallbackReview(
         pdfResult.importResult,
         vectorFailureReasonCodes
       ),
-    };
+    }, pageSelection!);
   }
-  return pdfResult;
+  return pageSelection ? applyDeterministicPageSelection(pdfResult, pageSelection) : pdfResult;
 }

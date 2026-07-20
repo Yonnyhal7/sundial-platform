@@ -125,7 +125,7 @@ export function mergeVectorCalendarAssignments(
   if (!first || first.confidence < 0.95) {
     warnings.push({
       code: "first_instructional_schedule_unresolved",
-      severity: "blocking",
+      severity: "review",
       message: "The first instructional day has no high-confidence explicit schedule. Select its schedule before creating the calendar.",
     });
   }
@@ -174,7 +174,7 @@ export function ensureFirstInstructionalAnchor(importResult: AiCalendarImportRes
   if (!schedule || confidence < 0.95) {
     warnings.push({
       code: "first_instructional_schedule_unresolved",
-      severity: "blocking",
+      severity: "review",
       message: "The first instructional day has no high-confidence explicit schedule. Select its schedule before creating the calendar.",
     });
   }

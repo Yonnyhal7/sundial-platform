@@ -849,13 +849,13 @@ describe("AI calendar import normalization", () => {
     }
   });
 
-  it("keeps a referenced pattern schedule for review when GPT omits it from detected schedules", () => {
+  it("keeps a genuinely named referenced pattern schedule for review when GPT omits it", () => {
     const normalized = normalizeAiCalendarExtraction(
       rawExtraction({
         detectedSchedules: [],
         normalPattern: {
           type: "same",
-          scheduleTempIds: ["sched-allperiods"],
+          scheduleTempIds: ["sched-assembly"],
           weekdayMappings: [],
           confidence: "review",
           evidence: null,
@@ -866,16 +866,133 @@ describe("AI calendar import normalization", () => {
 
     expect(normalized.success).toBe(true);
     if (normalized.success) {
-      expect(normalized.importResult.pattern.scheduleTempIds).toEqual(["sched-allperiods"]);
+      expect(normalized.importResult.pattern.scheduleTempIds).toEqual(["sched-assembly"]);
       expect(normalized.importResult.detectedSchedules[0]).toMatchObject({
-        tempId: "sched-allperiods",
-        detectedName: "Allperiods",
+        tempId: "sched-assembly",
+        detectedName: "Assembly",
         confidence: "review",
       });
       expect(normalized.importResult.warnings).toContainEqual(
         expect.objectContaining({ code: "missing_required_schedule_detected" })
       );
     }
+  });
+
+  it.each(["sched_regular", "regular", "default", "normal", "standard", "all_periods"])(
+    "normalizes the internal default alias %s to the canonical regular schedule",
+    (alias) => {
+      const normalized = normalizeAiCalendarExtraction(
+        rawExtraction({
+          detectedSchedules: [],
+          normalPattern: {
+            type: "same",
+            scheduleTempIds: [alias],
+            weekdayMappings: [],
+            confidence: "high",
+            evidence: null,
+          },
+        }),
+        { source: "openai" }
+      );
+
+      expect(normalized.success).toBe(true);
+      if (normalized.success) {
+        expect(normalized.importResult.pattern.scheduleTempIds).toEqual(["sched-regular"]);
+        expect(normalized.importResult.detectedSchedules).toContainEqual(
+          expect.objectContaining({
+            tempId: "sched-regular",
+            detectedName: "Regular Schedule",
+            category: "regular",
+          })
+        );
+        expect(normalized.importResult.warnings).toContainEqual({
+          code: "unknown_pattern_schedule_reference",
+          severity: "info",
+          message: "Sundial assigned standard instructional days to the regular schedule.",
+        });
+        expect(JSON.stringify(normalized.importResult.warnings)).not.toContain("sched_regular");
+      }
+    }
+  );
+
+  it("proposes a Regular Schedule when instructional dates have no explicit pattern schedule", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        detectedSchedules: [],
+        normalPattern: {
+          type: "same",
+          scheduleTempIds: [],
+          weekdayMappings: [],
+          confidence: "high",
+          evidence: null,
+        },
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.importResult.detectedSchedules[0]?.detectedName).toBe("Regular Schedule");
+      expect(normalized.importResult.pattern.scheduleTempIds).toEqual(["sched-regular"]);
+      expect(normalized.importResult.automaticResolutions).toContainEqual(
+        expect.objectContaining({ title: "Regular schedule inferred" })
+      );
+    }
+  });
+
+  it("keeps a category-regular schedule reference aligned when its source id is arbitrary", () => {
+    const normalized = normalizeAiCalendarExtraction(
+      rawExtraction({
+        detectedSchedules: [{
+          tempId: "model-generated-1",
+          name: "Ordinary Bell Times",
+          category: "regular",
+          confidence: "high",
+          evidence: null,
+        }],
+        normalPattern: {
+          type: "same",
+          scheduleTempIds: ["model-generated-1"],
+          weekdayMappings: [],
+          confidence: "high",
+          evidence: null,
+        },
+      }),
+      { source: "openai" }
+    );
+
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.importResult.pattern.scheduleTempIds).toEqual(["sched-regular"]);
+      expect(normalized.importResult.detectedSchedules).toContainEqual(
+        expect.objectContaining({ tempId: "sched-regular" })
+      );
+      expect(normalized.importResult.warnings).not.toContainEqual(
+        expect.objectContaining({ message: expect.stringContaining("model-generated-1") })
+      );
+    }
+  });
+
+  it("migrates persisted sched_regular blockers without exposing the internal key", () => {
+    const stale = createMockAiCalendarImportResult();
+    stale.detectedSchedules = [];
+    stale.pattern = { type: "same", scheduleTempIds: ["sched_regular"], confidence: "review" };
+    stale.warnings = [{
+      code: "unknown_pattern_schedule_reference",
+      severity: "review",
+      message: "The PDF referenced a normal pattern schedule that was not listed: sched_regular.",
+    }];
+
+    const repaired = normalizePersistedAiCalendarImportResult(stale);
+
+    expect(repaired.pattern.scheduleTempIds).toEqual(["sched-regular"]);
+    expect(repaired.detectedSchedules[0]?.detectedName).toBe("Regular Schedule");
+    expect(repaired.warnings).toEqual([{
+      code: "unknown_pattern_schedule_reference",
+      severity: "info",
+      message: "Sundial assigned standard instructional days to the regular schedule.",
+    }]);
+    expect(JSON.stringify(repaired.warnings)).not.toContain("sched_regular");
   });
 
   it("reports structured validation details for missing required schedules", () => {

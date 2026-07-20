@@ -9,6 +9,11 @@ import type { AiCalendarImportResult } from "./aiImportTypes";
 import { generateSchoolYearCalendar } from "./generateSchoolYearCalendar";
 import { mergeVectorCalendarAssignments } from "./mergeVectorCalendarAssignments";
 import { canonicalScheduleName } from "./scheduleIdentity";
+import {
+  computeAssignmentDigest,
+  computeCalendarClassificationDigest,
+} from "./assignmentDigest";
+import { normalizeAndDeduplicateReviewIssues } from "./aiQuickSetupPersistence";
 
 vi.mock("server-only", () => ({}));
 
@@ -85,6 +90,50 @@ function baseImportResult(): AiCalendarImportResult {
 }
 
 describeWithFixture("real DOHS Brown/Gold downstream transformation", () => {
+  it("produces identical assignments, classifications, and warnings across 10 exact-PDF runs", async () => {
+    const { extractPdfVectorCalendar } = await import("./pdfVectorCalendarExtraction.server");
+    const bytes = await readFile(fixturePath);
+    const runs: Array<{
+      assignmentDigest: string;
+      classificationDigest: string;
+      warnings: string[];
+    }> = [];
+
+    for (let index = 0; index < 10; index += 1) {
+      const vector = await extractPdfVectorCalendar(
+        new File([bytes], "26-27 DOHS Brown Gold Calendar.pdf", { type: "application/pdf" })
+      );
+      const merged = mergeVectorCalendarAssignments(baseImportResult(), vector);
+      const preview = generateSchoolYearCalendar(buildAiPreviewConfig(merged));
+      const scheduleNameById = new Map(
+        merged.detectedSchedules.map((schedule) => [schedule.tempId, schedule.detectedName])
+      );
+      const scheduleNameForId = (id: string) => scheduleNameById.get(id);
+      const classification = normalizeAndDeduplicateReviewIssues({
+        importResult: merged,
+        generationWarnings: preview.warnings,
+      });
+      runs.push({
+        assignmentDigest: await computeAssignmentDigest(preview.days, scheduleNameForId),
+        classificationDigest: await computeCalendarClassificationDigest(
+          preview.days,
+          scheduleNameForId
+        ),
+        warnings: classification.issues.map((issue) =>
+          `${issue.issueCode}:${issue.finalSeverity}:${issue.finalStatus}`
+        ).sort(),
+      });
+    }
+
+    expect(new Set(runs.map((run) => run.assignmentDigest)).size).toBe(1);
+    expect(new Set(runs.map((run) => run.classificationDigest)).size).toBe(1);
+    expect(new Set(runs.map((run) => JSON.stringify(run.warnings))).size).toBe(1);
+    expect(JSON.stringify(runs)).not.toContain("sched_regular");
+    expect(runs.every((run) =>
+      !run.warnings.some((warning) => warning.startsWith("unknown_pattern_schedule_reference:blocking"))
+    )).toBe(true);
+  });
+
   it("keeps all 164 vector assignments authoritative without classifying normal rotation dates as special", async () => {
     const { extractPdfVectorCalendar } = await import("./pdfVectorCalendarExtraction.server");
     const bytes = await readFile(fixturePath);

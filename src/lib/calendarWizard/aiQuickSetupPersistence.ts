@@ -254,6 +254,13 @@ function classifyWarningKind(
   const code = String(warning.code || "");
   const message = warning.message.toLowerCase();
 
+  if (
+    code === "unknown_pattern_schedule_reference" &&
+    message === "sundial assigned standard instructional days to the regular schedule."
+  ) {
+    return "automatically_resolved";
+  }
+
   if (blockingWarningCodes.has(code)) return "blocking";
   if (
     automaticallyResolvedWarningCodes.has(code) ||

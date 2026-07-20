@@ -25,6 +25,14 @@ import type { PatternType, Weekday } from "./types";
 import { getLocalTodayISO } from "@/lib/localDate";
 import { buildAiPreviewConfig } from "./aiImportPreview";
 import { initializeInstructionalDayCountReview } from "./instructionalDayCountReview";
+import {
+  CANONICAL_DEFAULT_SCHEDULE_KEY,
+  canonicalScheduleReference,
+  isDefaultScheduleAlias,
+} from "./scheduleIdentity";
+
+const REGULAR_SCHEDULE_INFERRED_MESSAGE =
+  "Sundial assigned standard instructional days to the regular schedule.";
 
 export type RawAiCalendarExtraction = {
   documentTitle: string | null;
@@ -207,7 +215,9 @@ function normalizeRawContract(value: unknown): RawAiCalendarExtraction {
     })),
     legendInterpretation: typeof raw.legendInterpretation === "string" ? raw.legendInterpretation : null,
     extractionNotes: typeof raw.extractionNotes === "string" ? raw.extractionNotes : null,
-    warnings: records(raw.warnings).map((item) => ({ code: typeof item.code === "string" ? item.code.trim() : "ai_import_review", message: typeof item.message === "string" ? item.message.trim() : "Review this imported item.", severity: enumValue(item.severity, ["info", "review", "blocking"] as const, "review") })),
+    // Model output may describe uncertainty, but application code owns severity.
+    // Source-provided warnings are therefore never allowed to create blockers.
+    warnings: records(raw.warnings).map((item) => ({ code: typeof item.code === "string" ? item.code.trim() : "ai_import_review", message: typeof item.message === "string" ? item.message.trim() : "Review this imported item.", severity: enumValue(item.severity, ["info", "review"] as const, "review") })),
   };
 }
 
@@ -653,6 +663,83 @@ function validateReferences(
   }
 }
 
+function normalizeDefaultScheduleReferences(raw: RawAiCalendarExtraction) {
+  const defaultScheduleSourceIds = new Set(
+    raw.detectedSchedules
+      .filter(
+        (schedule) =>
+          isDefaultScheduleAlias(schedule.tempId) ||
+          schedule.category === "regular" ||
+          isDefaultScheduleAlias(schedule.name)
+      )
+      .map((schedule) => schedule.tempId)
+  );
+  const hasDefaultPatternReference = raw.normalPattern.scheduleTempIds.some(
+    (tempId) => isDefaultScheduleAlias(tempId) || defaultScheduleSourceIds.has(tempId)
+  );
+  const hasInstructionalDates = Boolean(
+    normalizeDateValue(raw.firstInstructionalDate) &&
+    normalizeDateValue(raw.lastInstructionalDate)
+  );
+  const shouldProvideDefault = hasDefaultPatternReference ||
+    (hasInstructionalDates && raw.normalPattern.scheduleTempIds.length === 0);
+
+  const detectedSchedules = raw.detectedSchedules.map((schedule) => ({
+    ...schedule,
+    tempId:
+      isDefaultScheduleAlias(schedule.tempId) ||
+      schedule.category === "regular" ||
+      isDefaultScheduleAlias(schedule.name)
+        ? CANONICAL_DEFAULT_SCHEDULE_KEY
+        : schedule.tempId,
+  }));
+  if (
+    shouldProvideDefault &&
+    !detectedSchedules.some((schedule) => schedule.tempId === CANONICAL_DEFAULT_SCHEDULE_KEY)
+  ) {
+    detectedSchedules.push({
+      tempId: CANONICAL_DEFAULT_SCHEDULE_KEY,
+      name: "Regular Schedule",
+      category: "regular",
+      confidence: "high",
+      evidence: null,
+    });
+  }
+
+  const normalizeReference = (tempId: string) =>
+    defaultScheduleSourceIds.has(tempId)
+      ? CANONICAL_DEFAULT_SCHEDULE_KEY
+      : canonicalScheduleReference(tempId);
+  const scheduleTempIds = raw.normalPattern.scheduleTempIds.map(normalizeReference);
+  if (shouldProvideDefault && scheduleTempIds.length === 0) {
+    scheduleTempIds.push(CANONICAL_DEFAULT_SCHEDULE_KEY);
+  }
+
+  if (shouldProvideDefault) {
+    raw.warnings.push({
+      code: "unknown_pattern_schedule_reference",
+      severity: "info",
+      message: REGULAR_SCHEDULE_INFERRED_MESSAGE,
+    });
+  }
+
+  return {
+    ...raw,
+    detectedSchedules: dedupeByKey(
+      detectedSchedules,
+      (schedule) => schedule.tempId,
+      []
+    ),
+    normalPattern: { ...raw.normalPattern, scheduleTempIds },
+    specialSchoolDays: raw.specialSchoolDays.map((day) => ({
+      ...day,
+      scheduleTempId: day.scheduleTempId
+        ? normalizeReference(day.scheduleTempId)
+        : null,
+    })),
+  };
+}
+
 function addDateWarnings(importResult: AiCalendarImportResult, warnings: AiImportWarning[]) {
   if (
     isDateString(importResult.schoolYear.startDate) &&
@@ -676,7 +763,7 @@ function addDateWarnings(importResult: AiCalendarImportResult, warnings: AiImpor
     ) {
       warnings.push({
         code: "special_day_outside_school_year",
-        severity: "blocking",
+        severity: "review",
         message: `${specialDay.label} falls outside the detected school year.`,
       });
     }
@@ -687,7 +774,7 @@ export function normalizeAiCalendarExtraction(
   input: RawAiCalendarExtraction,
   options: NormalizeAiCalendarImportOptions
 ): NormalizeAiCalendarImportResult {
-  const raw = normalizeRawContract(input);
+  const raw = normalizeDefaultScheduleReferences(normalizeRawContract(input));
   const rawDetectedSchedules = asArray(raw.detectedSchedules);
   const rawNormalPattern = raw.normalPattern || {
     type: "same" as const,
@@ -744,6 +831,19 @@ export function normalizeAiCalendarExtraction(
   );
 
   const automaticResolutions: AiImportAutomaticResolution[] = [];
+  if (
+    warnings.some(
+      (warning) =>
+        warning.code === "unknown_pattern_schedule_reference" &&
+        warning.message === REGULAR_SCHEDULE_INFERRED_MESSAGE
+    )
+  ) {
+    pushUniqueResolution(automaticResolutions, {
+      code: "unknown_pattern_schedule_reference",
+      title: "Regular schedule inferred",
+      message: REGULAR_SCHEDULE_INFERRED_MESSAGE,
+    });
+  }
   const preservedNoSchoolLabelDates: AiDetectedInformationalDate[] = [];
   const rallySchedule = rawDetectedSchedules.find((schedule) =>
     isRallyScheduleException(`${schedule.name} ${schedule.category}`)
@@ -1063,6 +1163,45 @@ export function normalizePersistedAiCalendarImportResult(
   importResult: AiCalendarImportResult
 ): AiCalendarImportResult {
   const automaticResolutions = [...(importResult.automaticResolutions || [])];
+  const hasLegacyDefaultReference =
+    importResult.pattern.scheduleTempIds.some(isDefaultScheduleAlias) ||
+    importResult.warnings.some(
+      (warning) =>
+        warning.code === "unknown_pattern_schedule_reference" &&
+        /sched[_-]regular|\b(?:default|normal|standard) schedule\b/i.test(warning.message)
+    );
+  const normalizedDetectedSchedules = importResult.detectedSchedules.map((schedule) => ({
+    ...schedule,
+    tempId:
+      isDefaultScheduleAlias(schedule.tempId) ||
+      schedule.category === "regular" ||
+      isDefaultScheduleAlias(schedule.detectedName)
+        ? CANONICAL_DEFAULT_SCHEDULE_KEY
+        : schedule.tempId,
+    normalizedName: normalizeScheduleNameForMatching(schedule.detectedName),
+  }));
+  if (
+    hasLegacyDefaultReference &&
+    !normalizedDetectedSchedules.some(
+      (schedule) => schedule.tempId === CANONICAL_DEFAULT_SCHEDULE_KEY
+    )
+  ) {
+    normalizedDetectedSchedules.push({
+      tempId: CANONICAL_DEFAULT_SCHEDULE_KEY,
+      detectedName: "Regular Schedule",
+      normalizedName: "regular",
+      category: "regular",
+      confidence: "high",
+      needsSetup: true,
+    });
+  }
+  if (hasLegacyDefaultReference) {
+    pushUniqueResolution(automaticResolutions, {
+      code: "unknown_pattern_schedule_reference",
+      title: "Regular schedule inferred",
+      message: REGULAR_SCHEDULE_INFERRED_MESSAGE,
+    });
+  }
   const rallySchedule = importResult.detectedSchedules.find((schedule) =>
     isRallyScheduleException(`${schedule.detectedName} ${schedule.category}`)
   );
@@ -1108,8 +1247,22 @@ export function normalizePersistedAiCalendarImportResult(
   });
   const repairedBase: AiCalendarImportResult = {
     ...importResult,
+    detectedSchedules: dedupeByKey(
+      normalizedDetectedSchedules,
+      (schedule) => schedule.tempId,
+      []
+    ),
+    pattern: {
+      ...importResult.pattern,
+      scheduleTempIds: importResult.pattern.scheduleTempIds.map(canonicalScheduleReference),
+    },
     noSchoolRanges: reconciled.ranges,
-    specialDays: reconciled.specialDays,
+    specialDays: reconciled.specialDays.map((day) => ({
+      ...day,
+      scheduleTempId: day.scheduleTempId
+        ? canonicalScheduleReference(day.scheduleTempId)
+        : undefined,
+    })),
     informationalDates: dedupeByKey(
       reconciled.informationalDates,
       (item) => `${item.date}|${item.label.toLowerCase()}`,
@@ -1121,8 +1274,15 @@ export function normalizePersistedAiCalendarImportResult(
       return !(
         /no[-\s]?school/.test(value) &&
         (/special.*overlap/.test(value) || /date remains no[-\s]?school/.test(value))
+      ) && !(
+        hasLegacyDefaultReference &&
+        warning.code === "unknown_pattern_schedule_reference"
       );
-    }),
+    }).concat(hasLegacyDefaultReference ? [{
+      code: "unknown_pattern_schedule_reference",
+      severity: "info" as const,
+      message: REGULAR_SCHEDULE_INFERRED_MESSAGE,
+    }] : []),
     instructionalDayCountReview: undefined,
   };
   return initializeInstructionalDayCountReview(

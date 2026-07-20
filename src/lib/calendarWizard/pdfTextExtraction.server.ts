@@ -8,6 +8,7 @@ export const MAX_EXTRACTED_CALENDAR_TEXT_CHARS = 55_000;
 
 export type ExtractedCalendarText = {
   text: string;
+  pages?: string[];
   pageCount: number;
   extractedCharacterCount: number;
   extractedLineCount: number;
@@ -139,6 +140,7 @@ export async function extractCalendarPdfText(file: File): Promise<ExtractedCalen
 
     return {
       text: limited.text,
+      pages: cleanedPages,
       pageCount: totalPages,
       extractedCharacterCount: limited.text.length,
       extractedLineCount: lineCount,

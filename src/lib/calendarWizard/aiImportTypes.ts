@@ -123,7 +123,8 @@ export type AiImportAutomaticResolution = {
     | "no_school_ranges_merged"
     | "term_end_reclassified"
     | "informational_label_preserved"
-    | "instructional_schedule_exception_reclassified";
+    | "instructional_schedule_exception_reclassified"
+    | "unknown_pattern_schedule_reference";
   title: string;
   message: string;
   dateRange?: {
@@ -200,6 +201,11 @@ export type AiCalendarImportResult = {
     durationMs?: number;
   };
   pageClassifications?: AiCalendarPageClassification[];
+  pageSelection?: {
+    version: string;
+    selectedPages: number[];
+    excludedPages: number[];
+  };
   schoolYear: AiDetectedSchoolYear;
   detectedSchedules: AiDetectedSchedule[];
   pattern: AiDetectedPattern;
@@ -229,6 +235,10 @@ export type AiCalendarImportResult = {
   };
   deterministicExtraction?: {
     status: "succeeded" | "fallback_required";
+    reasonCodes: string[];
+  };
+  vectorExtraction?: {
+    status: "supported" | "unsupported" | "failed";
     reasonCodes: string[];
   };
   assignmentReview?: {

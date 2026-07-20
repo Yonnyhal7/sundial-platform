@@ -3,7 +3,7 @@ import type {
   DetectedScheduleResolution,
 } from "./aiImportTypes";
 import { getAiScheduleDefaultColor, normalizeHexColor } from "@/lib/scheduleColors";
-import { canonicalScheduleName } from "./scheduleIdentity";
+import { canonicalScheduleName, isDefaultScheduleAlias } from "./scheduleIdentity";
 
 export type ExistingScheduleForMatching = {
   id: string;
@@ -13,7 +13,7 @@ export type ExistingScheduleForMatching = {
 };
 
 export function normalizeScheduleNameForMatching(name: string) {
-  return canonicalScheduleName(name);
+  return isDefaultScheduleAlias(name) ? "regular" : canonicalScheduleName(name);
 }
 
 export function matchDetectedSchedules(
@@ -44,9 +44,9 @@ export function matchDetectedSchedules(
       };
     }
 
-    const normalized =
-      detectedSchedule.normalizedName ||
-      normalizeScheduleNameForMatching(detectedSchedule.detectedName);
+    const normalized = normalizeScheduleNameForMatching(
+      detectedSchedule.normalizedName || detectedSchedule.detectedName
+    );
     const candidates = existingByNormalized.get(normalized) || [];
 
     if (candidates.length === 1) {
