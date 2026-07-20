@@ -60,8 +60,10 @@ import {
 import {
   assignmentSourcePresentation,
   buildAiReviewReadiness,
+  getAiReviewIssuePresentation,
   getCalendarWarningDateDetails,
   includedNoSchoolLabels,
+  type AiReviewPresentationActionId,
 } from "@/lib/calendarWizard/aiReviewPresentation";
 import {
   acknowledgeInstructionalDayCountReview,
@@ -3859,6 +3861,111 @@ function AiImportReview({
     setPreviewIssueRequest({ issueId: warning.issueId, date, requestId: Date.now() });
   }
 
+  function applyReviewAction(
+    warning: ClassifiedCalendarWarning,
+    actionId: AiReviewPresentationActionId
+  ) {
+    const firstDate = warning.affectedDates[0]
+      || importResult.instructionalDayCountReview?.discrepancyDates[0]?.date;
+    const reviewDate = () => {
+      if (!firstDate) {
+        onAdvancedEdit();
+        return;
+      }
+      setIssueConfirmation(null);
+      setPreviewIssueRequest({ issueId: warning.issueId, date: firstDate, requestId: Date.now() });
+    };
+
+    if (["review_date", "review_details", "change_date", "review_count_dates"].includes(actionId)) {
+      reviewDate();
+      return;
+    }
+    if (actionId === "set_up_rotation") {
+      onAdvancedEdit();
+      return;
+    }
+    if (actionId === "remove_event") {
+      const affected = new Set(warning.affectedDates);
+      onImportResultChange({
+        ...importResult,
+        specialDays: importResult.specialDays.filter((event) =>
+          ![...affected].some((date) => date >= event.startDate && date <= event.endDate)
+        ),
+      });
+      void recordIssueResolution(warning, "manually_resolved", "The outside event was removed.");
+      return;
+    }
+    if (actionId === "keep_sundial_count") {
+      onImportResultChange(acknowledgeInstructionalDayCountReview(
+        importResult,
+        previewResult.summary.instructionalDayCount,
+        true,
+        importResult.instructionalDayCountReview?.reviewNote
+      ));
+      void recordIssueResolution(warning, "acknowledged", "The current instructional-day count was confirmed.");
+      return;
+    }
+    if (actionId === "use_pdf_count") {
+      const countReview = importResult.instructionalDayCountReview;
+      if (!countReview) return;
+      let remaining = Math.abs(previewResult.summary.instructionalDayCount - countReview.declaredInstructionalDayCount);
+      const removeSchoolDays = previewResult.summary.instructionalDayCount > countReview.declaredInstructionalDayCount;
+      let nextResult = importResult;
+      for (const candidate of countReview.discrepancyDates) {
+        if (remaining === 0) break;
+        const day = previewResult.days.find((item) => item.date === candidate.date);
+        if (!day || day.isSchoolDay !== removeSchoolDays) continue;
+        nextResult = updateAiImportPreviewDay(nextResult, {
+          date: candidate.date,
+          scheduleTempId: removeSchoolDays
+            ? null
+            : day.scheduleId || importResult.detectedSchedules[0]?.tempId || null,
+          classification: removeSchoolDays ? "no_school" : "instructional",
+          note: day.labels.join(", ") || "Instructional-day count adjustment",
+          rotationBehavior: "pause",
+        });
+        remaining -= 1;
+      }
+      if (remaining > 0) {
+        reviewDate();
+        setIssueConfirmation("Review the remaining dates individually to match the PDF count.");
+        return;
+      }
+      onImportResultChange(nextResult);
+      void recordIssueResolution(warning, "manually_resolved", `The calendar was adjusted to the PDF count of ${countReview.declaredInstructionalDayCount}.`);
+      return;
+    }
+    if (actionId === "mark_school_day" || actionId === "mark_no_school") {
+      let nextResult = importResult;
+      for (const date of warning.affectedDates) {
+        const day = previewResult.days.find((candidate) => candidate.date === date);
+        nextResult = updateAiImportPreviewDay(nextResult, {
+          date,
+          scheduleTempId: actionId === "mark_school_day"
+            ? day?.scheduleId || importResult.detectedSchedules[0]?.tempId || null
+            : null,
+          classification: actionId === "mark_school_day" ? "instructional" : "no_school",
+          note: day?.labels.join(", ") || "",
+          rotationBehavior: "pause",
+        });
+      }
+      onImportResultChange(nextResult);
+      void recordIssueResolution(warning, "manually_resolved", actionId === "mark_school_day"
+        ? "The date was confirmed as a school day."
+        : "The date was confirmed as no school.");
+      return;
+    }
+    void recordIssueResolution(
+      warning,
+      actionId === "use_regular_schedule" ? "manually_resolved" : "acknowledged",
+      actionId === "use_regular_schedule"
+        ? "Regular Schedule was confirmed."
+        : actionId === "keep_outside_event"
+          ? "The event was kept outside the calendar range."
+          : "The calendar item was dismissed."
+    );
+  }
+
   function handlePreviewIssueSave(issueId: string, resolved: boolean) {
     const warning = [...blockingWarnings, ...reviewWarnings].find(
       (candidate) => candidate.issueId === issueId
@@ -3925,10 +4032,22 @@ function AiImportReview({
             const reviewable =
               warning.classification === "needs_review" && warning.status === "unresolved";
             const dateDetails = getCalendarWarningDateDetails(importResult, warning);
+            const presentation = getAiReviewIssuePresentation({
+              issue: warning,
+              importResult,
+              currentInstructionalDayCount: previewResult.summary.instructionalDayCount,
+            });
             return (
               <li id={`calendar-review-issue-${warning.issueId}`} key={warning.issueId} className="rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-700">
+                <h6 className="font-bold text-slate-900 dark:text-white">{presentation.title}</h6>
+                <p className="mt-1 text-slate-600 dark:text-slate-300">{presentation.description}</p>
+                {presentation.affectedSummary && (
+                  <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    Affected: {presentation.affectedSummary}
+                  </p>
+                )}
                 {dateDetails.length > 0 ? dateDetails.map((details) => (
-                  <div key={details.date} className="space-y-2">
+                  <div key={details.date} className="mt-2 space-y-2">
                     <button
                       type="button"
                       onClick={() => setPreviewIssueRequest({ issueId: warning.issueId, date: details.date, requestId: Date.now() })}
@@ -3936,7 +4055,7 @@ function AiImportReview({
                     >
                       {formatDateForDisplay(details.date)}
                     </button>
-                    <p className="font-semibold text-slate-700 dark:text-slate-200">
+                    <p className="sr-only">
                       {details.specialLabels.length > 0 && details.noSchoolLabels.length > 0
                         ? `${details.specialLabels.join(", ")} occurs during ${details.noSchoolLabels.join(", ")}.`
                         : warning.message}
@@ -3957,17 +4076,17 @@ function AiImportReview({
                 )}
                 {reviewable && (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => void recordIssueResolution(warning, "manually_resolved", warning.suggestedCorrection || "Administrator accepted Sundial's suggested correction.")} className={[subtleButtonClass, resolution?.status === "manually_resolved" || resolution?.status === "accepted_suggestion" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
-                      Use suggested correction
-                    </button>
-                    <button type="button" onClick={() => void recordIssueResolution(warning, "acknowledged", "Administrator kept the original imported state.")} className={[subtleButtonClass, resolution?.status === "acknowledged" || resolution?.status === "kept_original" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}>
-                      Keep original
-                    </button>
-                    {warning.affectedDates.length > 0 && (
-                      <button type="button" onClick={() => editWarningManually(warning)} className={subtleButtonClass}>
-                        Edit manually
+                    {presentation.actions.map((action) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        aria-label={`${action.label}: ${presentation.title}`}
+                        onClick={() => applyReviewAction(warning, action.id)}
+                        className={[subtleButtonClass, resolution?.status && resolution.status !== "unresolved" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}
+                      >
+                        {action.label}
                       </button>
-                    )}
+                    ))}
                   </div>
                 )}
               </li>

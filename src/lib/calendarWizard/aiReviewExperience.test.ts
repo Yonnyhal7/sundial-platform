@@ -72,6 +72,14 @@ describe("AI calendar review experience", () => {
     expect(review).toContain('warning.status === "unresolved"');
   });
 
+  it("renders centralized issue-specific actions without generic labels", () => {
+    expect(review).toContain("getAiReviewIssuePresentation");
+    expect(review).toContain("presentation.actions.map");
+    expect(review).not.toContain("Use suggested correction");
+    expect(review).not.toContain("Keep original");
+    expect(review).not.toContain("Edit manually");
+  });
+
   it("renders warning sections only from the final normalized issue collection", () => {
     expect(review).toContain("const finalReviewIssues = finalReviewIssueCollection.issues");
     expect(review).toContain("groupFinalReviewIssues(finalReviewIssues)");

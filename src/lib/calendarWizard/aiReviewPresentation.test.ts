@@ -5,6 +5,7 @@ import {
   assignmentSourcePresentation,
   buildAiReviewReadiness,
   deduplicateClassifiedWarnings,
+  getAiReviewIssuePresentation,
   getCalendarWarningDateDetails,
   getTrueScheduleExceptionDates,
   includedNoSchoolLabels,
@@ -61,6 +62,68 @@ const generatedDay = (overrides: Partial<GeneratedCalendarDay> = {}): GeneratedC
 });
 
 describe("AI review presentation", () => {
+  const issue = (issueCode: string, affectedDates: string[] = []) => ({
+    issueId: `${issueCode}::test`, issueCode, code: issueCode, affectedDates,
+    message: "Internal diagnostic message", severity: "needs_review" as const,
+    status: "unresolved" as const, classification: "needs_review" as const,
+    resolved: false, relevantLabelIdentities: [], createdBy: "review_issue_normalizer" as const,
+    sourceArray: "test", originalSeverity: "review" as const,
+    finalSeverity: "needs_review" as const, finalStatus: "unresolved" as const,
+    persistedOrGenerated: "normalized" as const,
+  });
+
+  it("uses concise issue-specific copy for regular-schedule inference", () => {
+    const presentation = getAiReviewIssuePresentation({
+      issue: issue("schedule_default_inferred"), importResult: importResult(), currentInstructionalDayCount: 180,
+    });
+    expect(presentation.title).toBe("No rotating schedule was found");
+    expect(presentation.actions.map((action) => action.label)).toEqual(["Use Regular Schedule", "Set Up a Rotation"]);
+  });
+
+  it("uses the current classification in low-confidence actions", () => {
+    const result = importResult();
+    result.dateClassifications = [{ date: "2026-08-12", classification: "instructional", confidence: 0.5 }];
+    const presentation = getAiReviewIssuePresentation({
+      issue: issue("low_confidence_classification", ["2026-08-12"]), importResult: result, currentInstructionalDayCount: 180,
+    });
+    expect(presentation.affectedSummary).toBe("Aug 12, 2026");
+    expect(presentation.actions.map((action) => action.label)).toEqual(["Mark as School Day", "Review Date"]);
+  });
+
+  it("renders named outside-range events with remove, change, and keep actions", () => {
+    const result = importResult();
+    result.schoolYear = { ...result.schoolYear, startDate: "2026-08-12", endDate: "2027-05-27" };
+    result.specialDays = [{ id: "rally", startDate: "2027-06-01", endDate: "2027-06-01", label: "1st Block Rally – Whole School (Stadium)", isInstructional: true, confidence: "high" }];
+    const presentation = getAiReviewIssuePresentation({
+      issue: issue("special_day_outside_school_year", ["2027-06-01"]), importResult: result, currentInstructionalDayCount: 180,
+    });
+    expect(presentation.title).toBe("1st Block Rally – Whole School (Stadium) is outside the school year");
+    expect(presentation.description).toContain("Aug 12, 2026 through May 27, 2027");
+    expect(presentation.actions.map((action) => action.label)).toEqual(["Remove This Event", "Change the Date", "Keep as an Outside Event"]);
+  });
+
+  it("renders dynamic count mismatch actions", () => {
+    const result = importResult();
+    result.instructionalDayCountReview = {
+      reasonCode: "instructional_day_count_mismatch", declaredInstructionalDayCount: 180,
+      generatedInstructionalDayCount: 186, discrepancyDates: [], acknowledged: false,
+    };
+    const presentation = getAiReviewIssuePresentation({
+      issue: issue("instructional_day_count_mismatch"), importResult: result, currentInstructionalDayCount: 186,
+    });
+    expect(presentation.description).toContain("Review the 6 dates");
+    expect(presentation.actions.map((action) => action.label)).toEqual(["Review the 6 Dates", "Use PDF Count: 180", "Keep Sundial Count: 186"]);
+  });
+
+  it("uses safe fallback copy without exposing unknown issue codes", () => {
+    const presentation = getAiReviewIssuePresentation({
+      issue: issue("internal_future_code"), importResult: importResult(), currentInstructionalDayCount: 180,
+    });
+    expect(presentation.title).toBe("Review this calendar item");
+    expect(presentation.actions.map((action) => action.label)).toEqual(["Review Details", "Dismiss"]);
+    expect(JSON.stringify(presentation)).not.toContain("internal_future_code");
+  });
+
   it("does not classify 164 normal Brown/Gold assignments as schedule exceptions", () => {
     expect(getTrueScheduleExceptionDates(importResult())).toEqual([
       "2026-08-12",
