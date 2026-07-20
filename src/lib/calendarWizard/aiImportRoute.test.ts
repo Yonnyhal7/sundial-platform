@@ -164,6 +164,7 @@ describe("AI import API route", () => {
       strategy: "pdf-gpt5",
       model: "gpt-5",
       version: "calendar-v3",
+      analyzerVersion: "calendar-v3",
     });
     const response = await post();
     const body = await response.json();
@@ -182,6 +183,7 @@ describe("AI import API route", () => {
       strategy: "pdf-gpt5",
       model: "gpt-5",
       version: "calendar-v3",
+      analyzerVersion: "calendar-v3",
     });
 
     const response = await POST(
@@ -473,6 +475,7 @@ describe("AI import API route", () => {
       strategy: "pdf-gpt5",
       model: "gpt-5",
       version: "calendar-v3",
+      analyzerVersion: "calendar-v3",
     });
 
     const response = await GET_RESULT(

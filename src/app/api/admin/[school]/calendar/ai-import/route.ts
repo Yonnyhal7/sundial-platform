@@ -291,7 +291,7 @@ export async function POST(request: Request, context: RouteContext) {
                 hit: true,
                 analyzedAt: cached.createdAt,
                 strategy: cached.strategy as "text-gpt5-mini" | "pdf-gpt5",
-                version: cached.version,
+                version: cached.analyzerVersion,
               },
             });
           }

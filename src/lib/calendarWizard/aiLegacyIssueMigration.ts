@@ -1,4 +1,4 @@
-import type { AiImportDraftMetadata, AiImportWarningResolution } from "./aiImportTypes";
+import type { AiCalendarImportResult, AiImportDraftMetadata, AiImportWarningResolution } from "./aiImportTypes";
 import { normalizePersistedAiCalendarImportResult } from "./aiCalendarImportNormalizer";
 import { AI_CALENDAR_ANALYSIS_VERSION, AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION } from "./aiCalendarAnalysisVersion";
 import {
@@ -7,6 +7,64 @@ import {
 } from "./scheduleIdentity";
 
 const LEGACY_DEFAULT_CODE = "unknown_pattern_schedule_reference";
+
+function arrayField(value: unknown, key: string) {
+  if (!value || typeof value !== "object") return [];
+  const field = (value as Record<string, unknown>)[key];
+  return Array.isArray(field) ? field.filter((item): item is string => typeof item === "string") : [];
+}
+
+function concreteUnknownScheduleReference(warning: { message: string } & Record<string, unknown>) {
+  const payloadReferences = [
+    ...arrayField(warning, "scheduleIds"),
+    ...arrayField(warning, "scheduleKeys"),
+    ...arrayField(warning, "sourceLabels"),
+    ...arrayField(warning, "dates"),
+    ...(typeof warning.scheduleId === "string" ? [warning.scheduleId] : []),
+    ...(typeof warning.scheduleTempId === "string" ? [warning.scheduleTempId] : []),
+    ...(typeof warning.canonicalKey === "string" ? [warning.canonicalKey] : []),
+  ].filter((value) => value.trim() && !isDefaultScheduleAlias(value));
+  const named = warning.message.match(/(?:not listed|unknown|referenced)\s*:\s*([^.;]+)/i)?.[1]?.trim();
+  return payloadReferences.length > 0 || Boolean(named && !isDefaultScheduleAlias(named));
+}
+
+function resultHasConflictingAssignments(result: AiCalendarImportResult) {
+  const byDate = new Map<string, string>();
+  for (const assignment of result.datedScheduleAssignments || []) {
+    const existing = byDate.get(assignment.date);
+    if (existing && existing !== assignment.scheduleTempId) return true;
+    byDate.set(assignment.date, assignment.scheduleTempId);
+  }
+  return false;
+}
+
+function resultHasRegularSchedule(result: AiCalendarImportResult) {
+  const regularIds = new Set(result.detectedSchedules.filter((schedule) =>
+    schedule.category === "regular" ||
+    isDefaultScheduleAlias(schedule.tempId) ||
+    isDefaultScheduleAlias(schedule.detectedName)
+  ).map((schedule) => schedule.tempId));
+  return result.pattern.scheduleTempIds.some((id) => regularIds.has(id) || isDefaultScheduleAlias(id));
+}
+
+export function normalizeUnknownScheduleReferences(result: AiCalendarImportResult) {
+  const removedEmptyIssueCodes: string[] = [];
+  const canRemoveEmpty = resultHasRegularSchedule(result) && !resultHasConflictingAssignments(result);
+  const warnings = result.warnings.filter((warning) => {
+    if (warning.code !== LEGACY_DEFAULT_CODE || !canRemoveEmpty) return true;
+    if (concreteUnknownScheduleReference(warning as typeof warning & Record<string, unknown>)) return true;
+    removedEmptyIssueCodes.push(warning.code);
+    return false;
+  });
+  return {
+    result: warnings.length === result.warnings.length ? result : { ...result, warnings },
+    changed: warnings.length !== result.warnings.length,
+    diagnostics: {
+      removedEmptyIssueCodes: [...new Set(removedEmptyIssueCodes)].sort(),
+      normalizedUnknownScheduleReferences: result.warnings.filter((warning) => warning.code === LEGACY_DEFAULT_CODE).length,
+    },
+  };
+}
 
 export type AiLegacyIssueMigrationDiagnostics = {
   draftAnalysisVersion?: string;
@@ -103,20 +161,24 @@ export function migrateLegacyAiImportMetadata(metadata: AiImportDraftMetadata): 
         ],
       }
     : result;
-  const currentCodes = new Set((canonicalResult?.warnings || []).map((warning) => warning.code));
+  const normalizedUnknowns = canonicalResult
+    ? normalizeUnknownScheduleReferences(canonicalResult)
+    : { result: canonicalResult, changed: false, diagnostics: { removedEmptyIssueCodes: [] as string[], normalizedUnknownScheduleReferences: 0 } };
+  const finalResult = normalizedUnknowns.result;
+  const currentCodes = new Set((finalResult?.warnings || []).map((warning) => warning.code));
   const warningResolutions = (metadata.warningResolutions || []).filter((resolution) =>
     isExplicitUserResolution(resolution) &&
     Boolean(resolution.issueCode ? currentCodes.has(resolution.issueCode) : currentCodes.has(resolution.code))
   );
   const next: AiImportDraftMetadata = {
     ...metadata,
-    result: canonicalResult,
-    warnings: canonicalResult?.warnings || [],
+    result: finalResult,
+    warnings: finalResult?.warnings || [],
     warningResolutions,
     analysisVersion: shouldNormalize ? AI_CALENDAR_ANALYSIS_VERSION : metadata.analysisVersion,
     issueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
   };
-  const changed = shouldNormalize ||
+  const changed = shouldNormalize || normalizedUnknowns.changed ||
     warningResolutions.length !== (metadata.warningResolutions || []).length ||
     JSON.stringify(metadata.warnings || []) !== JSON.stringify(next.warnings || []);
   return {
@@ -126,10 +188,10 @@ export function migrateLegacyAiImportMetadata(metadata: AiImportDraftMetadata): 
       draftAnalysisVersion: metadata.analysisVersion,
       currentAnalysisVersion: AI_CALENDAR_ANALYSIS_VERSION,
       migratedIssueCodes: [...migratableCodes].sort(),
-      removedIssueCodes: originalWarnings
+      removedIssueCodes: [...new Set([...originalWarnings
         .map((warning) => warning.code)
         .filter((code) => !currentCodes.has(code))
-        .sort(),
+        .sort(), ...normalizedUnknowns.diagnostics.removedEmptyIssueCodes])].sort(),
       preservedUserResolutionCodes: warningResolutions.map((resolution) => resolution.issueCode || resolution.code).sort(),
       staleAnalyzerWarningsReplaced: shouldNormalize,
     },

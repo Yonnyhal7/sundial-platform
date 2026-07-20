@@ -11,8 +11,14 @@ import {
 } from "./aiImportProgress";
 import { getOpenAiCalendarTimeoutMs } from "./openAiCalendarAnalyzerUtils";
 import { AI_CALENDAR_ANALYSIS_VERSION } from "./aiCalendarAnalysisVersion";
+import {
+  AI_CALENDAR_CACHE_KEY_VERSION,
+  AI_CALENDAR_CACHE_SCHEMA_VERSION,
+  AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
+} from "./aiCalendarAnalysisVersion";
+import { normalizeUnknownScheduleReferences } from "./aiLegacyIssueMigration";
 
-export const AI_CALENDAR_PROMPT_SCHEMA_VERSION = AI_CALENDAR_ANALYSIS_VERSION;
+export const AI_CALENDAR_PROMPT_SCHEMA_VERSION = AI_CALENDAR_CACHE_KEY_VERSION;
 export const AI_CALENDAR_TEXT_STRATEGY = "text-gpt5-mini";
 export const AI_CALENDAR_PDF_STRATEGY = "pdf-gpt5";
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -70,6 +76,8 @@ export type CalendarAnalysisCacheEntry = {
   strategy: string;
   model: string;
   version: string;
+  analyzerVersion: string;
+  cacheSchemaVersion: string;
 };
 
 export type CalendarAnalysisStageSnapshot = {
@@ -91,7 +99,7 @@ export async function readCalendarAnalysisCacheEntry(
   const supabase = await createSupabaseServerClient();
   let query = supabase
     .from("ai_calendar_analysis_cache")
-    .select("result, created_at, status")
+    .select("result, created_at, status, analysis_attempt_id")
     .eq("school_id", key.schoolId)
     .eq("pdf_sha256", key.pdfHash)
     .eq("analysis_strategy", key.strategy)
@@ -110,15 +118,67 @@ export async function readCalendarAnalysisCacheEntry(
 
   if (error || !data || data.status !== "ready" || !data.result) return null;
   const validation = validateAiCalendarImportResult(data.result);
-  return validation.success
-    ? {
-        result: validation.data,
+  if (!validation.success) return null;
+  const canonical = normalizeUnknownScheduleReferences(validation.data);
+  if (canonical.changed) {
+    const { error: repairError } = await supabase
+      .from("ai_calendar_analysis_cache")
+      .update({ result: canonical.result, updated_at: new Date().toISOString() })
+      .eq("school_id", key.schoolId)
+      .eq("pdf_sha256", key.pdfHash)
+      .eq("analysis_strategy", key.strategy)
+      .eq("model", key.model)
+      .eq("prompt_schema_version", key.version)
+      .eq("analysis_version", key.version)
+      .eq("analysis_attempt_id", data.analysis_attempt_id);
+    if (repairError) {
+      await supabase
+        .from("ai_calendar_analysis_cache")
+        .update({
+          status: "failed",
+          current_stage: "confirmed_failed",
+          reason_code: "cache_issue_migration_failed",
+          invalidated_at: new Date().toISOString(),
+          invalidation_reason: "cache_issue_migration_failed",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("school_id", key.schoolId)
+        .eq("pdf_sha256", key.pdfHash)
+        .eq("analysis_strategy", key.strategy)
+        .eq("model", key.model)
+        .eq("prompt_schema_version", key.version)
+        .eq("analysis_version", key.version)
+        .eq("analysis_attempt_id", data.analysis_attempt_id);
+      console.info("AI calendar cached issue migration", {
+        cacheHit: true,
+        cacheAnalyzerVersion: AI_CALENDAR_ANALYSIS_VERSION,
+        cacheIssueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
+        migratedCachedIssueCodes: canonical.diagnostics.removedEmptyIssueCodes,
+        removedEmptyIssueCodes: canonical.diagnostics.removedEmptyIssueCodes,
+        cacheInvalidated: true,
+        normalizedUnknownScheduleReferences: canonical.diagnostics.normalizedUnknownScheduleReferences,
+      });
+      return null;
+    }
+    console.info("AI calendar cached issue migration", {
+      cacheHit: true,
+      cacheAnalyzerVersion: AI_CALENDAR_ANALYSIS_VERSION,
+      cacheIssueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
+      migratedCachedIssueCodes: canonical.diagnostics.removedEmptyIssueCodes,
+      removedEmptyIssueCodes: canonical.diagnostics.removedEmptyIssueCodes,
+      cacheInvalidated: false,
+      normalizedUnknownScheduleReferences: canonical.diagnostics.normalizedUnknownScheduleReferences,
+    });
+  }
+  return {
+        result: canonical.result,
         createdAt: data.created_at,
         strategy: key.strategy,
         model: key.model,
         version: key.version,
-      }
-    : null;
+        analyzerVersion: AI_CALENDAR_ANALYSIS_VERSION,
+        cacheSchemaVersion: AI_CALENDAR_CACHE_SCHEMA_VERSION,
+      };
 }
 
 export async function readCalendarAnalysisCache(
@@ -134,9 +194,10 @@ export async function writeCalendarAnalysisCache(
   result: AiCalendarImportResult,
   analysisAttemptId: string
 ) {
+  const canonical = normalizeUnknownScheduleReferences(result).result;
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.from("ai_calendar_analysis_cache").update({
-    result,
+    result: canonical,
     status: "ready",
     current_stage: "ready",
     stage_strategy: key.strategy,

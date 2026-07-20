@@ -20,6 +20,7 @@ import type {
   Weekday,
 } from "./types";
 import { isRegularScheduleInferenceResolutionMessage } from "./scheduleIdentity";
+import { normalizeUnknownScheduleReferences } from "./aiLegacyIssueMigration";
 
 export type ExistingScheduleForAiPersistence = {
   id: string;
@@ -520,12 +521,13 @@ export function normalizeAndDeduplicateReviewIssues({
   scheduleNameErrorCount?: number;
   analysisVersion?: string;
 }) {
-  const normalizedSafeWarnings = safeNoSchoolLabelWarnings(importResult).map((warning) => ({
+  const canonicalImportResult = normalizeUnknownScheduleReferences(importResult).result;
+  const normalizedSafeWarnings = safeNoSchoolLabelWarnings(canonicalImportResult).map((warning) => ({
     ...warning,
     analysisVersion,
   }));
   const hasNormalizedSafeIssue = normalizedSafeWarnings.length > 0;
-  const persistedWarnings = importResult.warnings
+  const persistedWarnings = canonicalImportResult.warnings
     .filter((warning) => !(hasNormalizedSafeIssue && isSemanticSafeNoSchoolOverlap(warning)))
     .map((warning) => ({
       ...warning,
@@ -553,7 +555,7 @@ export function normalizeAndDeduplicateReviewIssues({
   ];
   const retained = new Map<string, ClassifiedCalendarWarning>();
   for (const issue of allIssues) {
-    const relevantLabelIdentities = labelsForIssue(importResult, issue.affectedDates);
+    const relevantLabelIdentities = labelsForIssue(canonicalImportResult, issue.affectedDates);
     const normalizedIssue = { ...issue, relevantLabelIdentities };
     const key = [
       issue.issueCode,
@@ -1312,6 +1314,7 @@ export function blockingAiWarningsResolved(
   importResult: AiCalendarImportResult,
   warningResolutions: AiImportWarningResolution[] = []
 ) {
-  return classifyCalendarWarnings(importResult.warnings, warningResolutions).blockingWarnings
+  const canonical = normalizeUnknownScheduleReferences(importResult).result;
+  return classifyCalendarWarnings(canonical.warnings, warningResolutions).blockingWarnings
     .length === 0;
 }

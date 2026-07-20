@@ -71,7 +71,7 @@ export async function GET(request: Request, context: RouteContext) {
         result.strategy === AI_CALENDAR_TEXT_STRATEGY
           ? AI_CALENDAR_TEXT_STRATEGY
           : AI_CALENDAR_PDF_STRATEGY,
-      version: result.version,
+      version: result.analyzerVersion,
     },
   });
 }
