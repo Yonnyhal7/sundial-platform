@@ -4,6 +4,7 @@ import {
   getCalendarDayScheduleIds,
   getScheduleByIdForSchool,
   getScheduleDisplayName,
+  hasMeaningfulCalendarDayStatus,
   type CalendarDayScheduleAssignment,
   type CalendarDayScheduleSummary,
 } from "@/lib/calendarDaySchedule";
@@ -35,6 +36,14 @@ function day(
 }
 
 describe("calendar day schedule resolution", () => {
+  it("shows markers only for meaningful persisted calendar status", () => {
+    expect(hasMeaningfulCalendarDayStatus(null)).toBe(false);
+    expect(hasMeaningfulCalendarDayStatus({ scheduleId: null, label: null, isSchoolDay: false })).toBe(false);
+    expect(hasMeaningfulCalendarDayStatus({ scheduleId: null, label: "Tournament closure", isSchoolDay: false })).toBe(true);
+    expect(hasMeaningfulCalendarDayStatus({ scheduleId: "schedule-brown", label: null, isSchoolDay: true })).toBe(true);
+    expect(hasMeaningfulCalendarDayStatus({ scheduleId: null, label: null, isSchoolDay: true })).toBe(true);
+  });
+
   it("resolves a ready schedule assigned to a calendar day", () => {
     const scheduleById = getScheduleByIdForSchool([schedule()], "school-deloro");
 

@@ -14,6 +14,7 @@ import {
   summarizeCalendarWizardDraft,
   type CalendarWizardDraftRecord,
 } from "@/lib/calendarWizard/draftPersistence";
+import { clearCalendarDayAction } from "./actions";
 
 export default async function AdminCalendarPage({
   params,
@@ -234,6 +235,7 @@ export default async function AdminCalendarPage({
           calendarDays={calendarDays || []}
           periods={periods || []}
           action={saveCalendarDay}
+          clearAction={clearCalendarDayAction.bind(null, school)}
         />
       </div>
     </main>

@@ -1,4 +1,4 @@
-import { getAssignedScheduleForCalendarDay, getScheduleByIdForSchool, type CalendarDayScheduleSummary } from "@/lib/calendarDaySchedule";
+import { getAssignedScheduleForCalendarDay, getScheduleByIdForSchool, hasMeaningfulCalendarDayStatus, type CalendarDayScheduleSummary } from "@/lib/calendarDaySchedule";
 import { sortPeriodsByScheduleOrder, type SchedulePeriod } from "@/lib/scheduleTime";
 
 export type PublicCalendarEvent = {
@@ -13,6 +13,7 @@ export type PublicCalendarEvent = {
 export type PublicCalendarDay = {
   date: string;
   isSchoolDay: boolean;
+  hasMeaningfulStatus: boolean;
   label: string | null;
   scheduleName: string | null;
   scheduleType: string | null;
@@ -118,6 +119,7 @@ export function buildPublicCalendarViewModel(input: {
     return {
       date: day.date,
       isSchoolDay: day.is_school_day !== false,
+      hasMeaningfulStatus: hasMeaningfulCalendarDayStatus({ scheduleId: day.schedule_id, label: day.label, isSchoolDay: day.is_school_day }),
       label: day.label,
       scheduleName: schedule?.schedule_name || null,
       scheduleType: schedule?.schedule_type || null,

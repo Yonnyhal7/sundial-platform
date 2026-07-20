@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
+import { hasMeaningfulCalendarDayStatus } from "@/lib/calendarDaySchedule";
 
 export type SchoolCalendarSchedule = {
   id: string;
@@ -172,15 +173,17 @@ export function CalendarMonthNavigation({
   );
 }
 
-export function CalendarDateCell({ day, dayNumber, schedule, selected, multiSelected = false, onSelect }: {
+export function CalendarDateCell({ day, dayNumber, schedule, selected, multiSelected = false, isWeekend = false, onSelect }: {
   day: SchoolCalendarDay | null;
   dayNumber: number;
   schedule?: SchoolCalendarSchedule | null;
   selected: boolean;
   multiSelected?: boolean;
+  isWeekend?: boolean;
   onSelect: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
-  const isNoSchoolDay = day?.isNoSchoolDay ?? day?.isSchoolDay === false;
+  const hasMeaningfulStatus = hasMeaningfulCalendarDayStatus({ scheduleId: day?.scheduleId, label: day?.label, isSchoolDay: day?.isSchoolDay });
+  const isNoSchoolDay = hasMeaningfulStatus && (day?.isNoSchoolDay ?? day?.isSchoolDay === false);
   const label = isNoSchoolDay
     ? day?.label || "No School"
     : schedule?.name || day?.label || "No assignment";
@@ -188,12 +191,12 @@ export function CalendarDateCell({ day, dayNumber, schedule, selected, multiSele
   return (
     <button type="button" onClick={onSelect} className={[
       "relative aspect-square min-h-12 cursor-pointer overflow-hidden rounded-xl border p-1.5 text-left transition sm:p-2",
-      selected || multiSelected ? "border-[var(--school-primary)] bg-[color-mix(in_srgb,var(--school-primary)_10%,white)] text-[var(--school-primary)] shadow-sm ring-2 ring-[var(--school-primary)]/20 dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,transparent)] dark:text-white" : isNoSchoolDay ? "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-200" : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700",
+      selected || multiSelected ? "border-[var(--school-primary)] bg-[color-mix(in_srgb,var(--school-primary)_10%,white)] text-[var(--school-primary)] shadow-sm ring-2 ring-[var(--school-primary)]/20 dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,transparent)] dark:text-white" : isNoSchoolDay ? "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-200" : isWeekend && !hasMeaningfulStatus ? "border-slate-200/60 bg-slate-100/60 text-slate-500 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-500" : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700",
       day?.hasConflict ? "border-red-500 ring-2 ring-red-500/30" : "",
       day?.needsReview && !day?.hasConflict ? "border-amber-500 ring-2 ring-amber-400/40" : "",
     ].join(" ")} aria-pressed={multiSelected || selected} aria-label={`${day?.date || dayNumber}, ${label}${day?.hasConflict ? ", conflict" : ""}${day?.needsReview ? ", needs review" : ""}`}>
       <span className="text-[clamp(0.8rem,2.3vw,1.35rem)] font-semibold leading-none">{dayNumber}</span>
-      {day && (schedule || day.label || isNoSchoolDay || day.hasConflict) && (
+      {day && (hasMeaningfulStatus || day.hasConflict) && (
         <span className="absolute bottom-2 left-1/2 flex max-w-[calc(100%-0.75rem)] -translate-x-1/2 items-center gap-1" title={label}>
           <span className="h-2.5 w-2.5 shrink-0 rounded-full border sm:h-3 sm:w-3" style={getScheduleDotStyle(day.hasConflict ? "#DC2626" : indicatorColor)} />
         </span>
@@ -232,8 +235,8 @@ export function SchoolCalendarMonthGrid({ month, days, schedules, selectedDate, 
         {Array.from({ length: daysInMonth }, (_, index) => {
           const dayNumber = index + 1;
           const date = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayNumber).padStart(2, "0")}`;
-          const day = dayMap.get(date) || { date, scheduleId: null, isSchoolDay: false, isNoSchoolDay: false, label: null };
-          return <CalendarDateCell key={date} day={day} dayNumber={dayNumber} schedule={day.scheduleId ? scheduleMap.get(day.scheduleId) : null} selected={selectedDate === date} multiSelected={selectedDates.includes(date)} onSelect={(event) => onSelectDate(date, event)} />;
+          const day = dayMap.get(date) || null;
+          return <CalendarDateCell key={date} day={day} dayNumber={dayNumber} isWeekend={[0, 6].includes(new Date(Date.UTC(year, monthIndex, dayNumber)).getUTCDay())} schedule={day?.scheduleId ? scheduleMap.get(day.scheduleId) : null} selected={selectedDate === date} multiSelected={selectedDates.includes(date)} onSelect={(event) => onSelectDate(date, event)} />;
         })}
         {Array.from({ length: trailingCellCount }, (_, index) => <div key={`trailing-${index}`} data-calendar-empty="trailing" className="aspect-square" />)}
       </div>

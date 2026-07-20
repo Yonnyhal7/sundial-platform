@@ -53,29 +53,30 @@ function DayCell({ date, day, currentMonth, today, selected, academicYear, onSel
   const isToday = date === today;
   const isWeekend = [0, 6].includes(parseDate(date).getDay());
   const outsideYear = academicYear ? date < academicYear.startDate || date > academicYear.endDate : true;
-  const interactive = Boolean(day);
-  const scheduleColor = day?.scheduleName ? getScheduleCalendarColor({ name: day.scheduleName, calendar_color: day.scheduleColor }) : null;
-  const special = isSpecialDay(day);
-  const statusClass = day?.isSchoolDay === false
+  const meaningfulDay = day?.hasMeaningfulStatus || day?.events.length ? day : undefined;
+  const interactive = Boolean(meaningfulDay);
+  const scheduleColor = meaningfulDay?.scheduleName ? getScheduleCalendarColor({ name: meaningfulDay.scheduleName, calendar_color: meaningfulDay.scheduleColor }) : null;
+  const special = isSpecialDay(meaningfulDay);
+  const statusClass = meaningfulDay?.isSchoolDay === false
     ? "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/25 dark:text-rose-100"
     : special
       ? "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800/60 dark:bg-amber-950/25 dark:text-amber-100"
-      : day
+      : meaningfulDay
         ? "border-slate-200 bg-white dark:border-white/10 dark:bg-[#1b1e21]"
         : "border-transparent bg-transparent text-slate-400 dark:text-slate-600";
   const content = <>
     <span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black sm:h-8 sm:w-8 sm:text-sm ${isToday ? "bg-[var(--school-primary)] text-[var(--school-primary-text)]" : ""}`}>{Number(date.slice(-2))}</span>
-    {day && <span className="mt-1 hidden w-full min-w-0 sm:block"><span className="line-clamp-2 text-[10px] font-bold leading-tight sm:text-xs">{day.isSchoolDay === false ? day.label || "No School" : special ? day.label : day.scheduleName || "School day"}</span></span>}
+    {meaningfulDay && <span className="mt-1 hidden w-full min-w-0 sm:block"><span className="line-clamp-2 text-[10px] font-bold leading-tight sm:text-xs">{meaningfulDay.isSchoolDay === false ? meaningfulDay.label || "No School" : special ? meaningfulDay.label : meaningfulDay.scheduleName || "School day"}</span></span>}
     <span className="mt-auto flex min-h-2 items-center gap-1 pt-1 sm:min-h-3">
       {scheduleColor && <span aria-hidden="true" className="h-2 w-2 rounded-full border" style={getScheduleDotStyle(scheduleColor)} />}
-      {day?.isSchoolDay === false && <span aria-hidden="true" className="h-1.5 w-3 rounded-full bg-rose-500" />}
+      {meaningfulDay?.isSchoolDay === false && <span aria-hidden="true" className="h-1.5 w-3 rounded-full bg-rose-500" />}
       {special && <span aria-hidden="true" className="h-2 w-2 rotate-45 rounded-[2px] bg-amber-500" />}
-      {day?.events.length ? <span aria-hidden="true" className="h-2 w-2 rounded-full bg-sky-500" /> : null}
+      {meaningfulDay?.events.length ? <span aria-hidden="true" className="h-2 w-2 rounded-full bg-sky-500" /> : null}
     </span>
   </>;
-  const classes = `relative flex aspect-square min-h-11 min-w-0 flex-col items-start overflow-hidden rounded-xl border p-1.5 text-left transition sm:aspect-auto sm:min-h-24 sm:p-2 ${statusClass} ${selected ? "ring-2 ring-[var(--school-primary)] ring-offset-2 dark:ring-offset-[#101214]" : ""} ${!inCurrentMonth ? "opacity-40" : ""} ${!day && (isWeekend || outsideYear) ? "opacity-35" : ""}`;
+  const classes = `relative flex aspect-square min-h-11 min-w-0 flex-col items-start overflow-hidden rounded-xl border p-1.5 text-left transition sm:aspect-auto sm:min-h-24 sm:p-2 ${statusClass} ${selected ? "ring-2 ring-[var(--school-primary)] ring-offset-2 dark:ring-offset-[#101214]" : ""} ${!inCurrentMonth ? "opacity-40" : ""} ${!meaningfulDay && (isWeekend || outsideYear) ? "opacity-35" : ""}`;
 
-  return interactive ? <button type="button" aria-pressed={selected} aria-label={dayDescription(day, isToday)} onClick={() => onSelect(date)} className={`${classes} cursor-pointer hover:-translate-y-0.5 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] focus:ring-offset-2 dark:focus:ring-offset-[#101214]`}>{content}</button> : <div aria-hidden="true" className={classes}>{content}</div>;
+  return interactive ? <button type="button" aria-pressed={selected} aria-label={dayDescription(meaningfulDay, isToday)} onClick={() => onSelect(date)} className={`${classes} cursor-pointer hover:-translate-y-0.5 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] focus:ring-offset-2 dark:focus:ring-offset-[#101214]`}>{content}</button> : <div aria-hidden="true" className={classes}>{content}</div>;
 }
 
 function SelectedDayPanel({ day }: { day: PublicCalendarDay | null }) {
@@ -97,15 +98,16 @@ function SelectedDayPanel({ day }: { day: PublicCalendarDay | null }) {
 export default function PublicCalendarPage({ calendar }: { calendar: PublicCalendarViewModel }) {
   const todayMonth = calendar.today.slice(0, 7);
   const [visibleMonth, setVisibleMonth] = useState(todayMonth);
-  const [selectedDate, setSelectedDate] = useState(calendar.days.some((day) => day.date === calendar.today) ? calendar.today : null);
+  const [selectedDate, setSelectedDate] = useState(calendar.days.some((day) => day.date === calendar.today && (day.hasMeaningfulStatus || day.events.length)) ? calendar.today : null);
   const dayByDate = useMemo(() => new Map(calendar.days.map((day) => [day.date, day])), [calendar.days]);
   const gridDates = useMemo(() => getMonthGridDateStrings(visibleMonth), [visibleMonth]);
-  const visibleDays = calendar.days.filter((day) => day.date.startsWith(visibleMonth));
+  const visibleDays = calendar.days.filter((day) => day.date.startsWith(visibleMonth) && (day.hasMeaningfulStatus || day.events.length));
   const selectedDay = selectedDate ? dayByDate.get(selectedDate) || null : null;
 
   function changeMonth(nextMonth: string) {
     setVisibleMonth(nextMonth);
-    setSelectedDate(nextMonth === todayMonth && dayByDate.has(calendar.today) ? calendar.today : calendar.days.find((day) => day.date.startsWith(nextMonth))?.date || null);
+    const todayDay = dayByDate.get(calendar.today);
+    setSelectedDate(nextMonth === todayMonth && todayDay && (todayDay.hasMeaningfulStatus || todayDay.events.length) ? calendar.today : calendar.days.find((day) => day.date.startsWith(nextMonth) && (day.hasMeaningfulStatus || day.events.length))?.date || null);
   }
 
   if (!calendar.academicYear) return <section className="rounded-[1.75rem] border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-white/10 dark:bg-[#1b1e21] sm:p-8"><h2 className="text-xl font-black">Calendar coming soon</h2><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">The school calendar has not been published yet.</p></section>;

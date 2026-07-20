@@ -9,6 +9,7 @@ import {
   type SchedulePeriod,
 } from "@/lib/scheduleTime";
 import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
+import { hasMeaningfulCalendarDayStatus } from "@/lib/calendarDaySchedule";
 
 export type CalendarScheduleDay = {
   date: string;
@@ -287,6 +288,10 @@ function getSelectedDaySummary(day: CalendarScheduleDay) {
 }
 
 function getScheduleIndicator(day: CalendarScheduleDay) {
+  if (!hasMeaningfulCalendarDayStatus({ scheduleId: day.scheduleName, label: day.label, isSchoolDay: day.isSchoolDay })) {
+    return null;
+  }
+
   if (day.isSchoolDay === false) {
     return { color: "#E11D48", label: day.label || "No School" };
   }

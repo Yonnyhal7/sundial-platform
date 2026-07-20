@@ -14,6 +14,17 @@ export type CalendarDayScheduleAssignment = {
   is_school_day?: boolean | null;
 };
 
+export type CalendarDayStatusInput = {
+  scheduleId?: string | null;
+  label?: string | null;
+  isSchoolDay?: boolean | null;
+};
+
+export function hasMeaningfulCalendarDayStatus(day: CalendarDayStatusInput | null | undefined) {
+  if (!day) return false;
+  return Boolean(day.scheduleId || day.label?.trim() || day.isSchoolDay === true);
+}
+
 export function getCalendarDayScheduleIds(
   calendarDays: CalendarDayScheduleAssignment[]
 ) {
