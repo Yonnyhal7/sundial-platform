@@ -1,5 +1,6 @@
 import CalendarScheduleClient, {
   type CalendarScheduleDay,
+  type CalendarScheduleMonth,
 } from "@/components/mobile-app/CalendarScheduleClient";
 import {
   getAssignedScheduleForCalendarDay,
@@ -83,9 +84,24 @@ export default async function MobileSchedulePage({
 
   const todayDate = new Date();
   const baseMonth = getBaseMonth(month);
-  const monthDates = getMonthGridDates(baseMonth);
-  const startDate = formatLocalDate(monthDates[0]);
-  const endDate = formatLocalDate(monthDates[monthDates.length - 1]);
+  const displayedMonths = [-1, 0, 1].map(
+    (offset) =>
+      new Date(baseMonth.getFullYear(), baseMonth.getMonth() + offset, 1)
+  );
+  const monthDatesByKey = new Map(
+    displayedMonths.map((displayedMonth) => [
+      getMonthQuery(displayedMonth),
+      getMonthGridDates(displayedMonth),
+    ])
+  );
+  const firstMonthDates = monthDatesByKey.get(
+    getMonthQuery(displayedMonths[0])
+  )!;
+  const lastMonthDates = monthDatesByKey.get(
+    getMonthQuery(displayedMonths[displayedMonths.length - 1])
+  )!;
+  const startDate = formatLocalDate(firstMonthDates[0]);
+  const endDate = formatLocalDate(lastMonthDates[lastMonthDates.length - 1]);
 
   const { data: calendarDays } = await navTiming.query("calendar", () =>
     supabase
@@ -155,38 +171,55 @@ export default async function MobileSchedulePage({
     (calendarDays || []).map((calendarDay) => [calendarDay.date, calendarDay])
   );
   const today = formatLocalDate(todayDate);
-  const currentMonth = baseMonth.getMonth();
-  const days: CalendarScheduleDay[] = monthDates.map((date) => {
-    const dateKey = formatLocalDate(date);
-    const calendarDay = calendarDayByDate.get(dateKey);
-    const assignedSchedule = getAssignedScheduleForCalendarDay(
-      calendarDay,
-      scheduleById
-    );
-    const periods = calendarDay?.schedule_id
-      ? periodsByScheduleId[calendarDay.schedule_id] || []
-      : [];
+  const months: CalendarScheduleMonth[] = displayedMonths.map(
+    (displayedMonth) => {
+      const monthKey = getMonthQuery(displayedMonth);
+      const currentMonth = displayedMonth.getMonth();
+      const monthDates = monthDatesByKey.get(monthKey) || [];
+      const days: CalendarScheduleDay[] = monthDates.map((date) => {
+        const dateKey = formatLocalDate(date);
+        const calendarDay = calendarDayByDate.get(dateKey);
+        const assignedSchedule = getAssignedScheduleForCalendarDay(
+          calendarDay,
+          scheduleById
+        );
+        const periods = calendarDay?.schedule_id
+          ? periodsByScheduleId[calendarDay.schedule_id] || []
+          : [];
 
-    return {
-      date: dateKey,
-      dayNumber: date.toLocaleDateString("en-US", { day: "numeric" }),
-      inCurrentMonth: date.getMonth() === currentMonth,
-      isToday: dateKey === today,
-      weekdayLabel: date.toLocaleDateString("en-US", { weekday: "long" }),
-      longDateLabel: date.toLocaleDateString("en-US", {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      }),
-      isSchoolDay: calendarDay?.is_school_day ?? null,
-      scheduleName: assignedSchedule?.schedule_name || null,
-      scheduleType: assignedSchedule?.schedule_type || null,
-      scheduleColor: assignedSchedule?.calendar_color || null,
-      scheduleSetupStatus: assignedSchedule?.setup_status || null,
-      label: calendarDay?.label || null,
-      periods: sortPeriodsByScheduleOrder(periods),
-    };
-  });
+        return {
+          date: dateKey,
+          dayNumber: date.toLocaleDateString("en-US", { day: "numeric" }),
+          inCurrentMonth: date.getMonth() === currentMonth,
+          isToday: dateKey === today,
+          weekdayLabel: date.toLocaleDateString("en-US", {
+            weekday: "long",
+          }),
+          longDateLabel: date.toLocaleDateString("en-US", {
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          }),
+          isSchoolDay: calendarDay?.is_school_day ?? null,
+          scheduleName: assignedSchedule?.schedule_name || null,
+          scheduleType: assignedSchedule?.schedule_type || null,
+          scheduleColor: assignedSchedule?.calendar_color || null,
+          scheduleSetupStatus: assignedSchedule?.setup_status || null,
+          label: calendarDay?.label || null,
+          periods: sortPeriodsByScheduleOrder(periods),
+        };
+      });
+
+      return {
+        monthKey,
+        monthLabel: displayedMonth.toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        }),
+        days,
+      };
+    }
+  );
   navTiming.log();
 
   return (
@@ -205,18 +238,9 @@ export default async function MobileSchedulePage({
 
       <CalendarScheduleClient
         key={getMonthQuery(baseMonth)}
-        monthLabel={baseMonth.toLocaleDateString("en-US", {
-          month: "long",
-          year: "numeric",
-        })}
-        previousMonthHref={`/${school}/app/schedule?month=${getMonthQuery(
-          new Date(baseMonth.getFullYear(), baseMonth.getMonth() - 1, 1)
-        )}`}
-        nextMonthHref={`/${school}/app/schedule?month=${getMonthQuery(
-          new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 1)
-        )}`}
+        currentMonthKey={getMonthQuery(baseMonth)}
         today={today}
-        days={days}
+        months={months}
       />
     </main>
   );

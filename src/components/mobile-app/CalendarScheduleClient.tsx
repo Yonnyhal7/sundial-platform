@@ -1,8 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
+import { useRouter } from "next/navigation";
 import { CheckIcon } from "@/components/mobile-app/AppIcons";
+import {
+  getAdjacentCalendarMonthKey,
+  getCalendarSwipeMonthOffset,
+  normalizeCalendarMonthKey,
+} from "@/lib/calendarMonthNavigation";
+import { useOfflineSchoolData } from "@/lib/offline/useOfflineSchoolData";
+import {
+  getCalendarScheduleDays,
+  getMonthGridDates,
+} from "@/lib/offline/snapshotSelectors";
+import { formatLocalDate } from "@/lib/localDate";
 import {
   formatPeriodTime,
   getTodayScheduleState,
@@ -27,23 +44,46 @@ export type CalendarScheduleDay = {
   periods: SchedulePeriod[];
 };
 
-type CalendarScheduleClientProps = {
+export type CalendarScheduleMonth = {
+  monthKey: string;
   monthLabel: string;
-  previousMonthHref: string;
-  nextMonthHref: string;
-  today: string;
   days: CalendarScheduleDay[];
+};
+
+type CalendarScheduleClientProps = {
+  currentMonthKey: string;
+  today: string;
+  months: CalendarScheduleMonth[];
 };
 
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function CalendarScheduleClient({
-  monthLabel,
-  previousMonthHref,
-  nextMonthHref,
+  currentMonthKey,
   today,
-  days,
+  months,
 }: CalendarScheduleClientProps) {
+  const router = useRouter();
+  const { snapshot } = useOfflineSchoolData();
+  const [visibleMonthKey, setVisibleMonthKey] = useState(currentMonthKey);
+  const [localMonths, setLocalMonths] = useState(
+    () => new Map(months.map((month) => [month.monthKey, month]))
+  );
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const gestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    startTime: number;
+    horizontal: boolean | null;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+  const visibleMonth = localMonths.get(visibleMonthKey) || months[0];
+  const days = visibleMonth?.days || [];
+  const monthLabel = visibleMonth?.monthLabel || "Calendar";
   const defaultSelectedDate =
     days.find((day) => day.date === today)?.date ||
     days.find((day) => day.inCurrentMonth)?.date ||
@@ -70,6 +110,29 @@ export default function CalendarScheduleClient({
     };
   }, []);
 
+  useEffect(() => {
+    function handleHistoryNavigation() {
+      const requestedMonthKey =
+        normalizeCalendarMonthKey(
+          new URL(window.location.href).searchParams.get("month")
+        ) || currentMonthKey;
+      const requestedMonth =
+        localMonths.get(requestedMonthKey) ||
+        getSnapshotMonth(snapshot, requestedMonthKey);
+
+      if (!requestedMonth) {
+        router.refresh();
+        return;
+      }
+
+      setVisibleMonthKey(requestedMonthKey);
+      setSelectedDate(getDefaultSelectedDate(requestedMonth.days, today));
+    }
+
+    window.addEventListener("popstate", handleHistoryNavigation);
+    return () => window.removeEventListener("popstate", handleHistoryNavigation);
+  }, [currentMonthKey, localMonths, router, snapshot, today]);
+
   const selectedIsToday = selectedDay?.date === today;
   const scheduleState = useMemo(() => {
     if (!selectedIsToday || !now || !selectedDay) {
@@ -85,29 +148,141 @@ export default function CalendarScheduleClient({
     setSelectedDate(date);
   }
 
+  function getMonthView(monthKey: string) {
+    const existing = localMonths.get(monthKey);
+    if (existing) return existing;
+    return getSnapshotMonth(snapshot, monthKey);
+  }
+
+  function changeMonth(offset: number) {
+    const targetMonthKey = getAdjacentCalendarMonthKey(visibleMonthKey, offset);
+    if (!targetMonthKey) return;
+
+    const targetMonth = getMonthView(targetMonthKey);
+    const href = `?month=${targetMonthKey}`;
+
+    if (!targetMonth) {
+      router.push(href, { scroll: false });
+      return;
+    }
+
+    setLocalMonths((current) => {
+      if (current.has(targetMonthKey)) return current;
+      const next = new Map(current);
+      next.set(targetMonthKey, targetMonth);
+      return next;
+    });
+    setVisibleMonthKey(targetMonthKey);
+    setSelectedDate(getDefaultSelectedDate(targetMonth.days, today));
+    window.history.pushState(null, "", href);
+  }
+
+  function handlePointerDown(event: PointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse") return;
+
+    gestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      startTime: performance.now(),
+      horizontal: null,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLElement>) {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    gesture.lastX = event.clientX;
+    gesture.lastY = event.clientY;
+    const deltaX = gesture.lastX - gesture.startX;
+    const deltaY = gesture.lastY - gesture.startY;
+
+    if (gesture.horizontal === null) {
+      if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) return;
+      gesture.horizontal = Math.abs(deltaX) > Math.abs(deltaY) * 1.15;
+    }
+
+    if (!gesture.horizontal) return;
+
+    event.preventDefault();
+    setIsDragging(true);
+    setDragX(Math.max(-54, Math.min(54, deltaX * 0.45)));
+  }
+
+  function handlePointerEnd(event: PointerEvent<HTMLElement>) {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    gestureRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    setDragX(0);
+    setIsDragging(false);
+    if (!gesture.horizontal) return;
+
+    suppressClickRef.current = true;
+    const offset = getCalendarSwipeMonthOffset({
+      deltaX: gesture.lastX - gesture.startX,
+      deltaY: gesture.lastY - gesture.startY,
+      elapsedMs: performance.now() - gesture.startTime,
+    });
+
+    if (offset) changeMonth(offset);
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  }
+
   return (
     <div className="space-y-5">
-      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-[0_12px_32px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424]">
+      <section
+        data-swipe-nav-ignore
+        className="touch-pan-y rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-[0_12px_32px_rgb(15_23_42/0.08)] dark:border-[#3a3a3a] dark:bg-[#242424]"
+        onClickCapture={(event) => {
+          if (!suppressClickRef.current) return;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onPointerCancel={handlePointerEnd}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        style={{
+          transform: dragX ? `translate3d(${dragX}px, 0, 0)` : undefined,
+          transition: isDragging ? "none" : "transform 160ms ease-out",
+        }}
+      >
         <div className="mb-3 grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center gap-3">
-          <Link
-            href={previousMonthHref}
+          <button
+            type="button"
+            onClick={() => changeMonth(-1)}
             aria-label="Previous month"
             className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200 dark:bg-[#181818] dark:text-[#d4d4d4] dark:hover:bg-[#202020]"
           >
             <ChevronLeftIcon className="h-5 w-5" />
-          </Link>
+          </button>
 
-          <h2 className="text-center text-xl font-black text-slate-950 dark:text-white">
+          <h2
+            aria-live="polite"
+            className="text-center text-xl font-black text-slate-950 dark:text-white"
+          >
             {monthLabel}
           </h2>
 
-          <Link
-            href={nextMonthHref}
+          <button
+            type="button"
+            onClick={() => changeMonth(1)}
             aria-label="Next month"
             className="grid h-10 w-10 place-items-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200 dark:bg-[#181818] dark:text-[#d4d4d4] dark:hover:bg-[#202020]"
           >
             <ChevronRightIcon className="h-5 w-5" />
-          </Link>
+          </button>
         </div>
 
         <div className="grid grid-cols-7 gap-1 pb-1">
@@ -253,6 +428,55 @@ export default function CalendarScheduleClient({
         </section>
       )}
     </div>
+  );
+}
+
+function getDefaultSelectedDate(days: CalendarScheduleDay[], today: string) {
+  return (
+    days.find((day) => day.date === today)?.date ||
+    days.find((day) => day.inCurrentMonth)?.date ||
+    days[0]?.date ||
+    today
+  );
+}
+
+function getSnapshotMonth(
+  snapshot: ReturnType<typeof useOfflineSchoolData>["snapshot"],
+  monthKey: string
+) {
+  if (!snapshot || !snapshotCoversMonth(snapshot.data.calendarDays, monthKey)) {
+    return null;
+  }
+
+  const snapshotMonth = getCalendarScheduleDays(snapshot, monthKey);
+  return {
+    monthKey,
+    monthLabel: snapshotMonth.baseMonth.toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    }),
+    days: snapshotMonth.days,
+  } satisfies CalendarScheduleMonth;
+}
+
+function snapshotCoversMonth(
+  calendarDays: Array<{ date: string }>,
+  monthKey: string
+) {
+  const normalized = normalizeCalendarMonthKey(monthKey);
+  if (!normalized || calendarDays.length === 0) return false;
+
+  const [year, month] = normalized.split("-").map(Number);
+  const gridDates = getMonthGridDates(new Date(year, month - 1, 1));
+  const firstAvailableDate = calendarDays[0]?.date;
+  const lastAvailableDate = calendarDays[calendarDays.length - 1]?.date;
+  const firstGridDate = formatLocalDate(gridDates[0]);
+  const lastGridDate = formatLocalDate(gridDates[gridDates.length - 1]);
+
+  return (
+    Boolean(firstAvailableDate && lastAvailableDate) &&
+    firstAvailableDate <= firstGridDate &&
+    lastAvailableDate >= lastGridDate
   );
 }
 

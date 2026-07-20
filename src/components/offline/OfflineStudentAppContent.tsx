@@ -83,10 +83,19 @@ export default function OfflineStudentAppContent({
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const section = pathname.split("/").filter(Boolean)[2] || "home";
+  const pathSegments = pathname.split("/").filter(Boolean);
+  const section =
+    pathSegments[0] === "app"
+      ? pathSegments[1] || "home"
+      : pathSegments[2] || "home";
 
   if (section === "schedule") {
-    return <OfflineSchedulePage school={school} snapshot={snapshot} month={searchParams.get("month")} />;
+    return (
+      <OfflineSchedulePage
+        snapshot={snapshot}
+        month={searchParams.get("month")}
+      />
+    );
   }
 
   if (section === "events") {
@@ -153,11 +162,9 @@ function OfflineHomePage({
 }
 
 function OfflineSchedulePage({
-  school,
   snapshot,
   month,
 }: {
-  school: string;
   snapshot: SchoolOfflineSnapshot;
   month: string | null;
 }) {
@@ -172,18 +179,18 @@ function OfflineSchedulePage({
       />
       <CalendarScheduleClient
         key={getMonthQuery(baseMonth)}
-        monthLabel={baseMonth.toLocaleDateString("en-US", {
-          month: "long",
-          year: "numeric",
-        })}
-        previousMonthHref={`/${school}/app/schedule?month=${getMonthQuery(
-          new Date(baseMonth.getFullYear(), baseMonth.getMonth() - 1, 1)
-        )}`}
-        nextMonthHref={`/${school}/app/schedule?month=${getMonthQuery(
-          new Date(baseMonth.getFullYear(), baseMonth.getMonth() + 1, 1)
-        )}`}
+        currentMonthKey={getMonthQuery(baseMonth)}
         today={today}
-        days={days}
+        months={[
+          {
+            monthKey: getMonthQuery(baseMonth),
+            monthLabel: baseMonth.toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric",
+            }),
+            days,
+          },
+        ]}
       />
     </main>
   );
