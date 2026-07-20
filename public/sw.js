@@ -1,5 +1,5 @@
 const SHELL_CACHE = "sundial-shell-v1";
-const ASSET_CACHE = "sundial-assets-v1";
+const ASSET_CACHE = "sundial-assets-v2";
 const NAVIGATION_CACHE = "sundial-navigation-v1";
 
 const PRECACHE_URLS = [
@@ -139,6 +139,25 @@ async function cacheFirst(request, cacheName) {
   return response;
 }
 
+async function networkFirstResource(request, cacheName) {
+  const cache = await caches.open(cacheName);
+
+  try {
+    const response = await fetch(request);
+
+    if (response.ok) {
+      await cache.put(request, response.clone());
+    }
+
+    return response;
+  } catch {
+    const cached = await cache.match(request);
+
+    if (cached) return cached;
+    throw new Error("No cached Sundial resource is available");
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -156,12 +175,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (request.destination === "manifest") {
+    event.respondWith(networkFirstResource(request, ASSET_CACHE));
+    return;
+  }
+
   if (
     url.pathname.startsWith("/_next/static/") ||
     request.destination === "style" ||
     request.destination === "script" ||
     request.destination === "font" ||
-    request.destination === "manifest" ||
     request.destination === "image"
   ) {
     event.respondWith(cacheFirst(request, ASSET_CACHE));

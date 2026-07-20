@@ -37,58 +37,28 @@ class SchoolInsertError extends Error {
   }
 }
 
-async function insertSchoolWithSetupIncomplete({
+async function insertSchoolWithPlatformDefaults({
   supabase,
-  payload,
+  name,
+  subdomain,
+  districtId,
+  createdAt,
 }: {
   supabase: Awaited<ReturnType<typeof requireSuperAdminAccess>>["supabase"];
-  payload: Record<string, string | boolean>;
+  name: string;
+  subdomain: string;
+  districtId: string | null;
+  createdAt: string;
 }) {
-  const { data, error } = await supabase
-    .from("schools")
-    .insert({ ...payload, setup_complete: false, setup_step: "welcome" })
-    .select("id, subdomain")
-    .single<{ id: string; subdomain: string }>();
-
-  if (!error && data) {
-    return data;
-  }
-
-  if (error?.code === "23505") {
-    throw new SchoolInsertError(error.message, error.code);
-  }
-
-  const { data: setupCompleteFallbackData, error: setupCompleteFallbackError } = await supabase
-    .from("schools")
-    .insert({ ...payload, setup_complete: false })
-    .select("id, subdomain")
-    .single<{ id: string; subdomain: string }>();
-
-  if (!setupCompleteFallbackError && setupCompleteFallbackData) {
-    return setupCompleteFallbackData;
-  }
-
-  if (setupCompleteFallbackError?.code === "23505") {
-    throw new SchoolInsertError(setupCompleteFallbackError.message, setupCompleteFallbackError.code);
-  }
-
-  const { data: fallbackData, error: fallbackError } = await supabase
-    .from("schools")
-    .insert(payload)
-    .select("id, subdomain")
-    .single<{ id: string; subdomain: string }>();
-
-  if (fallbackError || !fallbackData) {
-    throw new SchoolInsertError(
-      fallbackError?.message ||
-        setupCompleteFallbackError?.message ||
-        error?.message ||
-        "Could not create school.",
-      fallbackError?.code
-    );
-  }
-
-  return fallbackData;
+  const { data, error } = await supabase.rpc("create_school_with_platform_defaults", {
+    p_name: name,
+    p_slug: subdomain,
+    p_subdomain: subdomain,
+    p_district_id: districtId,
+    p_created_at: createdAt,
+  }).single<{ id: string; subdomain: string }>();
+  if (error || !data) throw new SchoolInsertError(error?.message || "Could not create school.", error?.code);
+  return data;
 }
 
 async function createPendingAdminInvite({
@@ -150,21 +120,14 @@ export async function createSchoolAction(
 
   for (let attempt = 0; attempt < MAX_SUBDOMAIN_ATTEMPTS; attempt++) {
     const subdomain = await generateUniqueSchoolSubdomain(supabase, name);
-    const payload = {
-      name,
-      slug: subdomain,
-      subdomain,
-      mascot: "",
-      primary_color: "#2563eb",
-      secondary_color: "#64748b",
-      timezone: "America/Los_Angeles",
-      is_active: false,
-      ...(profile.district_id ? { district_id: profile.district_id } : {}),
-      created_at: now,
-    };
-
     try {
-      school = await insertSchoolWithSetupIncomplete({ supabase, payload });
+      school = await insertSchoolWithPlatformDefaults({
+        supabase,
+        name,
+        subdomain,
+        districtId: profile.district_id || null,
+        createdAt: now,
+      });
       break;
     } catch (error) {
       lastError = error;

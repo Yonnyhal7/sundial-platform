@@ -92,6 +92,14 @@ export function UserIcon(props: IconProps) {
   );
 }
 
+export function SettingsIcon(props: IconProps) {
+  return <IconShell {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M9.8 3.8h4.4l.6 2.1 1.8 1 2.1-.6 2.2 3.8-1.5 1.5v2.1l1.5 1.5-2.2 3.8-2.1-.6-1.8 1-.6 2.1H9.8l-.6-2.1-1.8-1-2.1.6-2.2-3.8 1.5-1.5v-2.1L3.1 10l2.2-3.8 2.1.6 1.8-1 .6-2.1Z"/><circle cx="12" cy="12.6" r="3"/></IconShell>;
+}
+
+export function BillingIcon(props: IconProps) {
+  return <IconShell {...props}><rect x="3.5" y="5" width="17" height="14" rx="2"/><path strokeLinecap="round" d="M3.5 9h17M7 15h3"/></IconShell>;
+}
+
 export const ADMIN_TAB_ICONS: Record<AdminPermissionKey, ComponentType<IconProps>> = {
   announcements: MegaphoneIcon,
   events: EventIcon,

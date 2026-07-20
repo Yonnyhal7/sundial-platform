@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   getAdminUtilityPath,
+  getSchoolAppCanonicalUrl,
+  getSchoolAppManifestPath,
   getSchoolAppUrl,
   getSchoolAdminPath,
   getSchoolKioskUrl,
@@ -284,6 +286,48 @@ describe("admin route path helpers", () => {
     expect(
       getSchoolKioskUrl("deloro", "/deloro/admin", "deloro.sundialk12.com")
     ).toBe("/kiosk");
+  });
+
+  it("keeps the School App manifest and canonical URL tenant-host relative", () => {
+    expect(
+      getSchoolAppManifestPath(
+        "deloro",
+        "/app",
+        "deloro.sundialk12.com"
+      )
+    ).toBe("/app/manifest");
+    expect(
+      getSchoolAppCanonicalUrl(
+        "deloro",
+        "/app",
+        "deloro.sundialk12.com",
+        "https"
+      )
+    ).toBe("https://deloro.sundialk12.com/app");
+  });
+
+  it("keeps School App manifest paths school-first on localhost and previews", () => {
+    expect(
+      getSchoolAppManifestPath(
+        "deloro",
+        "/deloro/app",
+        "localhost:3000"
+      )
+    ).toBe("/deloro/app/manifest");
+    expect(
+      getSchoolAppCanonicalUrl(
+        "deloro",
+        "/deloro/app",
+        "localhost:3000"
+      )
+    ).toBe("http://localhost:3000/deloro/app");
+    expect(
+      getSchoolAppManifestPath(
+        "deloro",
+        "/deloro/app",
+        "sundial-preview.vercel.app"
+      )
+    ).toBe("/deloro/app/manifest");
   });
 
   it("does not leak one school's shortcut URLs into another tenant", () => {

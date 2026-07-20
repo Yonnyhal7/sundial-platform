@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchSchoolOfflineSnapshot } from "@/lib/offline/fetchSchoolSnapshot.server";
 import { getSchoolLifecycleBySubdomain } from "@/lib/schools";
+import { isSchoolFeatureAvailable } from "@/lib/schoolFeatures.server";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ export async function GET(
       { status: 410, headers: { "Cache-Control": "no-store" } }
     );
   }
+  if (!await isSchoolFeatureAvailable(lifecycle.id,"offline_mode")) return NextResponse.json({error:"Offline mode is not enabled."},{status:404,headers:{"Cache-Control":"no-store"}});
 
   try {
     const snapshot = await fetchSchoolOfflineSnapshot(school);

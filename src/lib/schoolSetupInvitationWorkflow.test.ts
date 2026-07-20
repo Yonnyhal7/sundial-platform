@@ -13,7 +13,7 @@ const serviceRoleClient = read("src/lib/supabase/serviceRole.ts");
 
 describe("school setup invitation application workflow", () => {
   it("creates the school and invitation before delivery and retains both on failure", () => {
-    const schoolInsert = creationAction.indexOf("insertSchoolWithSetupIncomplete");
+    const schoolInsert = creationAction.indexOf("insertSchoolWithPlatformDefaults");
     const inviteInsert = creationAction.indexOf("createPendingAdminInvite", schoolInsert);
     const delivery = creationAction.indexOf("deliverSchoolSetupInvitation", inviteInsert);
     expect(schoolInsert).toBeGreaterThanOrEqual(0);

@@ -7,15 +7,17 @@ import {
   DashboardIcon,
   ResourcesIcon,
   UserIcon,
+  SettingsIcon,
+  BillingIcon,
 } from "@/components/admin/AdminNavIcons";
 
 const navItems = [
   { label: "Dashboard", href: "/admin/dashboard", icon: DashboardIcon },
   { label: "Schools", href: "/admin/dashboard/schools", icon: ResourcesIcon },
   { label: "Users", href: "/admin/dashboard/users", icon: UserIcon },
-  { label: "Subscriptions", href: "/admin/dashboard/subscriptions", icon: DashboardIcon },
+  { label: "Subscriptions", href: "/admin/dashboard/subscriptions", icon: BillingIcon },
   { label: "Analytics", href: "/admin/dashboard/analytics", icon: DashboardIcon },
-  { label: "Settings", href: "/admin/dashboard/settings", icon: DashboardIcon },
+  { label: "Settings", href: "/admin/dashboard/settings", icon: SettingsIcon },
 ];
 
 export default function SuperAdminSidebar() {

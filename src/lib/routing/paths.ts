@@ -50,6 +50,46 @@ export function getSchoolAppBasePath(
   return `${getSchoolSiteBasePath(school, pathname, hostname)}/app`;
 }
 
+export function getSchoolAppManifestPath(
+  school: string,
+  pathname: string,
+  hostname: string
+) {
+  return `${getSchoolAppBasePath(school, pathname, hostname)}/manifest`;
+}
+
+export function getSchoolAppCanonicalUrl(
+  school: string,
+  pathname: string,
+  hostname: string,
+  forwardedProtocol = ""
+) {
+  const appPath = getSchoolAppBasePath(school, pathname, hostname);
+  const authority = hostname.split(",")[0]?.trim();
+  const requestedProtocol = forwardedProtocol
+    .split(",")[0]
+    ?.trim()
+    .replace(/:$/, "")
+    .toLowerCase();
+  const protocol =
+    requestedProtocol === "http" || requestedProtocol === "https"
+      ? requestedProtocol
+      : isLocalhost(hostname)
+        ? "http"
+        : "https";
+
+  if (authority) {
+    try {
+      const origin = new URL(`${protocol}://${authority}`).origin;
+      return `${origin}${appPath}`;
+    } catch {
+      // Fall through to Sundial's canonical tenant hostname.
+    }
+  }
+
+  return `https://${school}.${getRootDomain()}${appPath}`;
+}
+
 export function getSchoolKioskBasePath(
   school: string,
   pathname: string,

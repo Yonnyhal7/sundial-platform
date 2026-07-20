@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { recordSchoolCacheMiss } from "@/lib/navDiagnostics";
+import { isSchoolFeatureAvailable } from "@/lib/schoolFeatures.server";
 
 export type MobileAppSchool = {
   id: string;
@@ -62,7 +63,7 @@ export const getMobileAppSchool = unstable_cache(
 export async function requireMobileAppSchool(school: string) {
   const schoolData = await getMobileAppSchool(school);
 
-  if (!schoolData) {
+  if (!schoolData || !await isSchoolFeatureAvailable(schoolData.id,"pwa")) {
     notFound();
   }
 

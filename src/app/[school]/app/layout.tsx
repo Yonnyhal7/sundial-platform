@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import AppBottomNav from "@/components/mobile-app/AppBottomNav";
 import AppHeader from "@/components/mobile-app/AppHeader";
 import AppRoutePrefetch from "@/components/mobile-app/AppRoutePrefetch";
@@ -7,6 +8,17 @@ import AppSwipeNavigation from "@/components/mobile-app/AppSwipeNavigation";
 import OfflineStudentAppRuntime from "@/components/offline/OfflineStudentAppRuntime";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { getMobileAppQuickLinks, requireMobileAppSchool } from "@/lib/mobileAppData";
+import {
+  getSchoolAppIconUrl,
+  getSchoolAppName,
+  getSchoolAppShortName,
+  getSchoolAppThemeColor,
+} from "@/lib/pwa/schoolAppManifest";
+import { getForwardedHost } from "@/lib/routing/hosts";
+import {
+  getSchoolAppCanonicalUrl,
+  getSchoolAppManifestPath,
+} from "@/lib/routing/paths";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
 import { normalizeAppearancePreference } from "@/lib/themeScope";
 
@@ -34,23 +46,43 @@ export async function generateMetadata({
   params: Promise<{ school: string }>;
 }): Promise<Metadata> {
   const { school } = await params;
+  const schoolData = await requireMobileAppSchool(school);
+  const headerStore = await headers();
+  const hostname = getForwardedHost(headerStore);
+  const pathname = headerStore.get("x-sundial-pathname") || `/${school}/app`;
+  const manifestPath = getSchoolAppManifestPath(school, pathname, hostname);
+  const canonicalUrl = getSchoolAppCanonicalUrl(
+    school,
+    pathname,
+    hostname,
+    headerStore.get("x-forwarded-proto") || ""
+  );
+  const appTitle = getSchoolAppShortName(schoolData.name);
+  const schoolIcon = getSchoolAppIconUrl(schoolData.logo_url);
 
   return {
-    title: "Sundial App",
+    title: appTitle,
     description: "Student and staff school app",
-    manifest: `/${school}/manifest.webmanifest`,
+    applicationName: getSchoolAppName(schoolData.name),
+    alternates: { canonical: canonicalUrl },
+    manifest: manifestPath,
     appleWebApp: {
       capable: true,
       statusBarStyle: "default",
-      title: "Sundial",
+      title: appTitle,
+    },
+    other: {
+      "apple-mobile-web-app-capable": "yes",
     },
     icons: {
       icon: [
+        ...(schoolIcon ? [{ url: schoolIcon }] : []),
         { url: "/favicon.ico" },
         { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
         { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
       ],
       apple: [
+        ...(schoolIcon ? [{ url: schoolIcon }] : []),
         {
           url: "/apple-touch-icon.png",
           type: "image/png",
@@ -61,12 +93,18 @@ export async function generateMetadata({
   };
 }
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
-    { media: "(prefers-color-scheme: dark)", color: "#000000" },
-  ],
-};
+export async function generateViewport({
+  params,
+}: {
+  params: Promise<{ school: string }>;
+}): Promise<Viewport> {
+  const { school } = await params;
+  const schoolData = await requireMobileAppSchool(school);
+
+  return {
+    themeColor: getSchoolAppThemeColor(schoolData.primary_color),
+  };
+}
 
 export default async function AppLayout({ children, params }: AppLayoutProps) {
   const { school } = await params;

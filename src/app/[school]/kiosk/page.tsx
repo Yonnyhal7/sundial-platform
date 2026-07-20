@@ -11,6 +11,7 @@ import {
 import { addDaysToLocalDateString, formatDateInTimeZone } from "@/lib/localDate";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeAppearancePreference } from "@/lib/themeScope";
+import { isSchoolFeatureAvailable } from "@/lib/schoolFeatures.server";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +100,7 @@ export default async function KioskPage({
       timezone: string | null;
     }>();
 
-  if (!schoolData) return null;
+  if (!schoolData || !await isSchoolFeatureAvailable(schoolData.id,"kiosk")) return null;
 
   const today = formatDateInTimeZone(new Date(), schoolData.timezone);
 

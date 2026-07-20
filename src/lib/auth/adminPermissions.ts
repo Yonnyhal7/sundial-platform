@@ -165,6 +165,14 @@ function canUseSection(
   return false;
 }
 
+const FEATURE_GATED_ADMIN_SECTIONS: Partial<Record<AdminPermissionKey,string>> = {
+  announcements: "announcements",
+  events: "events",
+  athletics: "athletics",
+  resources: "resources",
+  kiosk: "kiosk",
+};
+
 async function getEditorPermissionKeys(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   userId: string
@@ -275,6 +283,15 @@ export async function requireAdminSectionAccess(
     )
   ) {
     redirect(await getSchoolAdminPath(school));
+  }
+
+  const featureKey = FEATURE_GATED_ADMIN_SECTIONS[permissionKey];
+  if (featureKey) {
+    const { data: enabled } = await adminUser.supabase.rpc("school_feature_is_enabled", {
+      p_school_id: schoolId,
+      p_feature_key: featureKey,
+    });
+    if (enabled !== true) redirect(await getSchoolAdminPath(school));
   }
 
   return adminUser;

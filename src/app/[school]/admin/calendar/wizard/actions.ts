@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { notFound } from "next/navigation";
+import { isSchoolFeatureAvailable } from "@/lib/schoolFeatures.server";
 import {
   getSchoolSetupStepPath,
   requireAdminSectionAccess,
@@ -1277,6 +1278,9 @@ export async function createAiCalendarFromDraftAction(
   try {
     const routeRequestId = crypto.randomUUID();
     const { schoolData, adminUser } = await getCalendarDraftSchoolContext(school);
+    if (!await isSchoolFeatureAvailable(schoolData.id,"ai_calendar_import")) {
+      return { status: "permission_error", message: "AI calendar import is not enabled for this school." };
+    }
     const { data: draftRow, error: draftError } = await adminUser.supabase
       .from("calendar_wizard_drafts")
       .select("id, school_id, draft_type, school_year_label, wizard_data, created_at, updated_at")

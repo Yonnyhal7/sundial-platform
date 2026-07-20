@@ -131,7 +131,7 @@ describe("schedule tenant isolation", () => {
       "utf8"
     );
 
-    expect(source).toContain('.from("schools")');
+    expect(source).toContain('rpc("create_school_with_platform_defaults"');
     expect(source).not.toContain('.from("schedules")');
     expect(source).not.toContain('.from("periods")');
     expect(source).not.toContain('.from("calendar_days")');

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatDateInTimeZone } from "@/lib/localDate";
 import { getTodayScheduleState, type SchedulePeriod } from "@/lib/scheduleTime";
+import { isSchoolFeatureAvailable } from "@/lib/schoolFeatures.server";
 
 export type PublicSchool = {
   id: string; name: string; subdomain: string; mascot: string | null;
@@ -19,6 +20,7 @@ export async function requirePublicSchool(slug: string) {
     subdomain_input: slug,
   }).maybeSingle<PublicSchool>();
   if (!data) notFound();
+  if (!await isSchoolFeatureAvailable(data.id,"public_website")) notFound();
   return { supabase, school: data };
 }
 
