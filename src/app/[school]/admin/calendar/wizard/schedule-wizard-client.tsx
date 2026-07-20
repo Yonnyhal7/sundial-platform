@@ -42,7 +42,10 @@ import {
   AI_CALENDAR_ANALYSIS_VERSION,
   AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
 } from "@/lib/calendarWizard/aiCalendarAnalysisVersion";
-import { normalizePersistedAiCalendarImportResult } from "@/lib/calendarWizard/aiCalendarImportNormalizer";
+import {
+  migrateLegacyAiImportMetadata,
+  replaceAiImportWithFreshAnalysis,
+} from "@/lib/calendarWizard/aiLegacyIssueMigration";
 import {
   computeAssignmentDigest,
   computeCalendarClassificationDigest,
@@ -752,24 +755,27 @@ function parsePendingAiImport(value: string | null): PendingAiImport | null {
   }
 }
 
-function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[]) {
+export function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[]) {
   if (!value || typeof value !== "object") return null;
   const fallback = createDefaultDraft(schedules);
   const record = value as Partial<WizardDraft>;
   const restoredAiImport = record.aiImport && typeof record.aiImport === "object"
     ? record.aiImport
     : null;
-  const staleIssueDefinitions = Boolean(
-    restoredAiImport &&
-      (restoredAiImport.analysisVersion !== AI_CALENDAR_ANALYSIS_VERSION ||
-        restoredAiImport.issueSchemaVersion !== AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION)
-  );
-  const restoredImportResult = restoredAiImport?.result &&
-    typeof restoredAiImport.result === "object"
-      ? staleIssueDefinitions
-        ? normalizePersistedAiCalendarImportResult(restoredAiImport.result)
-        : restoredAiImport.result
-      : restoredAiImport?.result;
+  const legacyMigration = restoredAiImport
+    ? migrateLegacyAiImportMetadata({
+        ...restoredAiImport,
+        resolutions: Array.isArray(restoredAiImport.resolutions) ? restoredAiImport.resolutions : [],
+      } as AiImportDraftMetadata)
+    : null;
+  const canonicalAiImport = legacyMigration?.metadata || restoredAiImport;
+  if (legacyMigration?.changed) {
+    console.info("AI calendar legacy issue migration", legacyMigration.diagnostics);
+  }
+  const restoredImportResult = canonicalAiImport?.result &&
+    typeof canonicalAiImport.result === "object"
+      ? canonicalAiImport.result
+      : canonicalAiImport?.result;
 
   return {
     ...fallback,
@@ -852,9 +858,7 @@ function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[
               restoredAiImport.cacheStrategy === "pdf-gpt5"
                 ? restoredAiImport.cacheStrategy
                 : undefined,
-            analysisVersion: staleIssueDefinitions
-              ? AI_CALENDAR_ANALYSIS_VERSION
-              : restoredAiImport.analysisVersion,
+            analysisVersion: canonicalAiImport?.analysisVersion,
             issueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
             analysisAttemptId:
               typeof restoredAiImport.analysisAttemptId === "string"
@@ -867,21 +871,11 @@ function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleSummary[
                   (id): id is string => typeof id === "string"
                 )
               : [],
-            warnings: staleIssueDefinitions
-              ? restoredImportResult?.warnings || []
-              : Array.isArray(restoredAiImport.warnings)
-                ? restoredAiImport.warnings
-              : [],
-            warningResolutions: Array.isArray(restoredAiImport.warningResolutions)
-              ? restoredAiImport.warningResolutions.filter(
-                  (resolution) =>
-                    !staleIssueDefinitions ||
-                    Boolean(
-                      resolution.issueId &&
-                        resolution.status !== "unresolved" &&
-                        resolution.status !== "unreviewed"
-                    )
-                )
+            warnings: Array.isArray(canonicalAiImport?.warnings)
+              ? canonicalAiImport.warnings
+              : restoredImportResult?.warnings || [],
+            warningResolutions: Array.isArray(canonicalAiImport?.warningResolutions)
+              ? canonicalAiImport.warningResolutions
               : [],
           }
         : null,
@@ -1500,6 +1494,7 @@ export default function ScheduleWizardClient({
       let restoredUpdatedAt: string | null = null;
       let shouldSaveLocalOverDatabase = false;
       let restoredStoredData: CalendarWizardStoredData | undefined;
+      let restoredNeedsMigration = false;
 
       if (
         source === "session" &&
@@ -1511,6 +1506,10 @@ export default function ScheduleWizardClient({
       ) {
         const restored = sanitizeRestoredDraft(localStored.data.draft, schedules);
         if (restored && isMeaningfulDraft(restored)) {
+          restoredNeedsMigration = Boolean(
+            localStored.data.draft.aiImport &&
+            migrateLegacyAiImportMetadata(localStored.data.draft.aiImport).changed
+          );
           restoredDraft = restored;
           restoredStep = normalizeGuidedWizardStep(localStored.data.currentStep);
           restoredUpdatedAt = localStored.updatedAt;
@@ -1518,6 +1517,10 @@ export default function ScheduleWizardClient({
           restoredStoredData = localStored.data;
         }
       } else if (initialSavedDraft) {
+        restoredNeedsMigration = Boolean(
+          initialSavedDraft.wizard_data.draft.aiImport &&
+          migrateLegacyAiImportMetadata(initialSavedDraft.wizard_data.draft.aiImport).changed
+        );
         restoredDraft =
           sanitizeRestoredDraft(initialSavedDraft.wizard_data.draft, schedules) ||
           createDefaultDraft(schedules);
@@ -1548,14 +1551,15 @@ export default function ScheduleWizardClient({
       lastSavedDraftSnapshotRef.current =
         restoredDraft &&
         restoredUpdatedAt &&
-        !shouldSaveLocalOverDatabase &&
+          !shouldSaveLocalOverDatabase &&
+        !restoredNeedsMigration &&
         !(source === "session" && !initialSavedDraft)
           ? JSON.stringify(buildStoredDraft(restoredDraft, restoredStep))
           : null;
       hasUnsavedChangesRef.current = Boolean(
         restoredDraft &&
           isMeaningfulDraft(restoredDraft) &&
-          !lastSavedDraftSnapshotRef.current
+          (!lastSavedDraftSnapshotRef.current || restoredNeedsMigration)
       );
       setLastKnownUpdatedAt(source === "session" && !initialSavedDraft ? null : restoredUpdatedAt);
       setDraftSaveStatus(restoredUpdatedAt ? "saved" : "idle");
@@ -1707,6 +1711,7 @@ export default function ScheduleWizardClient({
     }
 
     const nextDraft = clearAiImportMetadata(createDefaultDraft(schedules));
+    window.sessionStorage.removeItem(getPendingAiImportStorageKey(schoolSlug));
     window.sessionStorage.removeItem(storageKey);
     hasUnsavedChangesRef.current = false;
     lastSavedDraftSnapshotRef.current = null;
@@ -2649,9 +2654,8 @@ function AiCalendarImportCard({
         : "Analysis complete. Review before creating your calendar."
     );
     try {
-      updateDraft((previousDraft) => ({
-        ...previousDraft,
-        aiImport: {
+      updateDraft((previousDraft) => {
+        const freshAiImport: AiImportDraftMetadata = {
           state: "review",
           fileName,
           result: result.importResult,
@@ -2672,8 +2676,15 @@ function AiCalendarImportCard({
               : result.outcome === "reviewable"
                 ? "Sundial read the calendar, but one item needs your review."
                 : "Calendar analysis complete."),
-        },
-      }));
+        };
+        return {
+          ...previousDraft,
+          aiImport: replaceAiImportWithFreshAnalysis(
+            previousDraft.aiImport,
+            freshAiImport
+          ),
+        };
+      });
       clearPendingAiImport();
     } catch (error) {
       const failure = buildAiImportProcessingFailure(
@@ -3262,6 +3273,7 @@ function AiCalendarImportCard({
 
   async function startAiReviewOver(reason = "administrator_reset") {
     await onInvalidateAiCache(draft.aiImport?.pdfHash, reason);
+    clearPendingAiImport();
     setSelectedFile(null);
     setStatus("idle");
     setMessage("");

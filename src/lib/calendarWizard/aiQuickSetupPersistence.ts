@@ -19,6 +19,7 @@ import type {
   CalendarWizardConfig,
   Weekday,
 } from "./types";
+import { isRegularScheduleInferenceResolutionMessage } from "./scheduleIdentity";
 
 export type ExistingScheduleForAiPersistence = {
   id: string;
@@ -256,7 +257,7 @@ function classifyWarningKind(
 
   if (
     code === "unknown_pattern_schedule_reference" &&
-    message === "sundial assigned standard instructional days to the regular schedule."
+    isRegularScheduleInferenceResolutionMessage(message)
   ) {
     return "automatically_resolved";
   }

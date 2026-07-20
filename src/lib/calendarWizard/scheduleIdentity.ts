@@ -32,3 +32,9 @@ export function isDefaultScheduleAlias(value: string) {
 export function canonicalScheduleReference(value: string) {
   return isDefaultScheduleAlias(value) ? CANONICAL_DEFAULT_SCHEDULE_KEY : value.trim();
 }
+
+export function isRegularScheduleInferenceResolutionMessage(message: string) {
+  const normalized = message.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+  return normalized === "sundial assigned standard instructional days to the regular schedule." ||
+    normalized === "sundial assigned standard instructional days to the regular schedule";
+}

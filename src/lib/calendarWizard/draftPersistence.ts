@@ -8,6 +8,7 @@ import type {
   AiImportWarningResolution,
 } from "./aiImportTypes";
 import type { Weekday } from "./types";
+import { migrateLegacyAiImportMetadata } from "./aiLegacyIssueMigration";
 
 export const CALENDAR_WIZARD_DRAFT_VERSION = 1;
 export const LEGACY_CALENDAR_WIZARD_DRAFT_TYPE = "school_year_calendar";
@@ -232,7 +233,7 @@ function normalizeAiImport(aiImport: unknown): AiImportDraftMetadata | null {
   if (!isRecord(aiImport)) return null;
   const stripped = stripUnsafeValues(aiImport) as Partial<AiImportDraftMetadata>;
 
-  return {
+  const normalized: AiImportDraftMetadata = {
     state: typeof stripped.state === "string" ? stripped.state : "idle",
     fileName: typeof stripped.fileName === "string" ? stripped.fileName : undefined,
     result: stripped.result
@@ -303,6 +304,7 @@ function normalizeAiImport(aiImport: unknown): AiImportDraftMetadata | null {
       ? stripped.warningResolutions
       : [],
   } satisfies AiImportDraftMetadata;
+  return migrateLegacyAiImportMetadata(normalized).metadata;
 }
 
 function migrateDraftShape(value: unknown): AiWizardDraftShape | null {

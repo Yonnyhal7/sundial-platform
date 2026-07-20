@@ -110,8 +110,9 @@ describe("AI calendar review experience", () => {
     const cacheSource = readFileSync(resolve(process.cwd(), "src/lib/calendarWizard/aiCalendarAnalysisCache.server.ts"), "utf8");
     expect(cacheSource).toContain("AI_CALENDAR_ANALYSIS_VERSION");
     expect(cacheSource).toContain('.eq("analysis_version", key.version)');
-    expect(source).toContain("staleIssueDefinitions");
-    expect(source).toContain("normalizePersistedAiCalendarImportResult(restoredAiImport.result)");
+    expect(source).toContain("migrateLegacyAiImportMetadata");
+    expect(source).toContain("restoredNeedsMigration");
+    expect(source).toContain("replaceAiImportWithFreshAnalysis");
     expect(source).toContain("issueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION");
   });
 });
