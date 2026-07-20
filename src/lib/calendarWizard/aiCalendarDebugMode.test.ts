@@ -5,19 +5,19 @@ import { describe, expect, it } from "vitest";
 const page = readFileSync(
   resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/ai/page.tsx"),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 const client = readFileSync(
   resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/schedule-wizard-client.tsx"),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 const panel = readFileSync(
   resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/ai-calendar-debug-panel.tsx"),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 const actions = readFileSync(
   resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/actions.ts"),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 
 describe("temporary AI Calendar Debug Mode", () => {
   it("uses a server-only environment flag after the authorized page load", () => {

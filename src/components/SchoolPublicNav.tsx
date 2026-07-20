@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SchoolLogo from "@/components/SchoolLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 import KioskMenuControls from "@/components/KioskMenuControls";
@@ -13,6 +13,17 @@ type Props = { school: string; schoolName: string; logoUrl: string | null; base:
 export default function SchoolPublicNav({ school, schoolName, logoUrl, base, schoolDefaultAppearance }: Props) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
 
   if (pathname === `${base}/app` || pathname.startsWith(`${base}/app/`) || pathname === `${base}/admin` || pathname.startsWith(`${base}/admin/`) || pathname.startsWith(`/admin/${school}`)) return null;
   if (pathname === `${base}/kiosk` || pathname.startsWith(`${base}/kiosk/`)) return <nav className="school-menu-bar border-b border-slate-200 bg-white px-6 py-3 dark:border-neutral-800 dark:bg-black"><div className="flex justify-end"><KioskMenuControls school={school} schoolDefaultAppearance={schoolDefaultAppearance} /></div></nav>;

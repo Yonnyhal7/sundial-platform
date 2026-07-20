@@ -8,32 +8,32 @@ const migration = readFileSync(
     "supabase/migrations/20260717223000_create_ai_calendar_import_review_audit.sql"
   ),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 const actions = readFileSync(
   resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/actions.ts"),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 const serializer = readFileSync(
   resolve(
     process.cwd(),
     "src/lib/calendarWizard/aiCalendarReviewAuditPayload.ts"
   ),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 const digestMigration = readFileSync(
   resolve(
     process.cwd(),
     "supabase/migrations/20260716143000_verify_ai_calendar_assignment_payload.sql"
   ),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 const tenantMigration = readFileSync(
   resolve(
     process.cwd(),
     "supabase/migrations/20260713120000_enforce_schedule_tenant_isolation.sql"
   ),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 
 const requiredAuditColumns = [
   "id",

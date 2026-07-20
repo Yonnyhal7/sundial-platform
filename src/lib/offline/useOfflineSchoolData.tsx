@@ -20,6 +20,10 @@ import type {
   OfflineSyncState,
   SchoolOfflineSnapshot,
 } from "@/lib/offline/types";
+import {
+  getBrowserOnlineState,
+  getHydrationSafeInitialOnlineState,
+} from "@/lib/offline/onlineState";
 
 const ACTIVE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -36,10 +40,6 @@ type OfflineSchoolDataContextValue = {
 
 const OfflineSchoolDataContext =
   createContext<OfflineSchoolDataContextValue | null>(null);
-
-function getInitialOnlineState() {
-  return typeof navigator === "undefined" ? true : navigator.onLine;
-}
 
 function getMillisecondsUntilNextLocalMidnight() {
   const now = new Date();
@@ -60,7 +60,7 @@ export function OfflineSchoolDataProvider({
 }) {
   const [snapshot, setSnapshot] = useState<SchoolOfflineSnapshot | null>(null);
   const [syncState, setSyncState] = useState<OfflineSyncState>("loading-cache");
-  const [isOnline, setIsOnline] = useState(getInitialOnlineState);
+  const [isOnline, setIsOnline] = useState(getHydrationSafeInitialOnlineState);
   const [lastError, setLastError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const syncingRef = useRef<Promise<void> | null>(null);
@@ -122,8 +122,12 @@ export function OfflineSchoolDataProvider({
 
   useEffect(() => {
     mountedRef.current = true;
+    const onlineStateTimeout = window.setTimeout(() => {
+      setIsOnline(getBrowserOnlineState());
+    }, 0);
 
     return () => {
+      window.clearTimeout(onlineStateTimeout);
       mountedRef.current = false;
     };
   }, []);

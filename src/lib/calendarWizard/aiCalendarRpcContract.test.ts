@@ -6,18 +6,18 @@ const migrationPath = resolve(
   process.cwd(),
   "supabase/migrations/20260717213000_reconcile_ai_calendar_rpc_overloads.sql"
 );
-const migration = readFileSync(migrationPath, "utf8");
+const migration = readFileSync(migrationPath, "utf8").replace(/\r\n/g, "\n");
 const digestMigration = readFileSync(
   resolve(
     process.cwd(),
     "supabase/migrations/20260716143000_verify_ai_calendar_assignment_payload.sql"
   ),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 const actions = readFileSync(
   resolve(process.cwd(), "src/app/[school]/admin/calendar/wizard/actions.ts"),
   "utf8"
-);
+).replace(/\r\n/g, "\n");
 
 function canonicalSqlArguments() {
   const match = migration.match(
