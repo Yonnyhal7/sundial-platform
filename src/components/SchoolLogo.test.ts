@@ -10,7 +10,7 @@ const source = readFileSync(
 describe("public school logo rendering contract", () => {
   it("contains and centers uploaded artwork without clipping its wrapper", () => {
     expect(source).toContain("max-h-full max-w-full object-contain object-center");
-    expect(source).toContain("overflow-visible border-0 bg-transparent");
+    expect(source).toContain('allowArtworkOverflow ? "overflow-visible" : "overflow-hidden"');
     expect(source).not.toContain('"object-cover"');
   });
 

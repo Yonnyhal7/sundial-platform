@@ -18,6 +18,7 @@ type SchoolLogoProps = {
   size?: SchoolLogoSize;
   variant?: SchoolLogoVariant;
   className?: string;
+  allowArtworkOverflow?: boolean;
 };
 
 const sizeClasses: Record<SchoolLogoSize, string> = {
@@ -62,6 +63,7 @@ export default function SchoolLogo({
   size = "md",
   variant = "default",
   className = "",
+  allowArtworkOverflow = false,
 }: SchoolLogoProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const uploadedLogoUrl = !imageFailed && logoUrl ? logoUrl : null;
@@ -72,7 +74,7 @@ export default function SchoolLogo({
       className={[
         "grid shrink-0 place-items-center font-black",
         hasLogo
-          ? "overflow-visible border-0 bg-transparent text-transparent"
+          ? `${allowArtworkOverflow ? "overflow-visible" : "overflow-hidden"} border-0 bg-transparent text-transparent`
           : "overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white",
         variantClasses[variant] || sizeClasses[size],
         variant === "default" ? sizeClasses[size] : "",
