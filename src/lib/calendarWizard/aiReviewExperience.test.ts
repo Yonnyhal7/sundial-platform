@@ -73,10 +73,10 @@ describe("AI calendar review experience", () => {
   });
 
   it("renders centralized issue-specific actions without generic labels", () => {
-    expect(review).toContain("getAiReviewIssuePresentation");
-    expect(review).toContain("presentation.actions.map");
-    expect(review).not.toContain("Use suggested correction");
-    expect(review).not.toContain("Keep original");
+    expect(review).toContain("buildAiReviewCardViewModel");
+    expect(review).toContain("card.actions.map");
+    expect(review).not.toContain(["Use", "suggested correction"].join(" "));
+    expect(review).not.toContain(["Keep", "original"].join(" "));
     expect(review).not.toContain("Edit manually");
   });
 

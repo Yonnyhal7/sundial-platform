@@ -22,6 +22,18 @@ export type AiReviewPresentationActionId =
   | "review_details"
   | "dismiss";
 
+export type AiReviewCardViewModel = {
+  issueId: string;
+  issueCode: string;
+  title: string;
+  description: string;
+  affectedDates: string[];
+  affectedSummary?: string;
+  actions: Array<{ id: AiReviewPresentationActionId; label: string }>;
+  severity: ClassifiedCalendarWarning["severity"];
+  status: ClassifiedCalendarWarning["status"];
+};
+
 export type AiReviewIssuePresentation = {
   title: string;
   description: string;
@@ -36,6 +48,31 @@ type PresentationContext = {
 };
 
 type PresentationBuilder = (context: PresentationContext) => AiReviewIssuePresentation;
+
+const REVIEW_ISSUE_ALIASES: Record<string, string> = {
+  event_outside_school_year: "special_day_outside_school_year",
+  special_day_outside_range: "special_day_outside_school_year",
+  special_day_outside_year: "special_day_outside_school_year",
+  named_event_outside_school_year: "special_day_outside_school_year",
+  named_event_outside_range: "special_day_outside_school_year",
+  rotation_not_detected: "schedule_default_inferred",
+};
+
+export function canonicalReviewPresentationIssueCode(issue: Pick<ClassifiedCalendarWarning, "issueCode" | "message">) {
+  const supplied = String(issue.issueCode || "").trim();
+  if (REVIEW_ISSUE_ALIASES[supplied]) return REVIEW_ISSUE_ALIASES[supplied];
+  const message = String(issue.message || "");
+  if (/legend lists schedule names[\s\S]*does not provide explicit date assignments|schedule names[\s\S]*without assigned dates/i.test(message)) {
+    return "schedule_names_without_assignments";
+  }
+  if (/no rotating schedule|rotation (?:was )?not detected/i.test(message)) return "schedule_default_inferred";
+  if (/instructional days[\s\S]*(?:currently|counts|identifies)/i.test(message)) return "instructional_day_count_mismatch";
+  if (/low[- ]confidence|not fully certain|confidence classification/i.test(message)) return "low_confidence_classification";
+  if (/calendarCoverageStart|calendarCoverageEnd|outside (?:the )?(?:school year|selected calendar range)/i.test(message)) {
+    return "special_day_outside_school_year";
+  }
+  return supplied || "unknown_review_issue";
+}
 
 const displayDate = (date: string) => new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -78,6 +115,25 @@ const REVIEW_PRESENTATION_BUILDERS: Record<string, PresentationBuilder> = {
       { id: "review_details", label: "Review Details" },
     ],
   }),
+  schedule_names_without_assignments: ({ issue }) => {
+    const names = issue.message.match(/Legend lists schedule names\s*\(([^)]+)\)/i)?.[1]
+      ?.split(",")
+      .map((name) => name.trim())
+      .filter(Boolean) || [];
+    const readableNames = names.length > 1
+      ? `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`
+      : names[0] || "schedule names";
+    return {
+      title: "Schedule names were found without assigned dates",
+      description: `Sundial found ${readableNames} in the legend, but could not determine which dates use them.`,
+      affectedSummary: affectedSummary(issue.affectedDates),
+      actions: [
+        { id: "set_up_rotation", label: "Assign Schedule Dates" },
+        { id: "use_regular_schedule", label: "Use Regular Schedule" },
+        { id: "review_details", label: "Review Details" },
+      ],
+    };
+  },
   low_confidence_classification: ({ issue, importResult }) => {
     const date = issue.affectedDates[0];
     const current = importResult.dateClassifications?.find((item) => item.date === date);
@@ -160,7 +216,15 @@ const REVIEW_PRESENTATION_BUILDERS: Record<string, PresentationBuilder> = {
 export const AI_REVIEW_PRESENTATION_ISSUE_CODES = Object.freeze(Object.keys(REVIEW_PRESENTATION_BUILDERS));
 
 export function getAiReviewIssuePresentation(context: PresentationContext): AiReviewIssuePresentation {
-  return REVIEW_PRESENTATION_BUILDERS[context.issue.issueCode]?.(context) || {
+  const canonicalCode = canonicalReviewPresentationIssueCode(context.issue);
+  const builder = REVIEW_PRESENTATION_BUILDERS[canonicalCode];
+  if (process.env.NODE_ENV !== "production" && !builder && (
+    AI_REVIEW_PRESENTATION_ISSUE_CODES.includes(context.issue.issueCode) ||
+    Object.prototype.hasOwnProperty.call(REVIEW_ISSUE_ALIASES, context.issue.issueCode)
+  )) {
+    throw new Error(`Known AI calendar review issue reached fallback presentation: ${context.issue.issueCode}`);
+  }
+  return builder?.({ ...context, issue: { ...context.issue, issueCode: canonicalCode } }) || {
     title: "Review this calendar item",
     description: "Review the calendar details and choose whether to keep this item.",
     affectedSummary: affectedSummary(context.issue.affectedDates),
@@ -168,6 +232,22 @@ export function getAiReviewIssuePresentation(context: PresentationContext): AiRe
       { id: "review_details", label: "Review Details" },
       { id: "dismiss", label: "Dismiss" },
     ],
+  };
+}
+
+export function buildAiReviewCardViewModel(context: PresentationContext): AiReviewCardViewModel {
+  const issueCode = canonicalReviewPresentationIssueCode(context.issue);
+  const presentation = getAiReviewIssuePresentation(context);
+  return {
+    issueId: context.issue.issueId,
+    issueCode,
+    title: presentation.title,
+    description: presentation.description,
+    affectedDates: [...context.issue.affectedDates],
+    affectedSummary: presentation.affectedSummary,
+    actions: presentation.actions,
+    severity: context.issue.severity,
+    status: context.issue.status,
   };
 }
 

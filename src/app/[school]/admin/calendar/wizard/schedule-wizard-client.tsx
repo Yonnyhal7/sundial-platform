@@ -59,8 +59,8 @@ import {
 } from "@/lib/calendarWizard/aiImportPreview";
 import {
   assignmentSourcePresentation,
+  buildAiReviewCardViewModel,
   buildAiReviewReadiness,
-  getAiReviewIssuePresentation,
   getCalendarWarningDateDetails,
   includedNoSchoolLabels,
   type AiReviewPresentationActionId,
@@ -4032,18 +4032,18 @@ function AiImportReview({
             const reviewable =
               warning.classification === "needs_review" && warning.status === "unresolved";
             const dateDetails = getCalendarWarningDateDetails(importResult, warning);
-            const presentation = getAiReviewIssuePresentation({
+            const card = buildAiReviewCardViewModel({
               issue: warning,
               importResult,
               currentInstructionalDayCount: previewResult.summary.instructionalDayCount,
             });
             return (
               <li id={`calendar-review-issue-${warning.issueId}`} key={warning.issueId} className="rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-700">
-                <h6 className="font-bold text-slate-900 dark:text-white">{presentation.title}</h6>
-                <p className="mt-1 text-slate-600 dark:text-slate-300">{presentation.description}</p>
-                {presentation.affectedSummary && (
+                <h6 className="font-bold text-slate-900 dark:text-white">{card.title}</h6>
+                <p className="mt-1 text-slate-600 dark:text-slate-300">{card.description}</p>
+                {card.affectedSummary && (
                   <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    Affected: {presentation.affectedSummary}
+                    Affected: {card.affectedSummary}
                   </p>
                 )}
                 {dateDetails.length > 0 ? dateDetails.map((details) => (
@@ -4055,20 +4055,13 @@ function AiImportReview({
                     >
                       {formatDateForDisplay(details.date)}
                     </button>
-                    <p className="sr-only">
-                      {details.specialLabels.length > 0 && details.noSchoolLabels.length > 0
-                        ? `${details.specialLabels.join(", ")} occurs during ${details.noSchoolLabels.join(", ")}.`
-                        : warning.message}
-                    </p>
                     <dl className="grid gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
                       <div><dt className="inline font-bold">Current classification:</dt> <dd className="inline">{details.currentClassification}</dd></div>
                       <div><dt className="inline font-bold">Sundial will:</dt> <dd className="inline">{details.suggestedResult}</dd></div>
                       <div><dt className="inline font-bold">Rotation:</dt> <dd className="inline">{details.rotationEffect}</dd></div>
                     </dl>
                   </div>
-                )) : (
-                  <p className="font-semibold text-slate-700 dark:text-slate-200">{warning.message}</p>
-                )}
+                )) : null}
                 {warning.classification === "automatically_resolved" && (
                   <p className="mt-1 text-xs font-bold text-emerald-700 dark:text-emerald-200">
                     Automatically resolved · Safe for calendar creation.
@@ -4076,11 +4069,11 @@ function AiImportReview({
                 )}
                 {reviewable && (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {presentation.actions.map((action) => (
+                    {card.actions.map((action) => (
                       <button
                         key={action.id}
                         type="button"
-                        aria-label={`${action.label}: ${presentation.title}`}
+                        aria-label={`${action.label}: ${card.title}`}
                         onClick={() => applyReviewAction(warning, action.id)}
                         className={[subtleButtonClass, resolution?.status && resolution.status !== "unresolved" ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-100" : ""].join(" ")}
                       >
@@ -6896,6 +6889,13 @@ function AiCreateCalendarModal({
   const finalReviewIssues = finalReviewIssueCollection.issues;
   const finalIssueGroups = groupFinalReviewIssues(finalReviewIssues);
   const unresolvedBlockingIssues = getUnresolvedBlockingReviewIssues(finalReviewIssues);
+  const unresolvedBlockingCards = unresolvedBlockingIssues.map((issue) =>
+    buildAiReviewCardViewModel({
+      issue,
+      importResult,
+      currentInstructionalDayCount: modalPreview.summary.instructionalDayCount,
+    })
+  );
   const hasBlockingWarnings = unresolvedBlockingIssues.length > 0;
   const countReviewState = getInstructionalDayCountReviewState(
     importResult.instructionalDayCountReview,
@@ -7079,8 +7079,10 @@ function AiCreateCalendarModal({
                     Fix these calendar issues before creating the calendar:
                   </p>
                   <ul className="mt-2 list-disc space-y-1 pl-5">
-                    {unresolvedBlockingIssues.map((warning) => (
-                      <li key={warning.code}>{warning.message}</li>
+                    {unresolvedBlockingCards.map((card) => (
+                      <li key={card.issueId}>
+                        <span className="font-bold">{card.title}.</span>{" "}{card.description}
+                      </li>
                     ))}
                   </ul>
                 </div>

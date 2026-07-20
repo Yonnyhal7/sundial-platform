@@ -253,10 +253,10 @@ describe("admin route path helpers", () => {
   it("builds tenant-scoped public App and Kiosk URLs from the production admin host", () => {
     expect(
       getSchoolAppUrl("deloro", "/deloro/dashboard", "admin.sundialk12.com")
-    ).toBe("https://www.sundialk12.com/deloro/app");
+    ).toBe("https://deloro.sundialk12.com/app");
     expect(
       getSchoolKioskUrl("deloro", "/deloro/dashboard", "admin.sundialk12.com")
-    ).toBe("https://www.sundialk12.com/deloro/kiosk");
+    ).toBe("https://deloro.sundialk12.com/kiosk");
   });
 
   it("keeps App and Kiosk shortcuts path-based on localhost", () => {
@@ -288,7 +288,7 @@ describe("admin route path helpers", () => {
 
   it("does not leak one school's shortcut URLs into another tenant", () => {
     expect(getSchoolAppUrl("north", "/north/admin", "admin.sundialk12.com")).toBe(
-      "https://www.sundialk12.com/north/app"
+      "https://north.sundialk12.com/app"
     );
     expect(getSchoolAppUrl("north", "/north/admin", "admin.sundialk12.com")).not.toContain(
       "deloro"

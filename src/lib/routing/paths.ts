@@ -1,10 +1,7 @@
+import { normalizeHostname, parseSundialHost } from "./hosts";
+
 export function isLocalhost(hostname: string) {
-  return (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "[::1]" ||
-    hostname === "::1"
-  );
+  return parseSundialHost(hostname).kind === "dev";
 }
 
 function logDevelopmentRouteGeneration({
@@ -65,30 +62,16 @@ function getRootDomain() {
   return process.env.NEXT_PUBLIC_ROOT_DOMAIN || "sundialk12.com";
 }
 
-function normalizeRouteHostname(hostname: string) {
-  const forwardedHost = hostname.split(",")[0]?.trim() || "";
-
-  if (forwardedHost.startsWith("[")) {
-    const closingBracketIndex = forwardedHost.indexOf("]");
-
-    return closingBracketIndex === -1
-      ? forwardedHost.toLowerCase()
-      : forwardedHost.slice(0, closingBracketIndex + 1).toLowerCase();
-  }
-
-  return forwardedHost.split(":")[0]?.toLowerCase() || "";
-}
-
 function getPublicSchoolExperienceBase(
   school: string,
   pathname: string,
   hostname: string
 ) {
-  const normalizedHostname = normalizeRouteHostname(hostname);
+  const normalizedHostname = normalizeHostname(hostname);
   const rootDomain = getRootDomain();
 
   if (normalizedHostname === `admin.${rootDomain}`) {
-    return `https://www.${rootDomain}/${school}`;
+    return `https://${school}.${rootDomain}`;
   }
 
   return getSchoolSiteBasePath(school, pathname, normalizedHostname);

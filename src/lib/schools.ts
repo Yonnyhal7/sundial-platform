@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 import type { SetupStepSlug } from "@/lib/setupSteps";
+import { isReservedSchoolSlug } from "@/lib/routing/hosts";
 
 export type SchoolSetupStatus = "active" | "incomplete";
 
@@ -40,16 +41,6 @@ export async function isSchoolAvailableById(schoolId: string) {
     .maybeSingle<{ id: string }>();
   return Boolean(data);
 }
-
-const RESERVED_SUBDOMAINS = new Set([
-  "admin",
-  "api",
-  "app",
-  "dashboard",
-  "select-school",
-  "support",
-  "www",
-]);
 
 const SCHOOL_SUFFIX_WORDS = new Set([
   "school",
@@ -93,7 +84,7 @@ export function generateSchoolSubdomainBase(name: string) {
 
   const slug = words.join("-");
 
-  if (!slug || RESERVED_SUBDOMAINS.has(slug)) {
+  if (!slug || isReservedSchoolSlug(slug)) {
     return "school";
   }
 

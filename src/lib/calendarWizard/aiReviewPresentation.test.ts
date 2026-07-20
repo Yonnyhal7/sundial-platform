@@ -3,6 +3,7 @@ import type { AiCalendarImportResult } from "./aiImportTypes";
 import { classifyCalendarWarnings } from "./aiQuickSetupPersistence";
 import {
   assignmentSourcePresentation,
+  buildAiReviewCardViewModel,
   buildAiReviewReadiness,
   deduplicateClassifiedWarnings,
   getAiReviewIssuePresentation,
@@ -122,6 +123,36 @@ describe("AI review presentation", () => {
     expect(presentation.title).toBe("Review this calendar item");
     expect(presentation.actions.map((action) => action.label)).toEqual(["Review Details", "Dismiss"]);
     expect(JSON.stringify(presentation)).not.toContain("internal_future_code");
+  });
+
+  it("canonicalizes persisted and cache-restored legacy warning shapes before presentation", () => {
+    const result = importResult();
+    result.schoolYear = { ...result.schoolYear, startDate: "2026-08-10", endDate: "2027-05-31" };
+    const cases = [
+      issue("event_outside_school_year", ["2027-06-01"]),
+      issue("special_day_outside_range", ["2027-06-02"]),
+      issue("low_confidence_classification", ["2026-08-12"]),
+      issue("instructional_day_count_mismatch"),
+      { ...issue("ai_import_review"), message: "Legend lists schedule names (Finals, Brown Day, Gold Day, Minimum Day) but the calendar page does not provide explicit date assignments or a repeating schedule mapping for them." },
+      { ...issue("ai_import_review"), message: "No rotating schedule was detected." },
+    ];
+    const cards = cases.map((legacyIssue) => buildAiReviewCardViewModel({
+      issue: legacyIssue,
+      importResult: result,
+      currentInstructionalDayCount: 180,
+    }));
+    expect(cards.map((card) => card.title)).toEqual([
+      "A special day falls outside the school year",
+      "A special day falls outside the school year",
+      "One date needs confirmation",
+      "Instructional-day count does not match",
+      "Schedule names were found without assigned dates",
+      "No rotating schedule was found",
+    ]);
+    expect(cards[4].description).toBe("Sundial found Finals, Brown Day, Gold Day, and Minimum Day in the legend, but could not determine which dates use them.");
+    expect(cards[4].actions.map((action) => action.label)).toEqual(["Assign Schedule Dates", "Use Regular Schedule", "Review Details"]);
+    expect(JSON.stringify(cards)).not.toMatch(/calendarCoverageStart|calendarCoverageEnd/);
+    expect(cards.flatMap((card) => card.actions).map((action) => action.label)).not.toContain(["Use", "suggested correction"].join(" "));
   });
 
   it("does not classify 164 normal Brown/Gold assignments as schedule exceptions", () => {

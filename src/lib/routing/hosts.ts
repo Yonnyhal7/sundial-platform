@@ -21,18 +21,26 @@ export type ParsedHost =
     };
 
 const LOCALHOST_NAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
-const RESERVED_SUBDOMAINS = new Set([
+export const RESERVED_SCHOOL_SLUGS = new Set([
   "admin",
   "api",
   "app",
+  "auth",
   "dashboard",
+  "invitations",
+  "login",
+  "schools",
   "select-school",
   "status",
   "support",
   "www",
 ]);
 
-function normalizeHostname(host: string) {
+export function isReservedSchoolSlug(slug: string) {
+  return RESERVED_SCHOOL_SLUGS.has(slug.trim().toLowerCase());
+}
+
+export function normalizeHostname(host: string) {
   const forwardedHost = host.split(",")[0]?.trim() || "";
 
   if (forwardedHost.startsWith("[")) {
@@ -47,6 +55,18 @@ function normalizeHostname(host: string) {
 
 function normalizeRootDomain(rootDomain: string) {
   return normalizeHostname(rootDomain).replace(/^\./, "");
+}
+
+export function isSundialMarketingHostname(
+  hostname: string,
+  rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || "sundialk12.com"
+) {
+  const normalizedHostname = normalizeHostname(hostname);
+  const normalizedRootDomain = normalizeRootDomain(rootDomain);
+  return (
+    normalizedHostname === normalizedRootDomain ||
+    normalizedHostname === `www.${normalizedRootDomain}`
+  );
 }
 
 export function getForwardedHost(headers: Pick<Headers, "get">) {
@@ -91,7 +111,7 @@ export function parseSundialHost(
 
   const normalizedRootDomain = normalizeRootDomain(rootDomain);
 
-  if (hostname === normalizedRootDomain || hostname === `www.${normalizedRootDomain}`) {
+  if (isSundialMarketingHostname(hostname, normalizedRootDomain)) {
     return { kind: "marketing", hostname };
   }
 
@@ -104,7 +124,7 @@ export function parseSundialHost(
   if (hostname.endsWith(suffix)) {
     const school = hostname.slice(0, -suffix.length);
 
-    if (school && !RESERVED_SUBDOMAINS.has(school)) {
+    if (school && !school.includes(".") && !isReservedSchoolSlug(school)) {
       return { kind: "school", hostname, school };
     }
   }

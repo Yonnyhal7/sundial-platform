@@ -19,7 +19,7 @@ const logout = read("src/components/admin/AdminLogoutButton.tsx");
 const login = read("src/app/[school]/login/login-form.tsx");
 
 describe("school invitation end-to-end contract", () => {
-  it("generates the exact production URL and rewrites its public route without a session or school slug", () => {
+  it("generates the exact production URL and rewrites its public route without a session or school slug", async () => {
     const url = getCanonicalSchoolSetupInvitationUrl({
       adminUrl: "https://admin.sundialk12.com",
       token: "A".repeat(43),
@@ -27,7 +27,7 @@ describe("school invitation end-to-end contract", () => {
     expect(url).toBe(`https://admin.sundialk12.com/invitations#token=${"A".repeat(43)}`);
     expect(url).not.toContain("school=");
 
-    const response = proxy(
+    const response = await proxy(
       new NextRequest(url.split("#")[0], {
         headers: { host: "admin.sundialk12.com" },
       })

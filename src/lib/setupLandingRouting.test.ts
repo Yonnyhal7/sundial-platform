@@ -19,8 +19,8 @@ const superAdminDashboard = read("src/app/admin/dashboard/page.tsx");
 const superAdminSchools = read("src/app/admin/dashboard/schools/page.tsx");
 
 describe("school setup landing routing", () => {
-  it("rewrites the exact production setup base and its steps without proxy redirects", () => {
-    const baseResponse = proxy(
+  it("rewrites the exact production setup base and its steps without proxy redirects", async () => {
+    const baseResponse = await proxy(
       new NextRequest("https://admin.sundialk12.com/deloro/dashboard/setup", {
         headers: { host: "admin.sundialk12.com" },
       })
@@ -30,7 +30,7 @@ describe("school setup landing routing", () => {
       "https://admin.sundialk12.com/deloro/admin/setup"
     );
 
-    const stepResponse = proxy(
+    const stepResponse = await proxy(
       new NextRequest(
         "https://admin.sundialk12.com/deloro/dashboard/setup/school-profile",
         { headers: { host: "admin.sundialk12.com" } }
