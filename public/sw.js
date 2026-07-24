@@ -1,13 +1,13 @@
-const SHELL_CACHE = "sundial-shell-v2";
-const ASSET_CACHE = "sundial-assets-v3";
-const NAVIGATION_CACHE = "sundial-navigation-v2";
+const SERVICE_WORKER_VERSION = "2026-07-24-pwa-update-v1";
+const SHELL_CACHE = "sundial-shell-v3";
+const ASSET_CACHE = "sundial-assets-v4";
+const NAVIGATION_CACHE = "sundial-navigation-v3";
 
 const PRECACHE_URLS = [
   "/favicon.ico",
   "/icon-192.png",
   "/icon-512.png",
   "/apple-touch-icon.png",
-  "/manifest.webmanifest",
   "/sundial-icon.png",
   "/sundial-logo.png",
 ];
@@ -40,6 +40,24 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
+  if (event.data?.type === "GET_PWA_DIAGNOSTICS") {
+    event.source?.postMessage({
+      type: "PWA_DIAGNOSTICS",
+      serviceWorkerVersion: SERVICE_WORKER_VERSION,
+      cacheVersion: {
+        shell: SHELL_CACHE,
+        assets: ASSET_CACHE,
+        navigation: NAVIGATION_CACHE,
+      },
+    });
+    return;
+  }
+
+  if (event.data?.type === "SKIP_WAITING") {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
+
   if (event.data?.type !== "PURGE_SCHOOL_CACHE") return;
   const schoolSlug = String(event.data.schoolSlug || "").trim().toLowerCase();
   if (!/^[a-z0-9-]+$/.test(schoolSlug)) return;
@@ -180,14 +198,18 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(cacheFirst(request, ASSET_CACHE));
+    return;
+  }
+
   if (
-    url.pathname.startsWith("/_next/static/") ||
     request.destination === "style" ||
     request.destination === "script" ||
     request.destination === "font" ||
     request.destination === "image"
   ) {
-    event.respondWith(cacheFirst(request, ASSET_CACHE));
+    event.respondWith(networkFirstResource(request, ASSET_CACHE));
   }
 });
 
