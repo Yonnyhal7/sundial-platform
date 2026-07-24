@@ -102,6 +102,7 @@ export function BillingIcon(props: IconProps) {
 
 export const ADMIN_TAB_ICONS: Record<AdminPermissionKey, ComponentType<IconProps>> = {
   announcements: MegaphoneIcon,
+  notifications: MegaphoneIcon,
   events: EventIcon,
   athletics: TrophyIcon,
   schedules: ScheduleIcon,

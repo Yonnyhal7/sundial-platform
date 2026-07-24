@@ -1,6 +1,6 @@
-const SHELL_CACHE = "sundial-shell-v1";
-const ASSET_CACHE = "sundial-assets-v2";
-const NAVIGATION_CACHE = "sundial-navigation-v1";
+const SHELL_CACHE = "sundial-shell-v2";
+const ASSET_CACHE = "sundial-assets-v3";
+const NAVIGATION_CACHE = "sundial-navigation-v2";
 
 const PRECACHE_URLS = [
   "/favicon.ico",
@@ -189,4 +189,45 @@ self.addEventListener("fetch", (event) => {
   ) {
     event.respondWith(cacheFirst(request, ASSET_CACHE));
   }
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch { payload = {}; }
+  const title = typeof payload.title === "string" ? payload.title.slice(0, 60) : "Sundial";
+  const body = typeof payload.body === "string" ? payload.body.slice(0, 180) : "A school update is available.";
+  const schoolSlug = typeof payload.schoolSlug === "string" && /^[a-z0-9-]+$/.test(payload.schoolSlug) ? payload.schoolSlug : "";
+  const requestedPath = typeof payload.destinationPath === "string" ? payload.destinationPath : "";
+  const destinationPath = schoolSlug && requestedPath.startsWith(`/${schoolSlug}/`) && !requestedPath.includes("..")
+    ? requestedPath : schoolSlug ? `/${schoolSlug}/app` : "/";
+  event.waitUntil(self.registration.showNotification(title, {
+    body, icon: "/icon-192.png", badge: "/sundial-icon.png",
+    data: { destinationPath, schoolSlug, campaignId: String(payload.campaignId || "") },
+    tag: `sundial-${String(payload.campaignId || Date.now())}`,
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const schoolSlug = String(event.notification.data?.schoolSlug || "");
+  const requestedPath = String(event.notification.data?.destinationPath || "");
+  const destinationPath =
+    /^[a-z0-9-]+$/.test(schoolSlug) &&
+    requestedPath.startsWith(`/${schoolSlug}/`) &&
+    !requestedPath.includes("..") &&
+    !requestedPath.includes("\\")
+      ? requestedPath
+      : schoolSlug
+        ? `/${schoolSlug}/app`
+        : "/";
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (clients) => {
+    for (const client of clients) {
+      const url = new URL(client.url);
+      if (url.origin === self.location.origin && "focus" in client) {
+        await client.navigate(destinationPath);
+        return client.focus();
+      }
+    }
+    return self.clients.openWindow(destinationPath);
+  }));
 });

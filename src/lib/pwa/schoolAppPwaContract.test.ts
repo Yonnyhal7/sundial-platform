@@ -41,7 +41,7 @@ describe("School App PWA integration contract", () => {
   it("uses network-first manifest refresh while preserving App and Kiosk navigation", () => {
     const worker = source("public/sw.js");
 
-    expect(worker).toContain('const ASSET_CACHE = "sundial-assets-v2"');
+    expect(worker).toContain('const ASSET_CACHE = "sundial-assets-v3"');
     expect(worker).toContain('request.destination === "manifest"');
     expect(worker).toContain("networkFirstResource(request, ASSET_CACHE)");
     expect(worker).toContain('if (segments[0] === "app") return ["/app", url.pathname]');

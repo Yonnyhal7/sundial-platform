@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { schoolLocalDateStartToUtc } from "@/lib/timezones";
+import { queueAnnouncementNotification } from "../../notifications/actions";
 
 export default async function NewAnnouncementPage({
   params,
@@ -44,18 +45,32 @@ export default async function NewAnnouncementPage({
       ? schoolLocalDateStartToUtc(publishAt, schoolTimeZone)
       : null;
     const priority = formData.get("priority") === "on";
+    const deliveryMode = String(formData.get("delivery_mode") || "publish_only");
 
-    const { error } = await supabase.from("announcements").insert({
-      school_id: schoolId,
-      title,
-      body,
-      publish_at: publishInstant?.toISOString() || null,
-      priority,
-    });
+    let announcementId: string | null = null;
+    let error = null;
+    if (deliveryMode !== "push_only") {
+      const result = await supabase.from("announcements").insert({
+        school_id: schoolId,
+        title,
+        body,
+        publish_at: publishInstant?.toISOString() || null,
+        priority,
+      }).select("id").single();
+      error = result.error;
+      announcementId = result.data?.id || null;
+    }
 
     if (error) {
       console.error("Create announcement error:", error);
       redirect(`/${school}/admin/announcements/new?error=1`);
+    }
+
+    if (deliveryMode !== "publish_only") {
+      const notification = await queueAnnouncementNotification(school, announcementId, title, body);
+      if (notification.status !== "success") {
+        redirect(`/${school}/admin/announcements/new?error=notification`);
+      }
     }
 
     redirect(`/${school}/admin/announcements`);
@@ -125,6 +140,14 @@ export default async function NewAnnouncementPage({
               <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Mark as priority announcement
               </span>
+            </label>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-200">
+              Delivery
+              <select name="delivery_mode" className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#3a3a3a] dark:bg-[#242424]">
+                <option value="publish_only">Publish announcement only</option>
+                <option value="publish_and_push">Publish and send push notification</option>
+                <option value="push_only">Send push without publishing announcement</option>
+              </select>
             </label>
           </div>
 

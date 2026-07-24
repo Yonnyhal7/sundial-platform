@@ -18,6 +18,7 @@ import { isSchoolAvailableById } from "@/lib/schools";
 
 export const ADMIN_PERMISSION_KEYS = [
   "announcements",
+  "notifications",
   "events",
   "athletics",
   "schedules",

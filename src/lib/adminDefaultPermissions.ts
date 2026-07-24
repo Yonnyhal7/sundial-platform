@@ -14,6 +14,11 @@ export const DEFAULT_ADMIN_PERMISSIONS = [
     description: "Create and manage school announcements",
   },
   {
+    key: "notifications",
+    label: "Notifications",
+    description: "Create and manage school notifications",
+  },
+  {
     key: "events",
     label: "Events",
     description: "Create and manage school events",

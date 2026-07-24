@@ -14,6 +14,7 @@ import {
   setStoredAppearancePreference,
   type AppearancePreference,
 } from "@/lib/themeScope";
+import { createNotificationDeviceIdentity, getNotificationDeviceIdentity, notificationDeviceHeaders } from "@/lib/notifications/deviceClient";
 
 type QuickLink = {
   title: string;
@@ -21,6 +22,7 @@ type QuickLink = {
 };
 
 type AppHeaderProps = {
+  schoolId: string;
   school: string;
   schoolName: string;
   logoUrl: string | null;
@@ -104,6 +106,7 @@ function NotificationSection({
 }
 
 export default function AppHeader({
+  schoolId,
   school,
   schoolName,
   logoUrl,
@@ -117,49 +120,40 @@ export default function AppHeader({
   const [appearance, setAppearance] = useState<AppearancePreference>(
     schoolDefaultAppearance
   );
+  const [inboxNotifications, setInboxNotifications] = useState<Array<{ icon: string; title: string; message: string; time: string; unread: boolean }>>([]);
+  const [reportedUnreadCount, setReportedUnreadCount] = useState(0);
+  const [notificationAudience, setNotificationAudience] = useState("student");
+  const [notificationSetupState, setNotificationSetupState] = useState("");
+  const [notificationDeviceConfigured, setNotificationDeviceConfigured] = useState(false);
   const homeHref = `/${school}/app`;
-  const todayNotifications = [
-    {
-      icon: "!",
-      title: "Principal Announcement",
-      message: "Please check today's school update.",
-      time: "Just now",
-      unread: true,
-    },
-    {
-      icon: "S",
-      title: "Rally Schedule Tomorrow",
-      message: "Tomorrow will follow the rally schedule.",
-      time: "12 min ago",
-      unread: true,
-    },
-    {
-      icon: "A",
-      title: "Football starts in 30 minutes",
-      message: "Varsity football begins soon.",
-      time: "30 min ago",
-      unread: true,
-    },
-  ];
-  const earlierNotifications = [
-    {
-      icon: "R",
-      title: "New resource posted",
-      message: "A new student resource is available.",
-      time: "Yesterday",
-      unread: false,
-    },
-    {
-      icon: "E",
-      title: "Event updated",
-      message: "An upcoming event has been updated.",
-      time: "Yesterday",
-      unread: false,
-    },
-  ];
-  const unreadCount = [...todayNotifications, ...earlierNotifications].filter(
+  const todayNotifications = inboxNotifications.filter((notification) => notification.time !== "Earlier");
+  const earlierNotifications = inboxNotifications.filter((notification) => notification.time === "Earlier");
+  const visibleUnreadCount = [...todayNotifications, ...earlierNotifications].filter(
     (notification) => notification.unread
   ).length;
+  const unreadCount = Math.max(visibleUnreadCount, reportedUnreadCount);
+
+  useEffect(() => {
+    const identity = getNotificationDeviceIdentity(schoolId);
+    const configuredTimeout = window.setTimeout(() => setNotificationDeviceConfigured(Boolean(identity)), 0);
+    if (!identity) return () => window.clearTimeout(configuredTimeout);
+    const controller = new AbortController();
+    fetch(`/api/schools/${encodeURIComponent(school)}/notifications`, { headers: notificationDeviceHeaders(identity), signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        const rows = Array.isArray(payload?.notifications) ? payload.notifications : [];
+        setReportedUnreadCount(Number.isSafeInteger(payload?.unreadCount) ? Math.max(0, payload.unreadCount) : 0);
+        setInboxNotifications(rows.map((row: { read_at?: string | null; created_at?: string; notification_campaigns?: { title?: string; body?: string; category?: string } }) => {
+          const date = new Date(row.created_at || 0);
+          const sameDay = date.toDateString() === new Date().toDateString();
+          return { icon: String(row.notification_campaigns?.category || "N").slice(0, 1).toUpperCase(), title: row.notification_campaigns?.title || "School notification", message: row.notification_campaigns?.body || "", time: sameDay ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Earlier", unread: !row.read_at };
+        }));
+      }).catch(() => undefined);
+    return () => {
+      window.clearTimeout(configuredTimeout);
+      controller.abort();
+    };
+  }, [school, schoolId, notificationsMounted]);
 
   useEffect(() => {
     const preferredAppearance = getPreferredAppearance(
@@ -236,6 +230,46 @@ export default function AppHeader({
     applyTheme(nextTheme, "app", nextAppearance);
   }
 
+  async function enableNotifications() {
+    setNotificationSetupState("working");
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error();
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") throw new Error();
+      const identity = getNotificationDeviceIdentity(schoolId) || createNotificationDeviceIdentity(schoolId);
+      const headers = { ...notificationDeviceHeaders(identity), "content-type": "application/json" };
+      const registered = await fetch(`/api/schools/${encodeURIComponent(school)}/notifications`, {
+        method: "POST", headers,
+        body: JSON.stringify({ action: "register", audience: notificationAudience, platform: navigator.platform || "unknown", browser: navigator.userAgent.slice(0, 40), pwaInstalled: window.matchMedia("(display-mode: standalone)").matches, notificationsSupported: true, permissionStatus: permission }),
+      });
+      if (!registered.ok) throw new Error();
+      const config = await fetch("/api/notifications/config").then((response) => response.json());
+      const bytes = Uint8Array.from(atob(String(config.publicKey).replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(String(config.publicKey).length / 4) * 4, "=")), (character) => character.charCodeAt(0));
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes });
+      const saved = await fetch(`/api/schools/${encodeURIComponent(school)}/notifications`, { method: "POST", headers, body: JSON.stringify({ action: "subscribe", subscription: subscription.toJSON() }) });
+      if (!saved.ok) throw new Error();
+      setNotificationSetupState("enabled");
+      setNotificationDeviceConfigured(true);
+    } catch {
+      setNotificationSetupState("error");
+    }
+  }
+
+  async function markAllNotificationsRead() {
+    const identity = getNotificationDeviceIdentity(schoolId);
+    if (!identity) return;
+    const response = await fetch(`/api/schools/${encodeURIComponent(school)}/notifications`, {
+      method: "POST",
+      headers: { ...notificationDeviceHeaders(identity), "content-type": "application/json" },
+      body: JSON.stringify({ action: "mark_read", deliveryId: "all" }),
+    });
+    if (response.ok) {
+      setReportedUnreadCount(0);
+      setInboxNotifications((current) => current.map((notification) => ({ ...notification, unread: false })));
+    }
+  }
+
   return (
     <>
       <header className="relative flex items-center justify-between gap-[clamp(0.75rem,2.2vw,1rem)]">
@@ -267,7 +301,7 @@ export default function AppHeader({
           className="relative grid h-[clamp(3rem,8vw,4rem)] w-[clamp(3rem,8vw,4rem)] place-items-center rounded-[clamp(0.9rem,2.4vw,1.35rem)] border border-transparent bg-[var(--school-primary)] text-[var(--school-primary-text)] shadow-[0_10px_24px_rgb(15_23_42/0.08)]"
         >
           <BellIcon className="h-[clamp(1.25rem,3vw,1.75rem)] w-[clamp(1.25rem,3vw,1.75rem)]" />
-          <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-[var(--school-accent-visible-primary)] ring-2 ring-[var(--school-primary)]" />
+          {unreadCount > 0 && <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-purple-500 ring-2 ring-[var(--school-primary)]" />}
         </button>
       </header>
 
@@ -452,9 +486,9 @@ export default function AppHeader({
                   </p>
                 </div>
                 {unreadCount > 0 && (
-                  <span className="rounded-full bg-[var(--school-accent-visible-primary)] px-2.5 py-1 text-xs font-black text-[var(--school-secondary-text)]">
-                    {unreadCount} unread
-                  </span>
+                  <button type="button" onClick={markAllNotificationsRead} className="rounded-full bg-[var(--school-accent-visible-primary)] px-2.5 py-1 text-xs font-black text-[var(--school-secondary-text)]">
+                    Mark {unreadCount} read
+                  </button>
                 )}
               </div>
             </div>
@@ -462,7 +496,8 @@ export default function AppHeader({
             <div className="flex-1 p-5">
               {[...todayNotifications, ...earlierNotifications].length === 0 ? (
                 <div className="grid min-h-52 place-items-center rounded-3xl border border-slate-200 bg-white p-6 text-center dark:border-[#3a3a3a] dark:bg-[#242424]">
-                  <p className="text-base font-black">You&apos;re all caught up.</p>
+                  <div><p className="text-base font-black">You&apos;re all caught up.</p>
+                  {!notificationDeviceConfigured && <div className="mt-5"><label className="block text-xs font-black uppercase tracking-wider text-slate-500">This device is for<select value={notificationAudience} onChange={(event) => setNotificationAudience(event.target.value)} className="mt-2 w-full rounded-lg border p-2 dark:bg-black"><option value="student">Student</option><option value="parent">Parent</option><option value="staff">Staff</option></select></label><button type="button" onClick={enableNotifications} disabled={notificationSetupState === "working"} className="mt-3 rounded-lg bg-[var(--school-primary)] px-4 py-2 text-sm font-black text-[var(--school-primary-text)]">{notificationSetupState === "working" ? "Enabling…" : "Enable notifications"}</button>{notificationSetupState === "error" && <p className="mt-2 text-xs text-red-600">Notifications could not be enabled. Check browser permission and try again.</p>}</div>}</div>
                 </div>
               ) : (
                 <div className="space-y-7">

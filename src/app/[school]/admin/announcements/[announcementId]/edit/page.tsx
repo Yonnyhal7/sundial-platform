@@ -4,6 +4,7 @@ import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { formatDateInTimeZone } from "@/lib/localDate";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { schoolLocalDateStartToUtc } from "@/lib/timezones";
+import { queueAnnouncementNotification } from "../../../notifications/actions";
 
 export default async function EditAnnouncementPage({
   params,
@@ -69,6 +70,12 @@ export default async function EditAnnouncementPage({
     if (error) {
       console.error("Update announcement error:", error);
       redirect(`/${school}/admin/announcements/${announcementId}/edit?error=1`);
+    }
+    if (formData.get("send_push") === "on") {
+      const notification = await queueAnnouncementNotification(school, announcementId, title, body);
+      if (notification.status !== "success") {
+        redirect(`/${school}/admin/announcements/${announcementId}/edit?error=notification`);
+      }
     }
 
     redirect(`/${school}/admin/announcements`);
@@ -139,6 +146,10 @@ export default async function EditAnnouncementPage({
               <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                 Mark as priority announcement
               </span>
+            </label>
+            <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#3a3a3a] dark:bg-black/30">
+              <input type="checkbox" name="send_push" className="h-4 w-4" />
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Send this update as a push notification</span>
             </label>
           </div>
 

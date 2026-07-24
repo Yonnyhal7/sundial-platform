@@ -139,6 +139,7 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
       />
       <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] md:max-w-2xl md:px-6">
         <AppHeader
+          schoolId={schoolData.id}
           school={school}
           schoolName={schoolData.name}
           logoUrl={schoolData.logo_url || null}

@@ -143,6 +143,7 @@ export default function AdminSidebar({
   const SchedulesIcon = ADMIN_TAB_ICONS.schedules;
   const EventsIcon = ADMIN_TAB_ICONS.events;
   const AnnouncementsIcon = ADMIN_TAB_ICONS.announcements;
+  const NotificationsIcon = ADMIN_TAB_ICONS.notifications;
   const AthleticsIcon = ADMIN_TAB_ICONS.athletics;
   const ResourcesIcon = ADMIN_TAB_ICONS.resources;
   const UsersIcon = ADMIN_TAB_ICONS.users;
@@ -205,6 +206,15 @@ export default function AdminSidebar({
                 label: "Announcements",
                 href: `${base}/announcements`,
                 icon: <AnnouncementsIcon className={iconClass} />,
+              },
+            ]
+          : []),
+        ...(canAccess("notifications")
+          ? [
+              {
+                label: "Notifications",
+                href: `${base}/notifications`,
+                icon: <NotificationsIcon className={iconClass} />,
               },
             ]
           : []),
