@@ -52,7 +52,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ scho
   }
   const { data } = await ctx.db.from("notification_deliveries").select("id,read_at,opened_at,created_at,notification_campaigns!inner(title,body,category,destination_url,status)").eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).in("delivery_status", ["sent", "inbox_only"]).order("created_at", { ascending: false }).limit(100);
   const { count: unreadCount } = await ctx.db.from("notification_deliveries").select("id", { count: "exact", head: true }).eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).in("delivery_status", ["sent", "inbox_only"]).is("read_at", null);
-  return NextResponse.json({ notifications: data || [], unreadCount: unreadCount || 0 });
+  return NextResponse.json({
+    audience: ctx.device.audience,
+    notifications: data || [],
+    unreadCount: unreadCount || 0,
+  });
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ school: string }> }) {
@@ -69,9 +73,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ sch
       if (ctx.device.user_id && userId && ctx.device.user_id !== userId) {
         return NextResponse.json({ error: "Device belongs to another account" }, { status: 409 });
       }
+      if (ctx.device.audience !== audience) {
+        return NextResponse.json({ error: "Device audience is already configured" }, { status: 409 });
+      }
       const { error } = await ctx.db.from("notification_devices").update({
         user_id: ctx.device.user_id || userId,
-        audience,
         device_label: String(body?.deviceLabel || "").slice(0, 80) || null,
         platform: String(body?.platform || "unknown").slice(0, 40),
         browser: String(body?.browser || "unknown").slice(0, 40),

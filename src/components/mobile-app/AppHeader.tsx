@@ -14,7 +14,12 @@ import {
   setStoredAppearancePreference,
   type AppearancePreference,
 } from "@/lib/themeScope";
+import {
+  isNotificationAudience,
+  type NotificationAudience,
+} from "@/lib/notifications";
 import { createNotificationDeviceIdentity, getNotificationDeviceIdentity, notificationDeviceHeaders } from "@/lib/notifications/deviceClient";
+import NotificationAudienceSummary from "@/components/mobile-app/NotificationAudienceSummary";
 
 type QuickLink = {
   title: string;
@@ -28,6 +33,12 @@ type AppHeaderProps = {
   logoUrl: string | null;
   quickLinks: QuickLink[];
   schoolDefaultAppearance: AppearancePreference;
+};
+
+type NotificationDeviceState = {
+  schoolId: string;
+  status: "checking" | "missing" | "registered";
+  audience: NotificationAudience | null;
 };
 
 function BackArrowIcon() {
@@ -122,9 +133,19 @@ export default function AppHeader({
   );
   const [inboxNotifications, setInboxNotifications] = useState<Array<{ icon: string; title: string; message: string; time: string; unread: boolean }>>([]);
   const [reportedUnreadCount, setReportedUnreadCount] = useState(0);
-  const [notificationAudience, setNotificationAudience] = useState("student");
+  const [notificationAudience, setNotificationAudience] = useState<NotificationAudience>("student");
   const [notificationSetupState, setNotificationSetupState] = useState("");
-  const [notificationDeviceConfigured, setNotificationDeviceConfigured] = useState(false);
+  const [notificationDeviceState, setNotificationDeviceState] = useState<NotificationDeviceState>({
+    schoolId,
+    status: "checking",
+    audience: null,
+  });
+  const currentNotificationDeviceState = notificationDeviceState.schoolId === schoolId
+    ? notificationDeviceState
+    : { schoolId, status: "checking" as const, audience: null };
+  const registeredNotificationAudience = currentNotificationDeviceState.status === "registered"
+    ? currentNotificationDeviceState.audience
+    : null;
   const homeHref = `/${school}/app`;
   const todayNotifications = inboxNotifications.filter((notification) => notification.time !== "Earlier");
   const earlierNotifications = inboxNotifications.filter((notification) => notification.time === "Earlier");
@@ -135,12 +156,26 @@ export default function AppHeader({
 
   useEffect(() => {
     const identity = getNotificationDeviceIdentity(schoolId);
-    const configuredTimeout = window.setTimeout(() => setNotificationDeviceConfigured(Boolean(identity)), 0);
-    if (!identity) return () => window.clearTimeout(configuredTimeout);
+    if (!identity) {
+      const missingTimeout = window.setTimeout(() => {
+        setNotificationDeviceState({ schoolId, status: "missing", audience: null });
+      }, 0);
+      return () => window.clearTimeout(missingTimeout);
+    }
     const controller = new AbortController();
     fetch(`/api/schools/${encodeURIComponent(school)}/notifications`, { headers: notificationDeviceHeaders(identity), signal: controller.signal })
       .then((response) => response.ok ? response.json() : null)
       .then((payload) => {
+        const persistedAudience = String(payload?.audience || "");
+        if (!isNotificationAudience(persistedAudience)) {
+          setNotificationDeviceState({ schoolId, status: "missing", audience: null });
+          return;
+        }
+        setNotificationDeviceState({
+          schoolId,
+          status: "registered",
+          audience: persistedAudience,
+        });
         const rows = Array.isArray(payload?.notifications) ? payload.notifications : [];
         setReportedUnreadCount(Number.isSafeInteger(payload?.unreadCount) ? Math.max(0, payload.unreadCount) : 0);
         setInboxNotifications(rows.map((row: { read_at?: string | null; created_at?: string; notification_campaigns?: { title?: string; body?: string; category?: string } }) => {
@@ -148,9 +183,11 @@ export default function AppHeader({
           const sameDay = date.toDateString() === new Date().toDateString();
           return { icon: String(row.notification_campaigns?.category || "N").slice(0, 1).toUpperCase(), title: row.notification_campaigns?.title || "School notification", message: row.notification_campaigns?.body || "", time: sameDay ? date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Earlier", unread: !row.read_at };
         }));
-      }).catch(() => undefined);
+      }).catch((error: unknown) => {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setNotificationDeviceState({ schoolId, status: "missing", audience: null });
+      });
     return () => {
-      window.clearTimeout(configuredTimeout);
       controller.abort();
     };
   }, [school, schoolId, notificationsMounted]);
@@ -249,8 +286,18 @@ export default function AppHeader({
       const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes });
       const saved = await fetch(`/api/schools/${encodeURIComponent(school)}/notifications`, { method: "POST", headers, body: JSON.stringify({ action: "subscribe", subscription: subscription.toJSON() }) });
       if (!saved.ok) throw new Error();
+      const verified = await fetch(`/api/schools/${encodeURIComponent(school)}/notifications`, {
+        headers: notificationDeviceHeaders(identity),
+      });
+      const verifiedPayload = verified.ok ? await verified.json() : null;
+      const verifiedAudience = String(verifiedPayload?.audience || "");
+      if (!isNotificationAudience(verifiedAudience)) throw new Error();
       setNotificationSetupState("enabled");
-      setNotificationDeviceConfigured(true);
+      setNotificationDeviceState({
+        schoolId,
+        status: "registered",
+        audience: verifiedAudience,
+      });
     } catch {
       setNotificationSetupState("error");
     }
@@ -479,12 +526,7 @@ export default function AppHeader({
               </Link>
               <p className="mt-4 truncate text-center text-xl font-black">{schoolName}</p>
               <div className="mt-6 flex items-end justify-between gap-4 border-t border-[color-mix(in_srgb,var(--school-primary-text)_24%,transparent)] pt-5">
-                <div>
-                  <h2 className="text-2xl font-black">Notifications</h2>
-                  <p className="mt-1 text-sm font-semibold text-[color-mix(in_srgb,var(--school-primary-text)_76%,transparent)]">
-                    School communication
-                  </p>
-                </div>
+                <NotificationAudienceSummary audience={registeredNotificationAudience} />
                 {unreadCount > 0 && (
                   <button type="button" onClick={markAllNotificationsRead} className="rounded-full bg-[var(--school-accent-visible-primary)] px-2.5 py-1 text-xs font-black text-[var(--school-secondary-text)]">
                     Mark {unreadCount} read
@@ -497,7 +539,7 @@ export default function AppHeader({
               {[...todayNotifications, ...earlierNotifications].length === 0 ? (
                 <div className="grid min-h-52 place-items-center rounded-3xl border border-slate-200 bg-white p-6 text-center dark:border-[#3a3a3a] dark:bg-[#242424]">
                   <div><p className="text-base font-black">You&apos;re all caught up.</p>
-                  {!notificationDeviceConfigured && <div className="mt-5"><label className="block text-xs font-black uppercase tracking-wider text-slate-500">This device is for<select value={notificationAudience} onChange={(event) => setNotificationAudience(event.target.value)} className="mt-2 w-full rounded-lg border p-2 dark:bg-black"><option value="student">Student</option><option value="parent">Parent</option><option value="staff">Staff</option></select></label><button type="button" onClick={enableNotifications} disabled={notificationSetupState === "working"} className="mt-3 rounded-lg bg-[var(--school-primary)] px-4 py-2 text-sm font-black text-[var(--school-primary-text)]">{notificationSetupState === "working" ? "Enabling…" : "Enable notifications"}</button>{notificationSetupState === "error" && <p className="mt-2 text-xs text-red-600">Notifications could not be enabled. Check browser permission and try again.</p>}</div>}</div>
+                  {currentNotificationDeviceState.status === "missing" && <div className="mt-5"><label className="block text-xs font-black uppercase tracking-wider text-slate-500">This device is for<select value={notificationAudience} onChange={(event) => { if (isNotificationAudience(event.target.value)) setNotificationAudience(event.target.value); }} className="mt-2 w-full rounded-lg border p-2 dark:bg-black"><option value="student">Student</option><option value="parent">Parent</option><option value="staff">Staff</option></select></label><button type="button" onClick={enableNotifications} disabled={notificationSetupState === "working"} className="mt-3 rounded-lg bg-[var(--school-primary)] px-4 py-2 text-sm font-black text-[var(--school-primary-text)]">{notificationSetupState === "working" ? "Enabling…" : "Enable notifications"}</button>{notificationSetupState === "error" && <p className="mt-2 text-xs text-red-600">Notifications could not be enabled. Check browser permission and try again.</p>}</div>}</div>
                 </div>
               ) : (
                 <div className="space-y-7">

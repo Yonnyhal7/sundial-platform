@@ -9,6 +9,11 @@ export const NOTIFICATION_CATEGORIES = [
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 export const NOTIFICATION_AUDIENCES = ["student", "parent", "staff"] as const;
 export type NotificationAudience = (typeof NOTIFICATION_AUDIENCES)[number];
+export const NOTIFICATION_AUDIENCE_LABELS: Record<NotificationAudience, string> = {
+  student: "Student",
+  parent: "Parent",
+  staff: "Staff",
+};
 
 export const NOTIFICATION_CATEGORY_LABELS: Record<NotificationCategory, string> = {
   emergency: "Emergency alert", closure_delay: "Closure or delay",
@@ -53,6 +58,10 @@ export function isNotificationCategory(value: string): value is NotificationCate
 
 export function isNotificationAudience(value: string): value is NotificationAudience {
   return NOTIFICATION_AUDIENCES.includes(value as NotificationAudience);
+}
+
+export function getNotificationAudienceLabel(value: string) {
+  return isNotificationAudience(value) ? NOTIFICATION_AUDIENCE_LABELS[value] : null;
 }
 
 export function resolveNotificationAudiences(values: string[], everyone = false) {

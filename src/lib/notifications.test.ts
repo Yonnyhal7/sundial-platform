@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { categoryAvailableForAudience, getRecommendedPreferences, resolveNotificationAudiences, sanitizeNotificationDestination, sanitizeNotificationText, schoolLocalDateTimeToUtc } from "./notifications";
+import {
+  categoryAvailableForAudience,
+  getNotificationAudienceLabel,
+  getRecommendedPreferences,
+  resolveNotificationAudiences,
+  sanitizeNotificationDestination,
+  sanitizeNotificationText,
+  schoolLocalDateTimeToUtc,
+} from "./notifications";
 
 describe("notification contracts", () => {
   it("treats everyone as the three communication audiences", () => {
@@ -10,6 +18,13 @@ describe("notification contracts", () => {
     expect(getRecommendedPreferences("student").find((row) => row.category === "first_period_reminder")?.enabled).toBe(true);
     expect(getRecommendedPreferences("parent").some((row) => row.category === "first_period_reminder")).toBe(false);
     expect(categoryAvailableForAudience("staff_duty", "student")).toBe(false);
+  });
+  it("maps persisted device audiences to polished display labels", () => {
+    expect(getNotificationAudienceLabel("student")).toBe("Student");
+    expect(getNotificationAudienceLabel("staff")).toBe("Staff");
+    expect(getNotificationAudienceLabel("parent")).toBe("Parent");
+    expect(getNotificationAudienceLabel("SchoolAdmin")).toBeNull();
+    expect(getNotificationAudienceLabel("unknown")).toBeNull();
   });
   it("sanitizes text and only accepts tenant-local destinations", () => {
     expect(sanitizeNotificationText("  hi\u0000   there ", 60)).toBe("hi there");

@@ -6,6 +6,7 @@ const worker = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf
 const api = readFileSync(new URL("../app/api/schools/[school]/notifications/route.ts", import.meta.url), "utf8");
 const service = readFileSync(new URL("./notifications/service.server.ts", import.meta.url), "utf8");
 const header = readFileSync(new URL("../components/mobile-app/AppHeader.tsx", import.meta.url), "utf8");
+const audienceSummary = readFileSync(new URL("../components/mobile-app/NotificationAudienceSummary.tsx", import.meta.url), "utf8");
 const newAnnouncement = readFileSync(new URL("../app/[school]/admin/announcements/new/page.tsx", import.meta.url), "utf8");
 const editAnnouncement = readFileSync(new URL("../app/[school]/admin/announcements/[announcementId]/edit/page.tsx", import.meta.url), "utf8");
 const cron = readFileSync(new URL("../app/api/cron/notifications/route.ts", import.meta.url), "utf8");
@@ -17,7 +18,7 @@ describe("notification foundation security", () => {
     }
     expect(migration).toContain("foreign key(campaign_id,school_id)");
     expect(migration).toContain("foreign key(device_id,school_id)");
-    expect(migration).toContain("foreign key(campaign_id,school_id)\n    references public.notification_campaigns(id,school_id)");
+    expect(migration).toMatch(/foreign key\(campaign_id,school_id\)\r?\n    references public\.notification_campaigns\(id,school_id\)/);
     expect(migration).toContain("enforce_notification_campaign_tenant_relationships");
     expect(migration).toContain("enforce_notification_device_tenant_relationships");
     expect(migration).toContain("notification_user_can_access_school(new.user_id,new.school_id)");
@@ -63,11 +64,40 @@ describe("notification foundation security", () => {
   it("keeps device inbox state exact and tenant-scoped", () => {
     expect(api).toContain('{ count: "exact", head: true }');
     expect(api).toContain("unreadCount: unreadCount || 0");
+    expect(api).toContain("audience: ctx.device.audience");
     expect(api).toContain('.eq("school_id", ctx.school.id).eq("device_id", ctx.device.id)');
     expect(api).toContain('deliveryId === "all"');
     expect(header).toContain("reportedUnreadCount");
     expect(header).toContain("setReportedUnreadCount(0)");
     expect(header).toContain("bg-purple-500");
+  });
+  it("reads a device audience from its verified tenant registration and keeps it read-only", () => {
+    const getHandler = api.slice(
+      api.indexOf("export async function GET"),
+      api.indexOf("export async function POST")
+    );
+    const existingDeviceUpdate = api.slice(
+      api.indexOf('ctx.db.from("notification_devices").update({'),
+      api.indexOf('}).eq("id", ctx.device.id)', api.indexOf('ctx.db.from("notification_devices").update({'))
+    );
+
+    expect(api).toContain('.eq("school_id", school.id).eq("installation_id", installationId)');
+    expect(api).toContain("timingSafeEqual(actual, expected)");
+    expect(getHandler).not.toContain("authenticatedProfileForSchool");
+    expect(getHandler).not.toContain("Notification.permission");
+    expect(api).toContain("ctx.device.audience !== audience");
+    expect(api).toContain('error: "Device audience is already configured"');
+    expect(existingDeviceUpdate).not.toContain("audience");
+    expect(header).toContain('const persistedAudience = String(payload?.audience || "")');
+    expect(header).toContain("isNotificationAudience(persistedAudience)");
+    expect(header).toContain('status: "registered"');
+    expect(header).toContain('currentNotificationDeviceState.status === "missing"');
+    expect(header).not.toContain("SchoolAdmin");
+    expect(header).not.toContain("Editor");
+    expect(audienceSummary).toContain("Notifications, ${label} device");
+    expect(audienceSummary).not.toContain("<select");
+    expect(audienceSummary).not.toContain("<button");
+    expect(audienceSummary).not.toContain("permission");
   });
   it("keeps announcement delivery modes and cron authorization explicit", () => {
     expect(newAnnouncement).toContain('value="publish_only"');
