@@ -27,6 +27,7 @@ export function isValidSchoolOfflineSnapshot(
   if (value.schemaVersion !== SCHOOL_OFFLINE_SCHEMA_VERSION) return false;
   if (!isNonEmptyString(value.schoolId)) return false;
   if (!isNonEmptyString(value.schoolSlug)) return false;
+  if (!Number.isSafeInteger(value.timezoneVersion) || Number(value.timezoneVersion) < 1) return false;
   if (!isNonEmptyString(value.syncedAt)) return false;
   if (!isRecord(value.data)) return false;
   const data = value.data;

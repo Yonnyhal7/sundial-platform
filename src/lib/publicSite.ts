@@ -48,8 +48,11 @@ export async function loadPublicHomepage(slug: string) {
     schedule = scheduleData;
     periods = (periodData || []).filter((p) => p.start_time && p.end_time) as SchedulePeriod[];
   }
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: school.timezone || undefined }));
-  const scheduleState = getTodayScheduleState(periods, now, { needsTimes: schedule?.setup_status === "needs_times" });
+  const now = new Date();
+  const scheduleState = getTodayScheduleState(periods, now, {
+    needsTimes: schedule?.setup_status === "needs_times",
+    timeZone: school.timezone,
+  });
   const sports = new Map((sportsResult.data || []).map((item) => [item.id, item]));
   const teams = new Map((teamsResult.data || []).map((item) => [item.id, item]));
 

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
-import { formatLocalDate } from "@/lib/localDate";
+import { formatDateInTimeZone } from "@/lib/localDate";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { schoolLocalDateStartToUtc } from "@/lib/timezones";
 
 export default async function EditAnnouncementPage({
   params,
@@ -19,10 +20,11 @@ export default async function EditAnnouncementPage({
     .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
-    .single<{ id: string; name: string }>();
+    .single<{ id: string; name: string; timezone: string | null }>();
 
   if (!schoolData) notFound();
   const schoolId = schoolData.id;
+  const schoolTimeZone = schoolData.timezone || "America/Los_Angeles";
   await requireAdminSectionAccess(schoolId, "announcements", school);
 
   const { data: announcement } = await supabase
@@ -48,6 +50,9 @@ export default async function EditAnnouncementPage({
     const title = String(formData.get("title") || "");
     const body = String(formData.get("body") || "");
     const publishDate = String(formData.get("publish_date") || "");
+    const publishInstant = publishDate
+      ? schoolLocalDateStartToUtc(publishDate, schoolTimeZone)
+      : null;
     const priority = formData.get("priority") === "on";
 
     const { error } = await supabase
@@ -55,7 +60,7 @@ export default async function EditAnnouncementPage({
       .update({
         title,
         body,
-        publish_at: publishDate || null,
+        publish_at: publishInstant?.toISOString() || null,
         priority,
       })
       .eq("id", announcementId)
@@ -117,7 +122,7 @@ export default async function EditAnnouncementPage({
                 type="date"
                 defaultValue={
                   announcement.publish_at
-                    ? formatLocalDate(new Date(announcement.publish_at))
+                    ? formatDateInTimeZone(new Date(announcement.publish_at), schoolData.timezone)
                     : ""
                 }
                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-950 outline-none transition focus:border-[var(--school-primary)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--school-primary)_20%,transparent)] dark:border-[#3a3a3a] dark:bg-[#242424] dark:text-white"

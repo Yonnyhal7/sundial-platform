@@ -19,6 +19,7 @@ type InvitationDatabaseRow = {
   email: string;
   school_id: string;
   role: string | null;
+  requested_role?: string | null;
   status: string;
   delivery_status: string;
   expires_at: string;
@@ -81,7 +82,7 @@ function viewFor(row: InvitationDatabaseRow): SchoolSetupInvitationView {
 }
 
 function invitationSelect() {
-  return "id, email, school_id, role, status, delivery_status, expires_at, used_at, acceptance_locked_at, acceptance_session_expires_at, schools!inner(id, name, subdomain, archived_at)";
+  return "id, email, school_id, role, requested_role, status, delivery_status, expires_at, used_at, acceptance_locked_at, acceptance_session_expires_at, schools!inner(id, name, subdomain, archived_at)";
 }
 
 async function findInvitationByRawToken(rawToken: string) {
@@ -237,10 +238,25 @@ export async function acceptSchoolSetupInvitation({
       fullName,
       firstName,
       lastName,
+      role: row.requested_role === "Editor" ? "Editor" : "SchoolAdmin",
     })
   );
   if (profileError) {
     logInvitationAcceptanceDatabaseFailure("profile_insert", profileError);
+    await supabase.auth.admin.deleteUser(authData.user.id);
+    await releaseClaim();
+    return { ok: false as const, reason: "account_error" as const };
+  }
+
+  const { error: membershipError } = await supabase.from("school_memberships").insert({
+    user_id: authData.user.id,
+    school_id: school.id,
+    role: row.requested_role === "Editor" ? "Editor" : "SchoolAdmin",
+    is_active: true,
+  });
+  if (membershipError) {
+    logInvitationAcceptanceDatabaseFailure("membership_insert", membershipError);
+    await supabase.from("users").delete().eq("id", authData.user.id);
     await supabase.auth.admin.deleteUser(authData.user.id);
     await releaseClaim();
     return { ok: false as const, reason: "account_error" as const };
@@ -264,6 +280,7 @@ export async function acceptSchoolSetupInvitation({
     .maybeSingle<{ id: string }>();
 
   if (!completed) {
+    await supabase.from("school_memberships").delete().eq("user_id", authData.user.id);
     await supabase.from("users").delete().eq("id", authData.user.id);
     await supabase.auth.admin.deleteUser(authData.user.id);
     await releaseClaim();

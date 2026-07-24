@@ -1,6 +1,6 @@
 import "server-only";
 
-type InvitationAcceptanceDatabaseStage = "profile_insert";
+type InvitationAcceptanceDatabaseStage = "profile_insert" | "membership_insert";
 
 type DatabaseErrorLike = {
   code?: unknown;

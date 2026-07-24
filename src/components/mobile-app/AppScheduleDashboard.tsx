@@ -17,6 +17,7 @@ type AppScheduleDashboardProps = {
   todayScheduleLabel: string;
   noSchool?: boolean;
   scheduleNeedsTimes?: boolean;
+  timeZone: string;
 };
 
 export default function AppScheduleDashboard({
@@ -25,6 +26,7 @@ export default function AppScheduleDashboard({
   todayScheduleLabel,
   noSchool = false,
   scheduleNeedsTimes = false,
+  timeZone,
 }: AppScheduleDashboardProps) {
   const [now, setNow] = useState<Date | null>(null);
 
@@ -49,11 +51,11 @@ export default function AppScheduleDashboard({
 
   const scheduleState = useMemo(() => {
     if (!now || noSchool) {
-      return getTodayScheduleState([], new Date(), { needsTimes: scheduleNeedsTimes });
+      return getTodayScheduleState([], new Date(), { needsTimes: scheduleNeedsTimes, timeZone });
     }
 
-    return getTodayScheduleState(sortedPeriods, now, { needsTimes: scheduleNeedsTimes });
-  }, [noSchool, now, scheduleNeedsTimes, sortedPeriods]);
+    return getTodayScheduleState(sortedPeriods, now, { needsTimes: scheduleNeedsTimes, timeZone });
+  }, [noSchool, now, scheduleNeedsTimes, sortedPeriods, timeZone]);
 
   const countdown = scheduleState.countdownTarget && now
     ? formatCountdownDuration(scheduleState.countdownTarget.getTime() - now.getTime())

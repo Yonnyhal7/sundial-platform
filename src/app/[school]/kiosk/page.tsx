@@ -278,6 +278,7 @@ export default async function KioskPage({
           }
           isNoSchool={isNoSchool}
           noSchoolLabel={calendarDay?.label || "Enjoy your day"}
+          timeZone={schoolData.timezone || "America/Los_Angeles"}
         />
       </OfflineKioskRuntime>
     </>

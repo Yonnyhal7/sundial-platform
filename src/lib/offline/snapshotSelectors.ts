@@ -7,6 +7,7 @@ import {
   formatLocalDate,
   getLocalTodayISO,
   getMonthKey,
+  formatDateInTimeZone,
 } from "@/lib/localDate";
 import type {
   OfflineCalendarDay,
@@ -25,8 +26,8 @@ export function addDays(date: Date, days: number) {
   return next;
 }
 
-export function getTodayDateKey() {
-  return getLocalTodayISO();
+export function getTodayDateKey(timeZone?: string | null) {
+  return timeZone ? formatDateInTimeZone(new Date(), timeZone) : getLocalTodayISO();
 }
 
 export function getScheduleById(snapshot: SchoolOfflineSnapshot) {
@@ -52,7 +53,7 @@ export function getPeriodsByScheduleId(snapshot: SchoolOfflineSnapshot) {
 }
 
 export function getTodaySchedule(snapshot: SchoolOfflineSnapshot) {
-  const today = getTodayDateKey();
+  const today = getTodayDateKey(snapshot.data.school.timezone);
   const day = snapshot.data.calendarDays.find((calendarDay) => calendarDay.date === today);
   const scheduleById = getScheduleById(snapshot);
   const schedule = day?.schedule_id ? scheduleById.get(day.schedule_id) || null : null;
@@ -95,16 +96,15 @@ export function getMonthQuery(date: Date) {
   return getMonthKey(date);
 }
 
-export function getBaseMonth(month?: string | null) {
+export function getBaseMonth(month?: string | null, todayKey?: string) {
   if (month && /^\d{4}-\d{2}$/.test(month)) {
     const [year, monthNumber] = month.split("-").map(Number);
 
     return new Date(year, monthNumber - 1, 1);
   }
 
-  const today = new Date();
-
-  return new Date(today.getFullYear(), today.getMonth(), 1);
+  const [year, monthNumber] = (todayKey || getLocalTodayISO()).split("-").map(Number);
+  return new Date(year, monthNumber - 1, 1);
 }
 
 function mapCalendarScheduleDay({
@@ -149,15 +149,14 @@ export function getCalendarScheduleDays(
   snapshot: SchoolOfflineSnapshot,
   month?: string | null
 ) {
-  const baseMonth = getBaseMonth(month);
+  const today = getTodayDateKey(snapshot.data.school.timezone);
+  const baseMonth = getBaseMonth(month, today);
   const monthDates = getMonthGridDates(baseMonth);
   const calendarDayByDate = new Map(
     snapshot.data.calendarDays.map((calendarDay) => [calendarDay.date, calendarDay])
   );
   const scheduleById = getScheduleById(snapshot);
   const periodsByScheduleId = getPeriodsByScheduleId(snapshot);
-  const today = getTodayDateKey();
-
   return {
     baseMonth,
     today,

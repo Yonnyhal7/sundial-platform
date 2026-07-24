@@ -43,7 +43,7 @@ function getStoredCalendarDatePrefix(value: string | null) {
 }
 
 function OfflineKioskDisplay({ snapshot }: { snapshot: SchoolOfflineSnapshot }) {
-  const today = getTodayDateKey();
+  const today = getTodayDateKey(snapshot.data.school.timezone);
   const calendarDay = snapshot.data.calendarDays.find((day) => day.date === today);
   const scheduleById = getScheduleById(snapshot);
   const periodsByScheduleId = getPeriodsByScheduleId(snapshot);
@@ -124,6 +124,7 @@ function OfflineKioskDisplay({ snapshot }: { snapshot: SchoolOfflineSnapshot }) 
       }
       isNoSchool={calendarDay?.is_school_day === false}
       noSchoolLabel={calendarDay?.label || "Enjoy your day"}
+      timeZone={snapshot.data.school.timezone || "America/Los_Angeles"}
     />
   );
 }
@@ -143,7 +144,7 @@ function FirstLoadKioskOfflineState() {
 function OfflineKioskBody({ children }: { children: ReactNode }) {
   const { snapshot, syncState, isOnline, lastError } = useOfflineSchoolData();
   const shouldRenderSnapshot =
-    Boolean(snapshot) && (!isOnline || syncState === "cached" || syncState === "error" || lastError);
+    Boolean(snapshot) && (!isOnline || syncState === "error" || lastError);
 
   return (
     <>

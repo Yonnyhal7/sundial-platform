@@ -10,6 +10,7 @@ import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatDateInTimeZone } from "@/lib/localDate";
 import type { SchedulePeriod } from "@/lib/scheduleTime";
+import { getTimeZoneClockParts } from "@/lib/timezones";
 
 type CalendarDay = {
   id: string;
@@ -20,8 +21,8 @@ type CalendarDay = {
   schedule_id: string | null;
 };
 
-function getGreeting() {
-  const hour = new Date().getHours();
+function getGreeting(timeZone: string) {
+  const hour = getTimeZoneClockParts(new Date(), timeZone).hour;
 
   if (hour < 12) return "Good morning";
   if (hour < 17) return "Good afternoon";
@@ -107,7 +108,7 @@ export default async function MobileAppHome({
     month: "long",
     day: "numeric",
   });
-  const greeting = getGreeting();
+  const greeting = getGreeting(schoolData.timezone || "America/Los_Angeles");
   navTiming.log();
 
   return (
@@ -131,6 +132,7 @@ export default async function MobileAppHome({
         todayScheduleLabel={todayScheduleLabel}
         noSchool={calendarDay?.is_school_day === false}
         scheduleNeedsTimes={scheduleNeedsTimes}
+        timeZone={schoolData.timezone || "America/Los_Angeles"}
       />
     </main>
   );

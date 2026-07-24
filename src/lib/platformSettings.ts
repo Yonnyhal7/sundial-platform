@@ -1,3 +1,5 @@
+import { isSupportedTimeZone } from "@/lib/timezones";
+
 export const PLATFORM_FEATURE_KEYS = ["public_website","pwa","kiosk","ai_calendar_import","guided_calendar_setup","announcements","events","athletics","resources","offline_mode"] as const;
 export type PlatformFeatureKey = typeof PLATFORM_FEATURE_KEYS[number];
 export const FEATURE_LABELS: Record<PlatformFeatureKey,string> = {public_website:"Public website",pwa:"PWA",kiosk:"Kiosk",ai_calendar_import:"AI calendar import",guided_calendar_setup:"Guided calendar setup",announcements:"Announcements",events:"Events",athletics:"Athletics",resources:"Resources",offline_mode:"Offline mode"};
@@ -15,4 +17,4 @@ export function validateGeneralSettings(input: Record<string, unknown>) {
   return null;
 }
 
-export function isValidTimeZone(value:string) { try { new Intl.DateTimeFormat("en-US",{timeZone:value}).format(); return value.length<=100; } catch { return false; } }
+export function isValidTimeZone(value:string) { return isSupportedTimeZone(value); }

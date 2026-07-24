@@ -32,7 +32,7 @@ function OfflineStudentAppBody({
 }) {
   const { snapshot, syncState, isOnline, lastError } = useOfflineSchoolData();
   const shouldRenderSnapshot =
-    Boolean(snapshot) && (!isOnline || syncState === "cached" || syncState === "error");
+    Boolean(snapshot) && (!isOnline || syncState === "error");
 
   return (
     <>

@@ -48,11 +48,10 @@ export function timeToDate(time: string, baseDate: Date) {
 }
 
 export function formatPeriodTime(time: string) {
-  return new Date(`2000-01-01T${time}`).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  const [rawHour, rawMinute] = time.split(":").map(Number);
+  const suffix = rawHour >= 12 ? "PM" : "AM";
+  const hour = rawHour % 12 || 12;
+  return `${hour}:${String(rawMinute).padStart(2, "0")} ${suffix}`;
 }
 
 export function formatCountdownDuration(milliseconds: number) {
@@ -74,7 +73,7 @@ export function formatCountdownDuration(milliseconds: number) {
 export function getTodayScheduleState(
   periods: SchedulePeriod[],
   now: Date,
-  options: { needsTimes?: boolean } = {}
+  options: { needsTimes?: boolean; timeZone?: string | null } = {}
 ): TodayScheduleState {
   if (options.needsTimes) {
     return {
@@ -102,32 +101,43 @@ export function getTodayScheduleState(
     };
   }
 
+  const clock = options.timeZone
+    ? getTimeZoneClockParts(now, options.timeZone)
+    : { hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds() };
+  const currentSeconds = clock.hour * 3600 + clock.minute * 60 + clock.second;
+  const timeSeconds = (time: string) => {
+    const [hour, minute, second = 0] = time.split(":").map(Number);
+    return hour * 3600 + minute * 60 + second;
+  };
+  const targetFromSeconds = (targetSeconds: number) =>
+    new Date(now.getTime() + Math.max(0, targetSeconds - currentSeconds) * 1000);
+
   const completedPeriodIds = sortedPeriods
-    .filter((period) => now >= timeToDate(period.end_time, now))
+    .filter((period) => currentSeconds >= timeSeconds(period.end_time))
     .map((period) => period.id);
 
   for (let i = 0; i < sortedPeriods.length; i++) {
     const period = sortedPeriods[i];
-    const start = timeToDate(period.start_time, now);
-    const end = timeToDate(period.end_time, now);
+    const start = timeSeconds(period.start_time);
+    const end = timeSeconds(period.end_time);
     const nextPeriod = sortedPeriods[i + 1] ?? null;
 
-    if (now >= start && now < end) {
-      const total = end.getTime() - start.getTime();
-      const elapsed = now.getTime() - start.getTime();
+    if (currentSeconds >= start && currentSeconds < end) {
+      const total = end - start;
+      const elapsed = currentSeconds - start;
 
       return {
         currentPeriod: period,
         nextPeriod,
         status: "in_period",
         countdownLabel: "Time Remaining",
-        countdownTarget: end,
+        countdownTarget: targetFromSeconds(end),
         completedPeriodIds,
         progressPercent: total > 0 ? (elapsed / total) * 100 : 0,
       };
     }
 
-    if (now < start) {
+    if (currentSeconds < start) {
       const status = i === 0 ? "before_school" : "passing";
 
       return {
@@ -135,7 +145,7 @@ export function getTodayScheduleState(
         nextPeriod: period,
         status,
         countdownLabel: "Starts In",
-        countdownTarget: start,
+        countdownTarget: targetFromSeconds(start),
         completedPeriodIds,
         progressPercent: 0,
       };
@@ -152,3 +162,4 @@ export function getTodayScheduleState(
     progressPercent: 100,
   };
 }
+import { getTimeZoneClockParts } from "@/lib/timezones";

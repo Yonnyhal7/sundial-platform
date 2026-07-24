@@ -9,7 +9,7 @@ import {
   type CalendarDayScheduleSummary,
 } from "@/lib/calendarDaySchedule";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
-import { formatLocalDate, getMonthKey } from "@/lib/localDate";
+import { formatDateInTimeZone, formatLocalDate, getMonthKey } from "@/lib/localDate";
 import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -55,16 +55,15 @@ function getMonthQuery(date: Date) {
   return getMonthKey(date);
 }
 
-function getBaseMonth(month?: string) {
+function getBaseMonth(month: string | undefined, today: string) {
   if (month && /^\d{4}-\d{2}$/.test(month)) {
     const [year, monthNumber] = month.split("-").map(Number);
 
     return new Date(year, monthNumber - 1, 1);
   }
 
-  const today = new Date();
-
-  return new Date(today.getFullYear(), today.getMonth(), 1);
+  const [year, monthNumber] = today.split("-").map(Number);
+  return new Date(year, monthNumber - 1, 1);
 }
 
 export default async function MobileSchedulePage({
@@ -82,8 +81,8 @@ export default async function MobileSchedulePage({
     navTiming.query("school", () => requireMobileAppSchool(school)),
   ]);
 
-  const todayDate = new Date();
-  const baseMonth = getBaseMonth(month);
+  const today = formatDateInTimeZone(new Date(), schoolData.timezone);
+  const baseMonth = getBaseMonth(month, today);
   const displayedMonths = [-1, 0, 1].map(
     (offset) =>
       new Date(baseMonth.getFullYear(), baseMonth.getMonth() + offset, 1)
@@ -170,7 +169,6 @@ export default async function MobileSchedulePage({
   const calendarDayByDate = new Map(
     (calendarDays || []).map((calendarDay) => [calendarDay.date, calendarDay])
   );
-  const today = formatLocalDate(todayDate);
   const months: CalendarScheduleMonth[] = displayedMonths.map(
     (displayedMonth) => {
       const monthKey = getMonthQuery(displayedMonth);
@@ -241,6 +239,7 @@ export default async function MobileSchedulePage({
         currentMonthKey={getMonthQuery(baseMonth)}
         today={today}
         months={months}
+        timeZone={schoolData.timezone || "America/Los_Angeles"}
       />
     </main>
   );

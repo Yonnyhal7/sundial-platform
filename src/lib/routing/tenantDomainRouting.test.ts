@@ -83,6 +83,14 @@ describe("tenant domain routing", () => {
     expect(mockedAvailability).not.toHaveBeenCalled();
   });
 
+  it("serves the production user directory through the internal admin route", async () => {
+    const response = await proxy(request("admin.sundialk12.com", "/dashboard/users"));
+    expect(response.headers.get("x-middleware-rewrite")).toBe(
+      "https://admin.sundialk12.com/admin/dashboard/users"
+    );
+    expect(mockedAvailability).not.toHaveBeenCalled();
+  });
+
   it("exposes recovery routes on the production admin host", async () => {
     const forgot = await proxy(request("admin.sundialk12.com", "/forgot-password"));
     expect(forgot.headers.get("x-middleware-rewrite")).toBe("https://admin.sundialk12.com/admin/forgot-password");

@@ -13,6 +13,7 @@ import {
   sortPeriodsByScheduleOrder,
   type SchedulePeriod,
 } from "@/lib/scheduleTime";
+import { getTimeZoneClockParts } from "@/lib/timezones";
 
 type Period = {
   id: string;
@@ -61,6 +62,7 @@ type KioskDisplayProps = {
   announcement?: Announcement | null;
   isNoSchool?: boolean;
   noSchoolLabel?: string;
+  timeZone: string;
 };
 
 type KioskStyle = CSSProperties & {
@@ -115,29 +117,31 @@ function getSportIconBadgeStyle(color: string | null): CSSProperties {
   };
 }
 
-function formatClock(date: Date) {
-  return date.toLocaleTimeString("en-US", {
+function formatClock(date: Date, timeZone: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
-  });
+  }).format(date);
 }
 
-function formatSeconds(date: Date) {
-  return `:${date.getSeconds().toString().padStart(2, "0")}`;
+function formatSeconds(date: Date, timeZone: string) {
+  return `:${getTimeZoneClockParts(date, timeZone).second.toString().padStart(2, "0")}`;
 }
 
-function formatDateLabel(date: Date) {
-  return date.toLocaleDateString("en-US", {
+function formatDateLabel(date: Date, timeZone: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
-  });
+  }).format(date);
 }
 
-function getAmPm(date: Date) {
-  return date.getHours() >= 12 ? "PM" : "AM";
+function getAmPm(date: Date, timeZone: string) {
+  return getTimeZoneClockParts(date, timeZone).hour >= 12 ? "PM" : "AM";
 }
 
 function CalendarStarIcon({ className = "" }: { className?: string }) {
@@ -203,6 +207,7 @@ export default function KioskDisplay({
   announcement,
   isNoSchool = false,
   noSchoolLabel = "Enjoy your day",
+  timeZone,
 }: KioskDisplayProps) {
   const router = useRouter();
   const [now, setNow] = useState<Date | null>(null);
@@ -275,6 +280,7 @@ export default function KioskDisplay({
 
     const state = getTodayScheduleState(schedulePeriods, now, {
       needsTimes: scheduleNeedsTimes,
+      timeZone,
     });
     const byId = new Map(sortedPeriods.map((period) => [period.id, period]));
 
@@ -289,7 +295,7 @@ export default function KioskDisplay({
       progressPercent: state.progressPercent,
       isDayComplete: state.status === "after_school",
     };
-  }, [now, scheduleNeedsTimes, schedulePeriods, sortedPeriods]);
+  }, [now, scheduleNeedsTimes, schedulePeriods, sortedPeriods, timeZone]);
 
   if (!now) {
     return null;
@@ -364,20 +370,20 @@ export default function KioskDisplay({
               </h1>
 
               <p className="ml-[2vw] mb-[0.6dvh] whitespace-nowrap text-[clamp(0.9rem,1.15vw,1.35rem)] text-slate-500">
-                {formatDateLabel(now)}
+                {formatDateLabel(now, timeZone)}
               </p>
             </div>
             </div>
           <div className="flex shrink-0 items-start gap-[0.45vw] text-right">
             <div className="text-[clamp(2.8rem,4.8vw,5rem)] font-extrabold leading-none tracking-tight">
-              {formatClock(now).replace(" AM", "").replace(" PM", "")}
+              {formatClock(now, timeZone).replace(" AM", "").replace(" PM", "")}
             </div>
             <div className="pt-[0.35dvh]">
               <div className="text-[clamp(1.25rem,1.9vw,2.25rem)] font-bold leading-none">
-                {getAmPm(now)}
+                {getAmPm(now, timeZone)}
               </div>
               <div className="mt-[0.4dvh] text-[clamp(1rem,1.45vw,1.75rem)] font-semibold leading-none text-slate-500">
-                {formatSeconds(now)}
+                {formatSeconds(now, timeZone)}
               </div>
             </div>
           </div>

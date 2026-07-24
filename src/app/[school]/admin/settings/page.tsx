@@ -12,6 +12,7 @@ import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
 import ColorField from "./color-field";
 import { saveSchoolSettingsAction } from "./actions";
 import LogoUploadField from "./logo-upload-field";
+import TimezoneSettingsForm from "./TimezoneSettingsForm";
 
 type SettingsPageProps = {
   params: Promise<{ school: string }>;
@@ -36,6 +37,8 @@ type SchoolSettings = {
   address: string | null;
   phone_number: string | null;
   school_website: string | null;
+  timezone: string;
+  timezone_version: number;
 };
 
 function Field({
@@ -152,7 +155,9 @@ export default async function SchoolSettingsPage({
       athletics_office,
       address,
       phone_number,
-      school_website
+      school_website,
+      timezone,
+      timezone_version
     `
     )
     .eq("id", setupSchool.id)
@@ -256,6 +261,15 @@ export default async function SchoolSettingsPage({
             </button>
           </div>
         </form>
+
+        <div className="mt-6">
+          <TimezoneSettingsForm
+            school={school}
+            schoolName={schoolData.name}
+            timezone={schoolData.timezone}
+            version={schoolData.timezone_version}
+          />
+        </div>
       </div>
     </main>
   );

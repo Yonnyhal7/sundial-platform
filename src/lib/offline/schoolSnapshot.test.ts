@@ -19,6 +19,7 @@ function createSnapshot(overrides: Partial<SchoolOfflineSnapshot> = {}) {
     schemaVersion: SCHOOL_OFFLINE_SCHEMA_VERSION,
     schoolId: "school-deloro",
     schoolSlug: "deloro",
+    timezoneVersion: 1,
     syncedAt: "2026-07-12T12:00:00.000Z",
     sourceUpdatedAt: null,
     data: {
@@ -102,7 +103,7 @@ describe("offline school snapshots", () => {
   it("accepts valid snapshots and rejects unsupported schema versions", () => {
     expect(isValidSchoolOfflineSnapshot(createSnapshot())).toBe(true);
     expect(
-      isValidSchoolOfflineSnapshot(createSnapshot({ schemaVersion: 999 as 2 }))
+      isValidSchoolOfflineSnapshot(createSnapshot({ schemaVersion: 999 as never }))
     ).toBe(false);
   });
 

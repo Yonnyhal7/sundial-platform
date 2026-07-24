@@ -156,6 +156,7 @@ function OfflineHomePage({
         todayScheduleLabel={today.todayScheduleLabel}
         noSchool={today.noSchool}
         scheduleNeedsTimes={today.scheduleNeedsTimes}
+        timeZone={snapshot.data.school.timezone || "America/Los_Angeles"}
       />
     </main>
   );
@@ -191,6 +192,7 @@ function OfflineSchedulePage({
             days,
           },
         ]}
+        timeZone={snapshot.data.school.timezone || "America/Los_Angeles"}
       />
     </main>
   );

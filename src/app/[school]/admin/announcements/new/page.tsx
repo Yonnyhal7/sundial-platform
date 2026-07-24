@@ -2,6 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { schoolLocalDateStartToUtc } from "@/lib/timezones";
 
 export default async function NewAnnouncementPage({
   params,
@@ -18,12 +19,13 @@ export default async function NewAnnouncementPage({
     .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
-    .single<{ id: string; name: string; subdomain: string }>();
+    .single<{ id: string; name: string; subdomain: string; timezone: string | null }>();
 
   if (!schoolData) {
     notFound();
   }
   const schoolId = schoolData.id;
+  const schoolTimeZone = schoolData.timezone || "America/Los_Angeles";
   await requireAdminSectionAccess(schoolId, "announcements", school);
 
   async function createAnnouncement(formData: FormData) {
@@ -38,13 +40,16 @@ export default async function NewAnnouncementPage({
     const title = String(formData.get("title") || "");
     const body = String(formData.get("body") || "");
     const publishAt = String(formData.get("publish_at") || "");
+    const publishInstant = publishAt
+      ? schoolLocalDateStartToUtc(publishAt, schoolTimeZone)
+      : null;
     const priority = formData.get("priority") === "on";
 
     const { error } = await supabase.from("announcements").insert({
       school_id: schoolId,
       title,
       body,
-      publish_at: publishAt || null,
+      publish_at: publishInstant?.toISOString() || null,
       priority,
     });
 

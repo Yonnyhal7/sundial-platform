@@ -24,6 +24,7 @@ import {
   getBrowserOnlineState,
   getHydrationSafeInitialOnlineState,
 } from "@/lib/offline/onlineState";
+import { getMillisecondsUntilNextMidnight } from "@/lib/timezones";
 
 const ACTIVE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -40,14 +41,6 @@ type OfflineSchoolDataContextValue = {
 
 const OfflineSchoolDataContext =
   createContext<OfflineSchoolDataContextValue | null>(null);
-
-function getMillisecondsUntilNextLocalMidnight() {
-  const now = new Date();
-  const next = new Date(now);
-  next.setHours(24, 0, 0, 0);
-
-  return Math.max(1000, next.getTime() - now.getTime());
-}
 
 export function OfflineSchoolDataProvider({
   schoolId,
@@ -200,13 +193,15 @@ export function OfflineSchoolDataProvider({
 
     const midnightTimeout = window.setTimeout(() => {
       void refresh();
-    }, getMillisecondsUntilNextLocalMidnight());
+    }, getMillisecondsUntilNextMidnight(
+      snapshot?.data.school.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+    ));
 
     return () => {
       window.clearInterval(interval);
       window.clearTimeout(midnightTimeout);
     };
-  }, [refresh]);
+  }, [refresh, snapshot?.data.school.timezone]);
 
   const value = useMemo<OfflineSchoolDataContextValue>(
     () => {

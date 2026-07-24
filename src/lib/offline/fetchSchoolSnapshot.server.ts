@@ -42,6 +42,15 @@ export async function fetchSchoolOfflineSnapshot(
     throw new Error(schoolError?.message || "School not found");
   }
 
+  const { data: timezoneRevision, error: timezoneRevisionError } = await supabase
+    .from("schools")
+    .select("timezone_version")
+    .eq("id", school.id)
+    .single<{ timezone_version: number }>();
+  if (timezoneRevisionError || !timezoneRevision) {
+    throw new Error(timezoneRevisionError?.message || "School timezone revision unavailable");
+  }
+
   const { startDate, endDate } = getSnapshotDateRange(school.timezone);
 
   const [
@@ -180,6 +189,7 @@ export async function fetchSchoolOfflineSnapshot(
     schemaVersion: SCHOOL_OFFLINE_SCHEMA_VERSION,
     schoolId: school.id,
     schoolSlug: school.subdomain,
+    timezoneVersion: timezoneRevision.timezone_version,
     syncedAt: new Date().toISOString(),
     sourceUpdatedAt: null,
     data: {

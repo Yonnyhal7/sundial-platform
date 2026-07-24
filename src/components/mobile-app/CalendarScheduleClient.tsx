@@ -54,6 +54,7 @@ type CalendarScheduleClientProps = {
   currentMonthKey: string;
   today: string;
   months: CalendarScheduleMonth[];
+  timeZone: string;
 };
 
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -62,6 +63,7 @@ export default function CalendarScheduleClient({
   currentMonthKey,
   today,
   months,
+  timeZone,
 }: CalendarScheduleClientProps) {
   const router = useRouter();
   const { snapshot } = useOfflineSchoolData();
@@ -136,13 +138,14 @@ export default function CalendarScheduleClient({
   const selectedIsToday = selectedDay?.date === today;
   const scheduleState = useMemo(() => {
     if (!selectedIsToday || !now || !selectedDay) {
-      return getTodayScheduleState([], new Date());
+      return getTodayScheduleState([], new Date(), { timeZone });
     }
 
     return getTodayScheduleState(selectedDay.periods, now, {
       needsTimes: selectedDay.scheduleSetupStatus === "needs_times",
+      timeZone,
     });
-  }, [now, selectedDay, selectedIsToday]);
+  }, [now, selectedDay, selectedIsToday, timeZone]);
 
   function selectDate(date: string) {
     setSelectedDate(date);

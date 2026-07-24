@@ -1,6 +1,6 @@
 import type { SchedulePeriod } from "@/lib/scheduleTime";
 
-export const SCHOOL_OFFLINE_SCHEMA_VERSION = 2;
+export const SCHOOL_OFFLINE_SCHEMA_VERSION = 3;
 
 export type OfflineSchoolProfile = {
   id: string;
@@ -94,6 +94,7 @@ export type SchoolOfflineSnapshot = {
   schemaVersion: typeof SCHOOL_OFFLINE_SCHEMA_VERSION;
   schoolId: string;
   schoolSlug: string;
+  timezoneVersion: number;
   syncedAt: string;
   sourceUpdatedAt?: string | null;
   data: {

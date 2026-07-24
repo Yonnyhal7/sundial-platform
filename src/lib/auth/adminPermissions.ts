@@ -220,19 +220,36 @@ export async function getCurrentAdminUser(
     return null;
   }
 
-  if (isSuperAdminRole(profile.role) || isSchoolAdminRole(profile.role)) {
-    return { supabase, profile, permissionKeys: allAdminPermissionKeys() };
+  let effectiveProfile = profile;
+  if (!isSuperAdminRole(profile.role)) {
+    const { data: membership, error: membershipError } = await supabase
+      .from("school_memberships")
+      .select("role, school_id, is_active")
+      .eq("user_id", profile.id)
+      .eq("school_id", schoolId)
+      .eq("is_active", true)
+      .maybeSingle<{ role: string; school_id: string; is_active: boolean }>();
+
+    if (membership) {
+      effectiveProfile = { ...profile, role: membership.role, school_id: membership.school_id };
+    } else if (!membershipError && profile.school_id !== schoolId) {
+      return { supabase, profile, permissionKeys: [] };
+    }
   }
 
-  if (isEditorRole(profile.role) && profile.school_id === schoolId) {
+  if (isSuperAdminRole(effectiveProfile.role) || isSchoolAdminRole(effectiveProfile.role)) {
+    return { supabase, profile: effectiveProfile, permissionKeys: allAdminPermissionKeys() };
+  }
+
+  if (isEditorRole(effectiveProfile.role) && effectiveProfile.school_id === schoolId) {
     return {
       supabase,
-      profile,
-      permissionKeys: await getEditorPermissionKeys(supabase, profile.id),
+      profile: effectiveProfile,
+      permissionKeys: await getEditorPermissionKeys(supabase, effectiveProfile.id),
     };
   }
 
-  return { supabase, profile, permissionKeys: [] };
+  return { supabase, profile: effectiveProfile, permissionKeys: [] };
 }
 
 export async function canAccessAdminSection(

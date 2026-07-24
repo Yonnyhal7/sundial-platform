@@ -7,6 +7,7 @@ export function buildSchoolAdminProfileInsert({
   fullName,
   firstName,
   lastName,
+  role = SCHOOL_ADMIN_DATABASE_ROLE,
 }: {
   authUserId: string;
   schoolId: string;
@@ -14,6 +15,7 @@ export function buildSchoolAdminProfileInsert({
   fullName: string;
   firstName: string;
   lastName: string;
+  role?: "SchoolAdmin" | "Editor";
 }) {
   return {
     id: authUserId,
@@ -22,7 +24,7 @@ export function buildSchoolAdminProfileInsert({
     full_name: fullName,
     first_name: firstName,
     last_name: lastName,
-    role: SCHOOL_ADMIN_DATABASE_ROLE,
+    role,
     is_active: true,
   };
 }

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { formatTimestampDateInTimeZone } from "@/lib/timezones";
 
 export default async function AdminAnnouncementsPage({
   params,
@@ -16,7 +17,7 @@ export default async function AdminAnnouncementsPage({
     .rpc("get_available_school_by_subdomain", {
       subdomain_input: school,
     })
-    .single<{ id: string; name: string; subdomain: string }>();
+    .single<{ id: string; name: string; subdomain: string; timezone: string | null }>();
 
   if (!schoolData) {
     notFound();
@@ -126,9 +127,10 @@ export default async function AdminAnnouncementsPage({
                     <p>Publish Date</p>
                     <p className="font-medium text-slate-900 dark:text-slate-200">
                       {announcement.publish_at
-                        ? new Date(
-                            announcement.publish_at
-                          ).toLocaleDateString()
+                        ? formatTimestampDateInTimeZone(
+                            new Date(announcement.publish_at),
+                            schoolData.timezone || "America/Los_Angeles"
+                          )
                         : "Not set"}
                     </p>
                   </div>
