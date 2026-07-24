@@ -71,6 +71,7 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
               href={item.href}
               prefetch
               onClick={() => setPendingNavigation({ href: item.href, from: pathname })}
+              aria-current={active ? "page" : undefined}
               className={`flex min-h-[3.5rem] sm:min-h-16 w-full flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 sm:py-1 text-[0.7rem] font-semibold transition ${
                 active
                   ? "bg-[color-mix(in_srgb,var(--school-primary)_10%,transparent)] text-[var(--school-primary)]"

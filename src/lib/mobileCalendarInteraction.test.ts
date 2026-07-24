@@ -39,6 +39,21 @@ describe("mobile calendar interaction contract", () => {
     expect(client).toContain("suppressClickRef");
   });
 
+  it("announces calendar state without relying on color alone", () => {
+    const client = source(
+      "src/components/mobile-app/CalendarScheduleClient.tsx"
+    );
+
+    expect(client).toContain("getCalendarDayAccessibleLabel");
+    expect(client).toContain("aria-pressed={selected}");
+  });
+
+  it("announces the active bottom-navigation destination", () => {
+    const bottomNav = source("src/components/mobile-app/AppBottomNav.tsx");
+
+    expect(bottomNav).toContain('aria-current={active ? "page" : undefined}');
+  });
+
   it("recognizes both tenant-host and path-based offline calendar routes", () => {
     const offlineContent = source(
       "src/components/offline/OfflineStudentAppContent.tsx"

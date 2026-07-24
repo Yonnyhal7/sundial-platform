@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { CheckIcon } from "@/components/mobile-app/AppIcons";
+import { getCalendarDayAccessibleLabel } from "@/lib/calendarDayAccessibility";
 import {
   getAdjacentCalendarMonthKey,
   getCalendarSwipeMonthOffset,
@@ -309,6 +310,16 @@ export default function CalendarScheduleClient({
                 key={day.date}
                 type="button"
                 onClick={() => selectDate(day.date)}
+                aria-label={getCalendarDayAccessibleLabel({
+                  longDateLabel: day.longDateLabel,
+                  isToday: day.isToday,
+                  isSelected: selected,
+                  isSchoolDay: day.isSchoolDay,
+                  scheduleName: day.scheduleName,
+                  scheduleType: day.scheduleType,
+                  label: day.label,
+                })}
+                aria-pressed={selected}
                 className={`relative aspect-square rounded-2xl border p-1 text-center transition ${
                   selected
                     ? "border-[var(--school-primary)] bg-white shadow-sm dark:bg-[#242424]"
