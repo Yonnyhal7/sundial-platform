@@ -27,6 +27,8 @@ describe("school setup invitation application workflow", () => {
     expect(creationAction).toContain("await requireSuperAdminAccess()");
     expect(resendAction).toContain("await requireSuperAdminAccess()");
     expect(resendAction).toContain("rotateToken: true");
+    expect(resendAction).toContain("fallback_link_generated");
+    expect(resendAction).toContain("invitation_resend_requested");
   });
 
   it("validates tenant, token, expiry, use, and archive state before account creation", () => {
@@ -36,6 +38,7 @@ describe("school setup invitation application workflow", () => {
     expect(authCreation).toBeGreaterThan(classification);
     expect(acceptance).toContain('.eq("invite_token", result.tokenHash)');
     expect(acceptance).toContain('.eq("acceptance_session_hash", sessionHash)');
+    expect(acceptance).not.toContain('.eq("delivery_status", "sent")');
     expect(acceptance).toContain('.eq("school_id", school.id)');
     expect(acceptance).toContain('.gt("expires_at", now.toISOString())');
     expect(acceptance).toContain('.is("used_at", null)');
@@ -46,6 +49,7 @@ describe("school setup invitation application workflow", () => {
     expect(acceptanceActions).toContain("confirmPassword");
     expect(acceptanceActions).toContain("signInWithPassword");
     expect(acceptanceActions).toContain("getSchoolSetupPath");
+    expect(acceptance).toContain('"invitation_accepted"');
   });
 
   it("uses the service-role client for profile creation and preserves compensation", () => {

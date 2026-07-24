@@ -23,8 +23,7 @@ export function classifySchoolSetupInvitation(
   if (
     !invitation ||
     invitation.school_archived_at ||
-    invitation.school_subdomain !== expectedSchool ||
-    invitation.delivery_status !== "sent"
+    invitation.school_subdomain !== expectedSchool
   ) {
     return "invalid";
   }

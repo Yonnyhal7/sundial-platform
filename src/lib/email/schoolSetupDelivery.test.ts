@@ -70,6 +70,11 @@ describe("school setup invitation delivery", () => {
       transport,
     });
     expect(result.status).toBe("sent");
+    expect(result).toMatchObject({
+      fallbackUrl: `https://admin.sundialk12.com/invitations#token=${rawToken}`,
+      expiresAt: claim.expires_at,
+      tokenRotated: true,
+    });
     expect(rpc.calls[0].args.p_rotate_token).toBe(true);
     expect(rpc.calls[1].args).toMatchObject({
       p_success: true,
@@ -89,6 +94,11 @@ describe("school setup invitation delivery", () => {
       transport,
     });
     expect(result.status).toBe("failed");
+    expect(result).toMatchObject({
+      fallbackUrl: `https://admin.sundialk12.com/invitations#token=${rawToken}`,
+      expiresAt: claim.expires_at,
+      tokenRotated: true,
+    });
     expect(rpc.calls[1].args).toMatchObject({
       p_success: false,
       p_failure_reason: "Email provider rejected the request (invalid_api_key).",
@@ -123,8 +133,13 @@ describe("school setup invitation delivery", () => {
       supabase: rpc.client as never,
       transport,
     });
-    const observable = JSON.stringify({ result, completion: rpc.calls[1] });
+    const observable = JSON.stringify({
+      message: result.message,
+      completion: rpc.calls[1],
+    });
     expect(observable).not.toContain("re_secret_that_must_not_escape");
     expect(observable).not.toContain(rawToken);
+    expect(result.fallbackUrl).toContain(rawToken);
+    expect(result.fallbackUrl).not.toContain(baseInput.tokenHash);
   });
 });

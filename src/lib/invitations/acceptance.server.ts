@@ -127,7 +127,6 @@ export async function exchangeSchoolSetupInvitationToken(rawToken: string) {
     .eq("id", result.row.id)
     .eq("school_id", result.row.school_id)
     .eq("invite_token", result.tokenHash)
-    .eq("delivery_status", "sent")
     .is("used_at", null)
     .gt("expires_at", new Date().toISOString())
     .select("id")
@@ -195,7 +194,6 @@ export async function acceptSchoolSetupInvitation({
     .eq("school_id", school.id)
     .eq("acceptance_session_hash", sessionHash)
     .eq("status", "pending")
-    .eq("delivery_status", "sent")
     .is("used_at", null)
     .gt("expires_at", now.toISOString())
     .gt("acceptance_session_expires_at", now.toISOString())
@@ -286,6 +284,16 @@ export async function acceptSchoolSetupInvitation({
     await releaseClaim();
     return { ok: false as const, reason: "account_error" as const };
   }
+
+  await supabase.from("platform_user_audit").insert({
+    actor_id: authData.user.id,
+    affected_user_id: authData.user.id,
+    school_id: school.id,
+    invitation_id: row.id,
+    action: "invitation_accepted",
+    summary: "Accepted school invitation",
+    new_values: { role: row.requested_role === "Editor" ? "Editor" : "SchoolAdmin" },
+  });
 
   return {
     ok: true as const,

@@ -15,13 +15,13 @@ import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
 import SchoolLifecycleDialog from "./SchoolLifecycleDialog";
 import { retrySchoolStorageCleanupAction } from "./lifecycle-actions";
 import ResendSetupEmailButton from "./ResendSetupEmailButton";
+import CreatedSchoolNotice from "./CreatedSchoolNotice";
 
 type SchoolsPageProps = {
   searchParams: Promise<{
     created?: string;
     subdomain?: string;
     inviteDelivery?: string;
-    invite?: string;
   }>;
 };
 
@@ -33,6 +33,7 @@ type SetupInvitation = {
   sent_at: string | null;
   delivery_attempt_count: number;
   delivery_failure_reason: string | null;
+  expires_at: string;
   created_at: string;
 };
 
@@ -40,7 +41,7 @@ type School = SuperAdminSchoolSummary;
 
 export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
   const { supabase } = await requireSuperAdminAccess();
-  const { created, subdomain, inviteDelivery, invite } = await searchParams;
+  const { created, subdomain, inviteDelivery } = await searchParams;
   const schoolsHref = "/admin/dashboard/schools";
 
   const [{ data: schools }, { data: cleanupJobs }] = await Promise.all([
@@ -70,7 +71,7 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
   const { data: setupInvitations } = activeSchools.length
     ? await supabase
         .from("pending_admin_invites")
-        .select("id, school_id, email, delivery_status, sent_at, delivery_attempt_count, delivery_failure_reason, created_at")
+        .select("id, school_id, email, delivery_status, sent_at, delivery_attempt_count, delivery_failure_reason, expires_at, created_at")
         .in("school_id", activeSchools.map((school) => school.id))
         .or("role.eq.school_admin,role.is.null")
         .not("created_by", "is", null)
@@ -114,32 +115,12 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
       </div>
 
       {created && (
-        <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-200">
-          <p className="font-semibold">{created} was created and marked setup incomplete.</p>
-          <p className="mt-1">
-            {inviteDelivery === "sent"
-              ? "The school administrator setup email was sent."
-              : inviteDelivery === "record_failed"
-                ? "The school was retained, but its setup invitation record could not be created."
-                : "The school and invitation were retained, but the setup email was not delivered."}
-          </p>
-          {subdomain && (
-            <div className="mt-2 space-y-1 font-mono text-xs">
-              <p>{subdomain}.sundialk12.com</p>
-              <p>admin.sundialk12.com/{subdomain}</p>
-            </div>
-          )}
-          {invite && (
-            <div className="mt-3 rounded-md border border-emerald-200 bg-white/80 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-950/70">
-              <p className="text-xs font-semibold uppercase tracking-wide">
-                Temporary password setup link
-              </p>
-              <p className="mt-1 break-all font-mono text-xs">
-                https://admin.sundialk12.com/invitations?token={invite}
-              </p>
-            </div>
-          )}
-        </div>
+        <CreatedSchoolNotice
+          created={created}
+          subdomain={subdomain}
+          inviteDelivery={inviteDelivery}
+          adminUrl={process.env.SUNDIAL_ADMIN_URL || "http://localhost:3000/admin"}
+        />
       )}
 
       <section className="mt-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -154,7 +135,7 @@ export default async function SchoolsPage({ searchParams }: SchoolsPageProps) {
                   return <tr key={school.id}>
                     <td className="px-6 py-4 font-bold">{school.name}</td>
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-300">{school.subdomain}</td>
-                    <td className="px-6 py-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold dark:bg-slate-800">{getSchoolSetupStatusLabel(status)}</span>{invitation && <div className="mt-2"><p className="text-xs text-slate-500">Setup email: <span className="font-bold capitalize">{invitation.delivery_status}</span> · {invitation.email}</p>{invitation.delivery_status === "failed" && invitation.delivery_failure_reason && <p className="mt-1 max-w-xs text-xs text-amber-700 dark:text-amber-300">{invitation.delivery_failure_reason}</p>}{(invitation.delivery_status === "pending" || invitation.delivery_status === "failed") && <ResendSetupEmailButton inviteId={invitation.id} schoolId={school.id} />}</div>}</td>
+                    <td className="px-6 py-4"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold dark:bg-slate-800">{getSchoolSetupStatusLabel(status)}</span>{invitation && <div className="mt-2"><p className="text-xs text-slate-500">Setup email: <span className="font-bold capitalize">{invitation.delivery_status}</span> · {invitation.email}</p>{invitation.delivery_status === "failed" && invitation.delivery_failure_reason && <p className="mt-1 max-w-xs text-xs text-amber-700 dark:text-amber-300">{invitation.delivery_failure_reason}</p>}{(invitation.delivery_status === "pending" || invitation.delivery_status === "failed") && <ResendSetupEmailButton inviteId={invitation.id} schoolId={school.id} initialExpiresAt={invitation.expires_at} />}</div>}</td>
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-300">{formatShortDate(school.created_at)}</td>
                     <td className="px-6 py-4"><div className="flex items-center gap-3"><Link href={href} className="font-bold text-blue-600 hover:text-blue-500 dark:text-blue-400">Open Dashboard</Link><SchoolLifecycleDialog mode="archive" school={school} /></div></td>
                   </tr>;

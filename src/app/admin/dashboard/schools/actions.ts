@@ -172,6 +172,40 @@ export async function createSchoolAction(
       rotateToken: false,
     });
     inviteDelivery = delivery.status;
+    const audit = createSupabaseServiceRoleClient();
+    await audit.from("platform_user_audit").insert([
+      {
+        actor_id: profile.id,
+        school_id: school.id,
+        invitation_id: invitation.inviteId,
+        action:
+          delivery.status === "sent"
+            ? "invitation_delivery_succeeded"
+            : "invitation_delivery_failed",
+        summary:
+          delivery.status === "sent"
+            ? "Initial school invitation delivery succeeded"
+            : "Initial school invitation delivery did not succeed",
+        result_status: delivery.status === "sent" ? "success" : "blocked",
+        new_values: {
+          delivery_status: delivery.status,
+          token_rotated: false,
+          fallback_link_generated: Boolean(delivery.fallbackUrl),
+        },
+      },
+      {
+        actor_id: profile.id,
+        school_id: school.id,
+        invitation_id: invitation.inviteId,
+        action: "invitation_fallback_generated",
+        summary: "Generated initial school invitation fallback link",
+        result_status: "success",
+        new_values: {
+          token_rotated: false,
+          expires_at: invitation.expiresAt.toISOString(),
+        },
+      },
+    ]);
   } catch {
     // The school is intentionally retained. The SuperAdmin can inspect and
     // retry invitation delivery without recreating tenant data.
@@ -181,11 +215,12 @@ export async function createSchoolAction(
   // TODO: Create the school DNS record through the Cloudflare DNS API.
 
   revalidatePath("/admin/dashboard/schools");
+  const invitationFragment = manualInviteToken
+    ? `#setupToken=${encodeURIComponent(manualInviteToken)}`
+    : "";
   redirect(
     `/admin/dashboard/schools?created=${encodeURIComponent(name)}&subdomain=${encodeURIComponent(
       school.subdomain
-    )}&inviteDelivery=${encodeURIComponent(inviteDelivery)}${
-      manualInviteToken ? `&invite=${encodeURIComponent(manualInviteToken)}` : ""
-    }`
+    )}&inviteDelivery=${encodeURIComponent(inviteDelivery)}${invitationFragment}`
   );
 }

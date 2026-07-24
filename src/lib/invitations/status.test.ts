@@ -13,7 +13,7 @@ const valid: SchoolSetupInvitationRecord = {
 };
 
 describe("school setup invitation acceptance", () => {
-  it("accepts only a delivered invitation for the expected active school", () => {
+  it("accepts a current token independently of email-provider delivery state", () => {
     expect(classifySchoolSetupInvitation(valid, "del-oro", now)).toBe("valid");
     expect(classifySchoolSetupInvitation(valid, "liberty", now)).toBe("invalid");
     expect(
@@ -21,7 +21,13 @@ describe("school setup invitation acceptance", () => {
     ).toBe("invalid");
     expect(
       classifySchoolSetupInvitation({ ...valid, delivery_status: "failed" }, "del-oro", now)
-    ).toBe("invalid");
+    ).toBe("valid");
+    expect(
+      classifySchoolSetupInvitation({ ...valid, delivery_status: "pending" }, "del-oro", now)
+    ).toBe("valid");
+    expect(
+      classifySchoolSetupInvitation({ ...valid, delivery_status: "sending" }, "del-oro", now)
+    ).toBe("valid");
   });
 
   it("rejects expired and already-used invitations", () => {
@@ -34,6 +40,9 @@ describe("school setup invitation acceptance", () => {
     expect(
       classifySchoolSetupInvitation({ ...valid, status: "accepted" }, "del-oro", now)
     ).toBe("already_used");
+    expect(
+      classifySchoolSetupInvitation({ ...valid, status: "cancelled" }, "del-oro", now)
+    ).toBe("invalid");
   });
 
   it("blocks overlapping acceptance but permits recovery from a stale lock", () => {

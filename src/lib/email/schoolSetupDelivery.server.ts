@@ -23,6 +23,9 @@ type DeliveryClaim =
 export type SchoolSetupDeliveryResult = {
   status: "sent" | "failed" | "rate_limited" | "already_sending" | "rejected";
   message: string;
+  fallbackUrl?: string;
+  expiresAt?: string;
+  tokenRotated?: boolean;
 };
 
 export type SchoolSetupEmailTransport = {
@@ -120,21 +123,27 @@ export async function deliverSchoolSetupInvitation({
     return { status: "rejected", message: "This invitation cannot be sent." };
   }
   const claimed = claim as ClaimedDelivery;
+  let config: ReturnType<typeof getSchoolEmailConfig> | null = null;
+  try {
+    config = getSchoolEmailConfig();
+  } catch {
+    config = null;
+  }
+  const fallbackUrl = getCanonicalSchoolSetupInvitationUrl({
+    adminUrl:
+      config?.adminUrl || process.env.SUNDIAL_ADMIN_URL || "http://localhost:3000/admin",
+    token: rawToken,
+  });
 
   let success = false;
   let providerMessageId: string | null = null;
   let failureReason = "Email delivery is disabled in this environment.";
 
   try {
-    const config = getSchoolEmailConfig();
-    if (config.mode !== "disabled" && config.apiKey && config.from && config.replyTo) {
-      const setupUrl = getCanonicalSchoolSetupInvitationUrl({
-        adminUrl: config.adminUrl,
-        token: rawToken,
-      });
+    if (config && config.mode !== "disabled" && config.apiKey && config.from && config.replyTo) {
       const content = renderSchoolSetupEmail({
         schoolName: claimed.school_name,
-        setupUrl,
+        setupUrl: fallbackUrl,
         expiresAt: new Date(claimed.expires_at),
       });
       const delivery = await (transport ?? createResendTransport(config.apiKey)).send({
@@ -162,9 +171,22 @@ export async function deliverSchoolSetupInvitation({
   });
 
   return success
-    ? { status: "sent", message: "The setup invitation was sent." }
+    ? {
+        status: "sent",
+        message: rotateToken
+          ? "The setup invitation was resent. A replacement link was created; older links no longer work."
+          : "The setup invitation was sent.",
+        fallbackUrl,
+        expiresAt: claimed.expires_at,
+        tokenRotated: rotateToken,
+      }
     : {
         status: "failed",
-        message: "The school was created, but the setup email was not delivered.",
+        message: rotateToken
+          ? "Email delivery failed. A replacement invitation link is ready; older links no longer work."
+          : "The setup email was not delivered. Use the invitation link below.",
+        fallbackUrl,
+        expiresAt: claimed.expires_at,
+        tokenRotated: rotateToken,
       };
 }
