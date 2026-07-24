@@ -5,30 +5,11 @@ import { redirect } from "next/navigation";
 import { getSchoolSetupPath } from "@/lib/auth/adminPermissions";
 import {
   acceptSchoolSetupInvitation,
-  exchangeSchoolSetupInvitationToken,
-  type SchoolSetupInvitationView,
 } from "@/lib/invitations/acceptance.server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { SCHOOL_SETUP_ACCEPTANCE_COOKIE } from "@/lib/invitations/constants";
 
 export type AcceptInvitationState = { error?: string };
-
-export async function exchangeInvitationTokenAction(
-  rawToken: string
-): Promise<SchoolSetupInvitationView> {
-  const result = await exchangeSchoolSetupInvitationToken(rawToken);
-  if (!result.sessionToken || !result.sessionExpiresAt) return result.view;
-
-  const cookieStore = await cookies();
-  cookieStore.set(SCHOOL_SETUP_ACCEPTANCE_COOKIE, result.sessionToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    path: "/",
-    expires: result.sessionExpiresAt,
-  });
-  return result.view;
-}
 
 export async function acceptInvitationAction(
   _previousState: AcceptInvitationState,

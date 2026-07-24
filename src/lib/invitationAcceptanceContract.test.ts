@@ -15,6 +15,7 @@ const migration = read("supabase/migrations/20260713140000_school_setup_invitati
 const acceptance = read("src/lib/invitations/acceptance.server.ts");
 const actions = read("src/app/admin/invitations/actions.ts");
 const experience = read("src/app/admin/invitations/InvitationExperience.tsx");
+const exchangeRoute = read("src/app/api/invitations/exchange/route.ts");
 const logout = read("src/components/admin/AdminLogoutButton.tsx");
 const login = read("src/app/[school]/login/login-form.tsx");
 
@@ -44,8 +45,8 @@ describe("school invitation end-to-end contract", () => {
     expect(experience).toContain("window.location.hash");
     expect(experience).toContain("window.history.replaceState");
     expect(acceptance).toContain("acceptance_session_hash: sessionHash");
-    expect(actions).toContain("httpOnly: true");
-    expect(actions).toContain('sameSite: "strict"');
+    expect(exchangeRoute).toContain("httpOnly: true");
+    expect(exchangeRoute).toContain('sameSite: "strict"');
     expect(migration).toContain("acceptance_session_hash text");
     expect(migration).not.toMatch(/acceptance_session_token\s+text/i);
   });

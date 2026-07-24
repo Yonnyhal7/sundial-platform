@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   cookieDelete: vi.fn(),
   redirect: vi.fn(),
   setupPath: vi.fn(),
-  exchange: vi.fn(),
   accept: vi.fn(),
   signIn: vi.fn(),
 }));
@@ -24,7 +23,6 @@ vi.mock("@/lib/auth/adminPermissions", () => ({
   getSchoolSetupPath: mocks.setupPath,
 }));
 vi.mock("@/lib/invitations/acceptance.server", () => ({
-  exchangeSchoolSetupInvitationToken: mocks.exchange,
   acceptSchoolSetupInvitation: mocks.accept,
 }));
 vi.mock("@/lib/supabase/server", () => ({
@@ -33,7 +31,7 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-import { acceptInvitationAction, exchangeInvitationTokenAction } from "./actions";
+import { acceptInvitationAction } from "./actions";
 
 function validForm(password = "a-secure-password") {
   const form = new FormData();
@@ -50,26 +48,6 @@ describe("school invitation actions", () => {
     mocks.cookieGet.mockReturnValue({ value: "S".repeat(43) });
     mocks.setupPath.mockResolvedValue("/del-oro/dashboard/setup/welcome");
     mocks.signIn.mockResolvedValue({ error: null });
-  });
-
-  it("exchanges the fragment token for an HttpOnly acceptance cookie without returning it", async () => {
-    mocks.exchange.mockResolvedValue({
-      view: { status: "valid", schoolName: "Del Oro", email: "admin@example.com" },
-      sessionToken: "S".repeat(43),
-      sessionExpiresAt: new Date("2026-07-13T22:00:00.000Z"),
-    });
-    const view = await exchangeInvitationTokenAction("T".repeat(43));
-    expect(mocks.exchange).toHaveBeenCalledWith("T".repeat(43));
-    expect(mocks.cookieSet).toHaveBeenCalledWith(
-      "sundial_school_setup_acceptance",
-      "S".repeat(43),
-      expect.objectContaining({ httpOnly: true, sameSite: "strict", path: "/" })
-    );
-    expect(view).toEqual({
-      status: "valid",
-      schoolName: "Del Oro",
-      email: "admin@example.com",
-    });
   });
 
   it("requires password confirmation before touching the invitation", async () => {
