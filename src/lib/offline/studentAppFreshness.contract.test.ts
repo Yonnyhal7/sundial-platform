@@ -16,8 +16,11 @@ describe("student app freshness integration", () => {
   it("keeps school-data freshness separate from the service-worker lifecycle", () => {
     const runtime = read("src/components/offline/OfflineStudentAppRuntime.tsx");
     const lifecycle = read("src/lib/offline/schoolDataRefreshLifecycle.ts");
+    const updateLifecycle = read("src/lib/pwa/updateLifecycle.ts");
     expect(runtime).toContain("startSchoolDataRefreshLifecycle");
     expect(lifecycle).not.toContain("controllerchange");
     expect(lifecycle).not.toContain("location.reload");
+    expect(updateLifecycle).not.toContain("router.refresh");
+    expect(updateLifecycle).not.toContain("refreshSnapshot");
   });
 });

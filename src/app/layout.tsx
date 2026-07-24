@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import ServiceWorkerRegister from "@/components/offline/ServiceWorkerRegister";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
+import { getPwaDeploymentVersion } from "@/lib/pwa/deploymentVersion";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -56,7 +57,9 @@ export default function RootLayout({
     >
       <head />
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        <ServiceWorkerRegister />
+        <ServiceWorkerRegister
+          deploymentVersion={getPwaDeploymentVersion()}
+        />
         <ThemeRouteSync />
         {children}
       </body>

@@ -6,7 +6,11 @@ import {
   type PwaDiagnostics,
 } from "@/lib/pwa/updateLifecycle";
 
-export default function ServiceWorkerRegister() {
+export default function ServiceWorkerRegister({
+  deploymentVersion,
+}: {
+  deploymentVersion: string | null;
+}) {
   const [updateNow, setUpdateNow] = useState<null | (() => void)>(null);
   const [dismissPrompt, setDismissPrompt] = useState<null | (() => void)>(null);
 
@@ -41,6 +45,16 @@ export default function ServiceWorkerRegister() {
           registration,
           window,
           document,
+          pageDeploymentVersion: deploymentVersion,
+          fetchDeploymentVersion: async () => {
+            const response = await fetch("/api/pwa-version", {
+              cache: "no-store",
+              headers: { Accept: "application/json" },
+            });
+            if (!response.ok) return null;
+            const body = (await response.json()) as { version?: unknown };
+            return typeof body.version === "string" ? body.version : null;
+          },
           onUpdateReady: (applyUpdate) => {
             setUpdateNow(() => applyUpdate);
             setDismissPrompt(() => () => {
@@ -77,7 +91,7 @@ export default function ServiceWorkerRegister() {
       cancelled = true;
       lifecycle?.dispose();
     };
-  }, []);
+  }, [deploymentVersion]);
 
   if (!updateNow) return null;
 

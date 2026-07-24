@@ -144,6 +144,14 @@ describe("service worker lifecycle and caching", () => {
     expect(workerSource).toContain("includeUncontrolled: true");
   });
 
+  it("reports the foreground-resume worker version without changing push handling", () => {
+    expect(workerSource).toContain(
+      'SERVICE_WORKER_VERSION = "2026-07-24-pwa-foreground-resume-v2"'
+    );
+    expect(workerSource).toContain('event.data?.type === "GET_PWA_DIAGNOSTICS"');
+    expect(workerSource).toContain('event.data?.type === "SKIP_WAITING"');
+  });
+
   it("does not precache a generic manifest over a tenant install manifest", () => {
     const precache = workerSource.slice(
       workerSource.indexOf("const PRECACHE_URLS"),

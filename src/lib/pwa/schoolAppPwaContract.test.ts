@@ -68,4 +68,16 @@ describe("School App PWA integration contract", () => {
     expect(worker).toContain("request.mode === \"navigate\" && isAppOrKioskPath");
     expect(worker).not.toMatch(/navigate[\s\S]{0,120}redirect/i);
   });
+
+  it("keeps the update prompt above mobile overlays and checks an uncached deployment version", () => {
+    const register = source(
+      "src/components/offline/ServiceWorkerRegister.tsx"
+    );
+    const appHeader = source("src/components/mobile-app/AppHeader.tsx");
+
+    expect(register).toContain('fetch("/api/pwa-version"');
+    expect(register).toContain('cache: "no-store"');
+    expect(register).toContain("z-[100]");
+    expect(appHeader).toContain("z-[80]");
+  });
 });
