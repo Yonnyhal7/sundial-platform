@@ -151,7 +151,11 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
             school={school}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <OfflineStudentAppRuntime schoolId={schoolData.id} school={school}>
+            <OfflineStudentAppRuntime
+              schoolId={schoolData.id}
+              school={school}
+              timeZone={schoolData.timezone || "America/Los_Angeles"}
+            >
               {children}
             </OfflineStudentAppRuntime>
           </AppSwipeNavigation>

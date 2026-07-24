@@ -1,12 +1,20 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import OfflineStatusIndicator from "@/components/offline/OfflineStatusIndicator";
 import OfflineStudentAppContent from "@/components/offline/OfflineStudentAppContent";
 import {
   OfflineSchoolDataProvider,
   useOfflineSchoolData,
 } from "@/lib/offline/useOfflineSchoolData";
+import { startSchoolDataRefreshLifecycle } from "@/lib/offline/schoolDataRefreshLifecycle";
+
+function hasUnsavedWork() {
+  const event = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
 
 function FirstLoadOfflineState() {
   return (
@@ -50,17 +58,40 @@ function OfflineStudentAppBody({
   );
 }
 
+function SchoolDataRefreshCoordinator({ timeZone }: { timeZone: string }) {
+  const router = useRouter();
+  const { refresh, markOffline } = useOfflineSchoolData();
+
+  useEffect(() => {
+    const lifecycle = startSchoolDataRefreshLifecycle({
+      window,
+      document,
+      timeZone,
+      refreshSnapshot: refresh,
+      refreshRoute: () => router.refresh(),
+      markOffline,
+      hasUnsavedWork,
+    });
+    return () => lifecycle.dispose();
+  }, [markOffline, refresh, router, timeZone]);
+
+  return null;
+}
+
 export default function OfflineStudentAppRuntime({
   schoolId,
   school,
+  timeZone,
   children,
 }: {
   schoolId: string;
   school: string;
+  timeZone: string;
   children: ReactNode;
 }) {
   return (
     <OfflineSchoolDataProvider schoolId={schoolId} schoolSlug={school}>
+      <SchoolDataRefreshCoordinator timeZone={timeZone} />
       <OfflineStudentAppBody school={school}>{children}</OfflineStudentAppBody>
     </OfflineSchoolDataProvider>
   );
