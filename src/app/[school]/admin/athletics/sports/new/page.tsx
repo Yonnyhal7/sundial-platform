@@ -2,12 +2,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import {
-  DEFAULT_SPORT_ICON_COLOR,
-  formatSportIconName,
   normalizeSportIconColor,
-  SPORT_ICON_OPTIONS,
 } from "@/lib/athletics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import SportAppearanceFields from "./sport-appearance-fields";
 
 export default async function NewSportPage({
   params,
@@ -97,31 +95,7 @@ export default async function NewSportPage({
               <input name="name" required className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white" />
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Icon</label>
-              <select name="icon" defaultValue="generic" className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-slate-950 outline-none focus:border-[var(--school-primary)] dark:border-[#3a3a3a] dark:bg-[#181818] dark:text-white">
-                {SPORT_ICON_OPTIONS.map((icon) => (
-                  <option key={icon} value={icon}>
-                    {formatSportIconName(icon)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Icon Color</label>
-              <div className="flex items-center gap-3">
-                <input
-                  name="icon_color"
-                  type="color"
-                  defaultValue={DEFAULT_SPORT_ICON_COLOR}
-                  className="h-12 w-16 cursor-pointer rounded-lg border border-slate-300 bg-white p-1 dark:border-[#3a3a3a] dark:bg-[#181818]"
-                />
-                <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                  Pick the color used for this sport icon.
-                </span>
-              </div>
-            </div>
+            <SportAppearanceFields />
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Season <span className="font-normal text-slate-500 dark:text-[#a3a3a3]">(optional)</span></label>
