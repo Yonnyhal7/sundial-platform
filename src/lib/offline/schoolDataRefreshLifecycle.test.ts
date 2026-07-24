@@ -17,7 +17,8 @@ function createHarness(online = true, timeZone = "America/Los_Angeles") {
     value: "visible",
   });
   const refreshSnapshot = vi.fn<() => Promise<SchoolDataRefreshResult>>(
-    async () => ({ status: online ? "current" : "offline" })
+    async () =>
+      online ? { status: "current", changed: true } : { status: "offline" }
   );
   const refreshRoute = vi.fn();
   const markOffline = vi.fn();
@@ -78,6 +79,81 @@ describe("school data refresh lifecycle", () => {
     await flushEvent();
     expect(harness.refreshSnapshot).toHaveBeenCalledTimes(1);
     expect(harness.refreshRoute).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh the route when foreground snapshot data is unchanged", async () => {
+    const harness = createHarness();
+    harness.refreshSnapshot.mockResolvedValue({
+      status: "current",
+      changed: false,
+    });
+    harness.documentTarget.dispatchEvent(new Event("visibilitychange"));
+    await flushEvent();
+    expect(harness.refreshSnapshot).toHaveBeenCalledTimes(1);
+    expect(harness.refreshRoute).not.toHaveBeenCalled();
+  });
+
+  it("does not compete with a pending application reload", async () => {
+    const harness = createHarness();
+    harness.lifecycle.dispose();
+    const onResumeDiagnostic = vi.fn();
+    const lifecycle = startSchoolDataRefreshLifecycle({
+      window: harness.windowTarget,
+      document: harness.documentTarget,
+      timeZone: "America/Los_Angeles",
+      refreshSnapshot: harness.refreshSnapshot,
+      refreshRoute: harness.refreshRoute,
+      markOffline: harness.markOffline,
+      shouldSkipRouteRefresh: () => true,
+      onResumeDiagnostic,
+    });
+    harness.documentTarget.dispatchEvent(new Event("visibilitychange"));
+    await flushEvent();
+    expect(harness.refreshSnapshot).toHaveBeenCalledTimes(1);
+    expect(harness.refreshRoute).not.toHaveBeenCalled();
+    expect(onResumeDiagnostic).toHaveBeenCalledWith(
+      "snapshot_refresh_start",
+      "foreground"
+    );
+    expect(onResumeDiagnostic).toHaveBeenCalledWith(
+      "snapshot_refresh_end",
+      "current"
+    );
+    expect(onResumeDiagnostic).not.toHaveBeenCalledWith(
+      "router_refresh",
+      expect.anything()
+    );
+    lifecycle.dispose();
+  });
+
+  it("waits for the application update decision before refreshing the route", async () => {
+    const harness = createHarness();
+    harness.lifecycle.dispose();
+    let finishUpdateCheck: (() => void) | undefined;
+    let applicationUpdatePending = false;
+    const lifecycle = startSchoolDataRefreshLifecycle({
+      window: harness.windowTarget,
+      document: harness.documentTarget,
+      timeZone: "America/Los_Angeles",
+      refreshSnapshot: harness.refreshSnapshot,
+      refreshRoute: harness.refreshRoute,
+      markOffline: harness.markOffline,
+      waitForApplicationUpdateCheck: () =>
+        new Promise<void>((resolve) => {
+          finishUpdateCheck = resolve;
+        }),
+      shouldSkipRouteRefresh: () => applicationUpdatePending,
+    });
+
+    harness.documentTarget.dispatchEvent(new Event("visibilitychange"));
+    await flushEvent();
+    expect(harness.refreshRoute).not.toHaveBeenCalled();
+
+    applicationUpdatePending = true;
+    finishUpdateCheck?.();
+    await Promise.resolve();
+    expect(harness.refreshRoute).not.toHaveBeenCalled();
+    lifecycle.dispose();
   });
 
   it("can refresh online route data after a known snapshot error", async () => {
@@ -166,7 +242,7 @@ describe("school data refresh lifecycle", () => {
     harness.windowTarget.dispatchEvent(new Event("online"));
     await flushEvent();
     expect(harness.refreshSnapshot).toHaveBeenCalledTimes(1);
-    resolveSnapshot?.({ status: "current" });
+    resolveSnapshot?.({ status: "current", changed: true });
     await Promise.resolve();
     await flushEvent();
     expect(harness.refreshSnapshot).toHaveBeenCalledTimes(2);

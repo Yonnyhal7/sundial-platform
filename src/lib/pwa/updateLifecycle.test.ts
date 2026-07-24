@@ -80,6 +80,8 @@ function createHarness({
   });
   const prompt = vi.fn();
   const diagnostics = vi.fn<(value: PwaDiagnostics) => void>();
+  const markApplicationUpdatePending = vi.fn();
+  const resumeDiagnostics = vi.fn();
   const fetchDeploymentVersion = vi.fn(async () => pageDeploymentVersion);
   const lifecycle = startPwaUpdateLifecycle({
     serviceWorker,
@@ -91,6 +93,8 @@ function createHarness({
       pageDeploymentVersion === null ? undefined : fetchDeploymentVersion,
     onUpdateReady: prompt,
     onDiagnostics: diagnostics,
+    onApplicationUpdatePending: markApplicationUpdatePending,
+    onResumeDiagnostic: resumeDiagnostics,
     now: () => currentTime,
   });
 
@@ -103,6 +107,8 @@ function createHarness({
     reload,
     prompt,
     diagnostics,
+    markApplicationUpdatePending,
+    resumeDiagnostics,
     fetchDeploymentVersion,
     lifecycle,
     setOnline(value: boolean) {
@@ -177,6 +183,35 @@ describe("PWA update lifecycle", () => {
     await runForeground();
 
     expect(harness.registration.update).toHaveBeenCalledTimes(1);
+    expect(
+      harness.resumeDiagnostics.mock.calls
+        .map(([type]) => type)
+        .filter((type) =>
+          ["visibilitychange", "pageshow", "focus"].includes(type)
+        )
+    ).toEqual(["visibilitychange", "pageshow", "focus"]);
+    harness.lifecycle.dispose();
+  });
+
+  it("marks a deployment update pending before scheduling its one reload", async () => {
+    const harness = createHarness({ pageDeploymentVersion: "page-v1" });
+    await settleLaunch(harness);
+    harness.fetchDeploymentVersion.mockResolvedValue("page-v2");
+
+    harness.windowTarget.dispatchEvent(new Event("pageshow"));
+    await runForeground();
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(harness.markApplicationUpdatePending).toHaveBeenCalled();
+    expect(harness.reload).toHaveBeenCalledTimes(1);
+    expect(harness.resumeDiagnostics).toHaveBeenCalledWith(
+      "deployment_version_check",
+      "changed"
+    );
+    expect(harness.resumeDiagnostics).toHaveBeenCalledWith(
+      "full_reload_scheduled",
+      "new_deployment"
+    );
     harness.lifecycle.dispose();
   });
 

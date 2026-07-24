@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  applyTheme,
+  getSchoolSlugFromThemeLocation,
   getPreferredAppearance,
   getStoredAppearancePreference,
   getTenantThemeStorageKey,
@@ -39,6 +41,19 @@ describe("theme scope storage", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("resolves the tenant from production and localhost app hosts", () => {
+    expect(
+      getSchoolSlugFromThemeLocation("/app", "davids.sundialk12.com")
+    ).toBe("davids");
+    expect(getSchoolSlugFromThemeLocation("/app", "davids.localhost")).toBe(
+      "davids"
+    );
+    expect(
+      getSchoolSlugFromThemeLocation("/deloro/app", "localhost")
+    ).toBe("deloro");
+    expect(getSchoolSlugFromThemeLocation("/app", "admin.sundialk12.com")).toBeNull();
   });
 
   it("scopes PWA and kiosk storage keys by school slug", () => {
@@ -95,5 +110,22 @@ describe("theme scope storage", () => {
     setStoredAppearancePreference("admin", "system");
     expect(getStoredAppearancePreference("admin")).toBe("system");
     expect(getPreferredAppearance("admin")).toBe("system");
+  });
+
+  it("keeps the document color scheme aligned with the applied class", () => {
+    const toggle = vi.fn();
+    vi.stubGlobal("document", {
+      documentElement: {
+        classList: { toggle },
+        dataset: {},
+        style: {},
+      },
+    });
+
+    applyTheme("dark", "app", "dark");
+
+    expect(toggle).toHaveBeenCalledWith("dark", true);
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+    expect(document.documentElement.dataset.themePreference).toBe("dark");
   });
 });

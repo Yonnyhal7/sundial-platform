@@ -198,30 +198,13 @@ export default function AppHeader({
       schoolDefaultAppearance,
       school
     );
-    const preferredTheme = resolveAppearanceTheme(preferredAppearance);
-
-    applyTheme(preferredTheme, "app", preferredAppearance);
 
     const timeout = window.setTimeout(() => {
       setAppearance(preferredAppearance);
     }, 0);
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const syncSystem = () => {
-      const currentAppearance = getPreferredAppearance(
-        "app",
-        schoolDefaultAppearance,
-        school
-      );
 
-      if (currentAppearance === "system") {
-        applyTheme(resolveAppearanceTheme(currentAppearance), "app", currentAppearance);
-      }
-    };
-
-    media.addEventListener("change", syncSystem);
     return () => {
       window.clearTimeout(timeout);
-      media.removeEventListener("change", syncSystem);
     };
   }, [school, schoolDefaultAppearance]);
 

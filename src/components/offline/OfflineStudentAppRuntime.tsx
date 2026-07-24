@@ -9,6 +9,11 @@ import {
   useOfflineSchoolData,
 } from "@/lib/offline/useOfflineSchoolData";
 import { startSchoolDataRefreshLifecycle } from "@/lib/offline/schoolDataRefreshLifecycle";
+import {
+  isPwaApplicationUpdatePending,
+  waitForPwaUpdateCheck,
+} from "@/lib/pwa/resumeCoordination";
+import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
 
 function hasUnsavedWork() {
   const event = new Event("beforeunload", { cancelable: true });
@@ -71,6 +76,9 @@ function SchoolDataRefreshCoordinator({ timeZone }: { timeZone: string }) {
       refreshRoute: () => router.refresh(),
       markOffline,
       hasUnsavedWork,
+      shouldSkipRouteRefresh: isPwaApplicationUpdatePending,
+      waitForApplicationUpdateCheck: waitForPwaUpdateCheck,
+      onResumeDiagnostic: recordPwaResumeDiagnostic,
     });
     return () => lifecycle.dispose();
   }, [markOffline, refresh, router, timeZone]);

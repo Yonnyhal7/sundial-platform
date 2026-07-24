@@ -90,6 +90,39 @@ export function getSchoolSlugFromThemePath(pathname: string) {
   return null;
 }
 
+export function getSchoolSlugFromThemeLocation(
+  pathname: string,
+  hostname = ""
+) {
+  const pathSlug = getSchoolSlugFromThemePath(pathname);
+
+  if (pathSlug) return pathSlug;
+
+  if (!/^\/(?:app|kiosk)(?:\/|$)/.test(pathname)) return null;
+
+  const normalizedHostname = hostname.trim().toLowerCase().split(":")[0];
+  const hostnameSegments = normalizedHostname.split(".");
+  const candidate = hostnameSegments[0];
+
+  if (
+    !candidate ||
+    candidate === "admin" ||
+    candidate === "www" ||
+    candidate === "localhost"
+  ) {
+    return null;
+  }
+
+  if (
+    normalizedHostname.endsWith(".sundialk12.com") ||
+    normalizedHostname.endsWith(".localhost")
+  ) {
+    return candidate;
+  }
+
+  return null;
+}
+
 function getSystemTheme(): Theme {
   if (typeof window === "undefined") {
     return "light";
@@ -234,6 +267,7 @@ export function applyTheme(
 ) {
   document.documentElement.classList.toggle("dark", theme === "dark");
   document.documentElement.dataset.themeScope = scope;
+  document.documentElement.style.colorScheme = theme;
 
   if (preference) {
     document.documentElement.dataset.themePreference = preference;

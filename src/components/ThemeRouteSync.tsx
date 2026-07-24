@@ -5,11 +5,12 @@ import { usePathname } from "next/navigation";
 import {
   applyTheme,
   getPreferredAppearance,
-  getSchoolSlugFromThemePath,
+  getSchoolSlugFromThemeLocation,
   getThemeScopeFromPath,
   resolveAppearanceTheme,
   type AppearancePreference,
 } from "@/lib/themeScope";
+import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
 
 export default function ThemeRouteSync({
   schoolDefaultAppearance,
@@ -22,7 +23,9 @@ export default function ThemeRouteSync({
 
   useEffect(() => {
     const scope = getThemeScopeFromPath(pathname, window.location.hostname.toLowerCase());
-    const resolvedSchoolSlug = schoolSlug || getSchoolSlugFromThemePath(pathname);
+    const resolvedSchoolSlug =
+      schoolSlug ||
+      getSchoolSlugFromThemeLocation(pathname, window.location.hostname);
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const preference = getPreferredAppearance(
       scope,
@@ -30,7 +33,12 @@ export default function ThemeRouteSync({
       resolvedSchoolSlug
     );
 
+    recordPwaResumeDiagnostic("theme_read", `${scope}:${preference}`);
     applyTheme(resolveAppearanceTheme(preference), scope, preference);
+    recordPwaResumeDiagnostic(
+      "theme_class_applied",
+      document.documentElement.classList.contains("dark") ? "dark" : "light"
+    );
 
     function handleSystemThemeChange(event: MediaQueryListEvent) {
       const currentPreference = getPreferredAppearance(
@@ -44,6 +52,10 @@ export default function ThemeRouteSync({
       }
 
       applyTheme(event.matches ? "dark" : "light", scope, currentPreference);
+      recordPwaResumeDiagnostic(
+        "theme_class_applied",
+        event.matches ? "dark" : "light"
+      );
     }
 
     mediaQuery.addEventListener("change", handleSystemThemeChange);

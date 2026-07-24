@@ -48,6 +48,21 @@ export type PwaUpdateLifecycleOptions = {
   fetchDeploymentVersion?: () => Promise<string | null>;
   onUpdateReady: (updateNow: () => void) => void;
   onDiagnostics?: (diagnostics: PwaDiagnostics) => void;
+  onApplicationUpdatePending?: () => void;
+  onUpdateCheckStart?: () => void;
+  onUpdateCheckComplete?: () => void;
+  onResumeDiagnostic?: (
+    type:
+      | "pageshow"
+      | "focus"
+      | "visibilitychange"
+      | "deployment_version_check"
+      | "controller_comparison"
+      | "controllerchange"
+      | "full_reload_scheduled"
+      | "active_worker_script_version",
+    detail?: string
+  ) => void;
   now?: () => number;
   setTimeout?: typeof window.setTimeout;
   clearTimeout?: typeof window.clearTimeout;
@@ -143,6 +158,10 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
     publishDiagnostics();
   };
 
+  const markApplicationUpdatePending = () => {
+    options.onApplicationUpdatePending?.();
+  };
+
   const requestDiagnostics = () => {
     options.serviceWorker.controller?.postMessage({
       type: "GET_PWA_DIAGNOSTICS",
@@ -214,6 +233,10 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
       "reload_scheduled",
       pendingControllerRefresh ? "new_controller" : "new_deployment"
     );
+    options.onResumeDiagnostic?.(
+      "full_reload_scheduled",
+      pendingControllerRefresh ? "new_controller" : "new_deployment"
+    );
     reloadTimer = setTimeoutFn(() => {
       reloadTimer = null;
       if (disposed) return;
@@ -246,6 +269,7 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
   const announceWaitingWorker = (worker: ServiceWorker) => {
     updateReady = true;
     diagnostics.updateFound = true;
+    markApplicationUpdatePending();
     recordDiagnostic("worker_waiting");
     sendSkipWaiting(worker);
   };
@@ -268,9 +292,14 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
 
   const inspectWorkerLifecycle = (reason: string) => {
     const controller = options.serviceWorker.controller;
+    options.onResumeDiagnostic?.(
+      "controller_comparison",
+      controller === lastKnownController ? "unchanged" : "changed"
+    );
     if (controller && controller !== lastKnownController) {
       lastKnownController = controller;
       pendingControllerRefresh = true;
+      markApplicationUpdatePending();
       diagnostics.newControllerActive = true;
       recordDiagnostic("controllerchange_received", `${reason}:observed`);
       requestDiagnostics();
@@ -285,6 +314,7 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
   };
 
   const handleUpdateFound = () => {
+    markApplicationUpdatePending();
     diagnostics.updateFound = true;
     recordDiagnostic("updatefound");
     observeWorker(options.registration.installing);
@@ -300,14 +330,18 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
     ) {
       return;
     }
+    options.onResumeDiagnostic?.("deployment_version_check", "requested");
     const observedVersion = await options.fetchDeploymentVersion();
     if (!observedVersion || disposed) return;
     diagnostics.observedDeploymentVersion = observedVersion;
     if (observedVersion !== diagnostics.pageDeploymentVersion) {
       pendingDeploymentRefresh = true;
+      markApplicationUpdatePending();
+      options.onResumeDiagnostic?.("deployment_version_check", "changed");
       diagnostics.updateFound = true;
       recordDiagnostic("deployment_version_changed");
     } else {
+      options.onResumeDiagnostic?.("deployment_version_check", "current");
       publishDiagnostics();
     }
   };
@@ -318,20 +352,23 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
       return checkInFlight || Promise.resolve();
     }
 
-    checkInFlight = Promise.all([
+    options.onUpdateCheckStart?.();
+    checkInFlight = Promise.allSettled([
       options.registration.update(),
       checkDeploymentVersion(),
     ])
-      .then(() => {
+      .then((results) => {
+        if (results.some((result) => result.status === "rejected")) {
+          recordDiagnostic("update_check_failed", reason);
+          return;
+        }
         diagnostics.lastSuccessfulUpdateCheckAt = new Date(now()).toISOString();
         recordDiagnostic("update_check_completed", reason);
         inspectWorkerLifecycle(`${reason}:completed`);
       })
-      .catch(() => {
-        recordDiagnostic("update_check_failed", reason);
-      })
       .finally(() => {
         checkInFlight = null;
+        options.onUpdateCheckComplete?.();
       });
     return checkInFlight;
   };
@@ -394,18 +431,31 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
   };
 
   const handleVisibilityChange = () => {
+    options.onResumeDiagnostic?.(
+      "visibilitychange",
+      options.document.visibilityState
+    );
     if (options.document.visibilityState === "visible") {
       requestForegroundCheck("visibilitychange");
     }
   };
   const handlePageShow = (event: PageTransitionEvent) => {
+    options.onResumeDiagnostic?.(
+      "pageshow",
+      event.persisted ? "persisted" : "not_persisted"
+    );
     requestForegroundCheck(event.persisted ? "pageshow:persisted" : "pageshow");
   };
-  const handleFocus = () => requestForegroundCheck("focus");
+  const handleFocus = () => {
+    options.onResumeDiagnostic?.("focus");
+    requestForegroundCheck("focus");
+  };
   const handleOnline = () => requestForegroundCheck("online");
   const handleControllerChange = () => {
     lastKnownController = options.serviceWorker.controller;
     pendingControllerRefresh = true;
+    markApplicationUpdatePending();
+    options.onResumeDiagnostic?.("controllerchange", "event");
     diagnostics.newControllerActive = true;
     recordDiagnostic("controllerchange_received", "event");
     requestDiagnostics();
@@ -417,6 +467,10 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
     diagnostics.activeWorkerScriptVersion =
       event.data.serviceWorkerVersion || null;
     diagnostics.cacheVersion = event.data.cacheVersion || null;
+    options.onResumeDiagnostic?.(
+      "active_worker_script_version",
+      diagnostics.activeWorkerScriptVersion || "unavailable"
+    );
     publishDiagnostics();
   };
 

@@ -21,6 +21,7 @@ import {
 } from "@/lib/routing/paths";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
 import { normalizeAppearancePreference } from "@/lib/themeScope";
+import { getThemeBootstrapScript } from "@/lib/themeBootstrap";
 
 type AppLayoutProps = {
   children: ReactNode;
@@ -133,6 +134,15 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
         } as AppStyle
       }
     >
+      <script
+        dangerouslySetInnerHTML={{
+          __html: getThemeBootstrapScript({
+            scope: "app",
+            schoolSlug: school,
+            schoolDefaultAppearance,
+          }),
+        }}
+      />
       <ThemeRouteSync
         schoolDefaultAppearance={schoolDefaultAppearance}
         schoolSlug={school}

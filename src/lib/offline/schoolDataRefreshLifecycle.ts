@@ -3,7 +3,7 @@ import { getMillisecondsUntilNextMidnight } from "@/lib/timezones";
 export const SCHOOL_DATA_REFRESH_COALESCE_MS = 250;
 
 export type SchoolDataRefreshResult =
-  | { status: "current" }
+  | { status: "current"; changed: boolean }
   | { status: "offline" }
   | { status: "unavailable" }
   | { status: "error" };
@@ -18,6 +18,12 @@ type SchoolDataRefreshLifecycleOptions = {
   refreshRoute: () => void;
   markOffline: () => void;
   hasUnsavedWork?: () => boolean;
+  shouldSkipRouteRefresh?: () => boolean;
+  waitForApplicationUpdateCheck?: () => Promise<void>;
+  onResumeDiagnostic?: (
+    type: "snapshot_refresh_start" | "snapshot_refresh_end" | "router_refresh",
+    detail?: string
+  ) => void;
   now?: () => Date;
   coalesceMs?: number;
   setTimeout?: typeof window.setTimeout;
@@ -57,15 +63,26 @@ export function startSchoolDataRefreshLifecycle(
       return inFlight;
     }
 
+    const refreshReason = pendingReason || "foreground";
     pendingReason = null;
     inFlight = (async () => {
+      options.onResumeDiagnostic?.("snapshot_refresh_start", refreshReason);
       const result = await options.refreshSnapshot();
+      options.onResumeDiagnostic?.("snapshot_refresh_end", result.status);
+      await options.waitForApplicationUpdateCheck?.();
+      const needsRouteRefresh =
+        refreshReason === "midnight" ||
+        result.status !== "current" ||
+        result.changed;
       if (
         !disposed &&
         result.status !== "offline" &&
+        needsRouteRefresh &&
         options.window.navigator.onLine &&
-        !options.hasUnsavedWork?.()
+        !options.hasUnsavedWork?.() &&
+        !options.shouldSkipRouteRefresh?.()
       ) {
+        options.onResumeDiagnostic?.("router_refresh", refreshReason);
         options.refreshRoute();
       }
     })().finally(() => {

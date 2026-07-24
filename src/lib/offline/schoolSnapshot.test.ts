@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getSnapshotStorageKey,
+  haveSameSchoolSnapshotData,
   isValidSchoolOfflineSnapshot,
   shouldUseSnapshotForSchool,
 } from "@/lib/offline/schoolSnapshot";
@@ -87,6 +88,22 @@ function createSnapshot(overrides: Partial<SchoolOfflineSnapshot> = {}) {
 }
 
 describe("offline school snapshots", () => {
+  it("ignores sync timestamps when deciding whether visible school data changed", () => {
+    const current = createSnapshot();
+    const resynced = createSnapshot({
+      syncedAt: "2026-07-24T22:00:00.000Z",
+    });
+    const changed = createSnapshot({
+      data: {
+        ...current.data,
+        school: { ...current.data.school, name: "Del Oro Updated" },
+      },
+    });
+
+    expect(haveSameSchoolSnapshotData(current, resynced)).toBe(true);
+    expect(haveSameSchoolSnapshotData(current, changed)).toBe(false);
+  });
+
   it("uses tenant-specific snapshot keys by stable school id", () => {
     expect(getSnapshotStorageKey("school-deloro")).toBe("schoolSnapshot:school-deloro");
     expect(getSnapshotStorageKey("school-north")).toBe("schoolSnapshot:school-north");

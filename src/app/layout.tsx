@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import ServiceWorkerRegister from "@/components/offline/ServiceWorkerRegister";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { getPwaDeploymentVersion } from "@/lib/pwa/deploymentVersion";
+import { getThemeBootstrapScript } from "@/lib/themeBootstrap";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -55,7 +56,11 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <head />
+      <head>
+        <script
+          dangerouslySetInnerHTML={{ __html: getThemeBootstrapScript() }}
+        />
+      </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <ServiceWorkerRegister
           deploymentVersion={getPwaDeploymentVersion()}

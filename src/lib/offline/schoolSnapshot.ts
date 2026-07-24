@@ -133,3 +133,18 @@ export function shouldUseSnapshotForSchool(
 ) {
   return Boolean(snapshot && snapshot.schoolId === schoolId);
 }
+
+export function haveSameSchoolSnapshotData(
+  current: SchoolOfflineSnapshot | null,
+  next: SchoolOfflineSnapshot
+) {
+  if (!current || current.schoolId !== next.schoolId) return false;
+
+  return (
+    current.schemaVersion === next.schemaVersion &&
+    current.schoolSlug === next.schoolSlug &&
+    current.timezoneVersion === next.timezoneVersion &&
+    (current.sourceUpdatedAt || null) === (next.sourceUpdatedAt || null) &&
+    JSON.stringify(current.data) === JSON.stringify(next.data)
+  );
+}

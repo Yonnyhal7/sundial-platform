@@ -15,7 +15,10 @@ import {
   fetchAndStoreSchoolSnapshot,
   SchoolSnapshotUnavailableError,
 } from "@/lib/offline/syncSchoolSnapshot";
-import { shouldUseSnapshotForSchool } from "@/lib/offline/schoolSnapshot";
+import {
+  haveSameSchoolSnapshotData,
+  shouldUseSnapshotForSchool,
+} from "@/lib/offline/schoolSnapshot";
 import type {
   OfflineSyncState,
   SchoolOfflineSnapshot,
@@ -78,7 +81,9 @@ export function OfflineSchoolDataProvider({
         return { status: "offline" } as const;
       }
 
-      setSyncState("syncing");
+      if (!snapshotRef.current) {
+        setSyncState("syncing");
+      }
 
       try {
         const nextSnapshot = await fetchAndStoreSchoolSnapshot(schoolSlug, schoolId);
@@ -86,11 +91,18 @@ export function OfflineSchoolDataProvider({
         if (!mountedRef.current) return { status: "error" } as const;
 
         if (nextSnapshot.schoolId === schoolId) {
-          setSnapshot(nextSnapshot);
+          const changed = !haveSameSchoolSnapshotData(
+            snapshotRef.current,
+            nextSnapshot
+          );
+          if (changed) {
+            snapshotRef.current = nextSnapshot;
+            setSnapshot(nextSnapshot);
+          }
           setLastError(null);
           setIsOnline(true);
           setSyncState("current");
-          return { status: "current" } as const;
+          return { status: "current", changed } as const;
         }
         return { status: "error" } as const;
       } catch (error) {

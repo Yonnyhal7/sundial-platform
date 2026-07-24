@@ -5,6 +5,12 @@ import {
   startPwaUpdateLifecycle,
   type PwaDiagnostics,
 } from "@/lib/pwa/updateLifecycle";
+import {
+  markPwaApplicationUpdatePending,
+  markPwaUpdateCheckFinished,
+  markPwaUpdateCheckStarted,
+} from "@/lib/pwa/resumeCoordination";
+import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
 
 export default function ServiceWorkerRegister({
   deploymentVersion,
@@ -63,6 +69,10 @@ export default function ServiceWorkerRegister({
               setDismissPrompt(null);
             });
           },
+          onApplicationUpdatePending: markPwaApplicationUpdatePending,
+          onUpdateCheckStart: markPwaUpdateCheckStarted,
+          onUpdateCheckComplete: markPwaUpdateCheckFinished,
+          onResumeDiagnostic: recordPwaResumeDiagnostic,
           onDiagnostics: (diagnostics: PwaDiagnostics) => {
             try {
               window.sessionStorage.setItem(
