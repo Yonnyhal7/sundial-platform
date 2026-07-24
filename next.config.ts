@@ -1,10 +1,7 @@
 import type { NextConfig } from "next";
 import { randomUUID } from "node:crypto";
 
-const pwaDeploymentVersion =
-  process.env.VERCEL_DEPLOYMENT_ID ||
-  process.env.VERCEL_GIT_COMMIT_SHA ||
-  randomUUID();
+const pwaDeploymentVersion = randomUUID();
 
 const nextConfig: NextConfig = {
   env: {
