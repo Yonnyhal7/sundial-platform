@@ -32,7 +32,38 @@ type CleanupJob = {
 const CLEANUP_JOB_SELECT =
   "id, deleted_school_id, deleted_school_subdomain, deletion_audit_id, storage_manifest, status";
 
-type RpcResult = { status?: string; message?: string };
+type RpcResult = {
+  status?: string;
+  message?: string;
+  code?: string;
+  constraint?: string;
+  table?: string;
+  databaseObject?: string;
+};
+
+function safeDatabaseFailure(error: unknown) {
+  const value =
+    error && typeof error === "object"
+      ? (error as { code?: unknown; message?: unknown; details?: unknown })
+      : {};
+  const text = [value.message, value.details]
+    .filter((item): item is string => typeof item === "string")
+    .join(" ");
+  const identifier = text.match(
+    /\b(?:constraint|table|relation)\s+"?([a-z_][a-z0-9_$.]{0,127})"?/i,
+  )?.[1];
+  return {
+    code:
+      typeof value.code === "string" && /^[A-Z0-9_]{3,20}$/i.test(value.code)
+        ? value.code
+        : "unknown",
+    databaseObject: identifier || "unknown",
+  };
+}
+
+function logDeletionStage(stage: string, detail?: Record<string, string>) {
+  console.info("[School deletion]", { stage, ...detail });
+}
 
 function field(formData: FormData, name: string) {
   return String(formData.get(name) || "");
@@ -58,9 +89,12 @@ function targetMatches(school: LifecycleSchool, formData: FormData) {
 }
 
 function lifecycleMessage(status: string | undefined, verb: string) {
-  if (status === "permission_error") return "Only an authenticated SuperAdmin can perform this action.";
-  if (status === "stale_target") return "The school changed after this page loaded. Refresh and try again.";
-  if (status === "school_not_archived") return "The school must be archived before it can be deleted.";
+  if (status === "permission_error")
+    return "Only an authenticated SuperAdmin can perform this action.";
+  if (status === "stale_target")
+    return "The school changed after this page loaded. Refresh and try again.";
+  if (status === "school_not_archived")
+    return "The school must be archived before it can be deleted.";
   return `Could not ${verb} the school. Refresh and try again.`;
 }
 
@@ -74,16 +108,28 @@ function invalidateSchool(subdomain: string) {
 
 export async function archiveSchoolAction(
   _previousState: SchoolLifecycleState,
-  formData: FormData
+  formData: FormData,
 ): Promise<SchoolLifecycleState> {
   const { supabase } = await requireSuperAdminAccess();
   const schoolId = field(formData, "schoolId");
   const school = await getLifecycleSchool(schoolId);
   if (!school || !targetMatches(school, formData)) {
-    return { status: "error", message: "The selected school no longer matches this page." };
+    return {
+      status: "error",
+      message: "The selected school no longer matches this page.",
+    };
   }
-  if (!confirmationMatches(field(formData, "confirmation"), school.name, school.subdomain)) {
-    return { status: "error", message: "Type the exact school name or slug to confirm." };
+  if (
+    !confirmationMatches(
+      field(formData, "confirmation"),
+      school.name,
+      school.subdomain,
+    )
+  ) {
+    return {
+      status: "error",
+      message: "Type the exact school name or slug to confirm.",
+    };
   }
 
   const { data, error } = await supabase.rpc("archive_school", {
@@ -94,24 +140,42 @@ export async function archiveSchoolAction(
   if (error) return { status: "error", message: error.message };
   const result = data as RpcResult;
   if (result.status !== "success" && result.status !== "already_archived") {
-    return { status: "error", message: lifecycleMessage(result.status, "archive") };
+    return {
+      status: "error",
+      message: lifecycleMessage(result.status, "archive"),
+    };
   }
 
   invalidateSchool(school.subdomain);
-  return { status: "success", message: `${school.name} is archived and unavailable.` };
+  return {
+    status: "success",
+    message: `${school.name} is archived and unavailable.`,
+  };
 }
 
 export async function restoreSchoolAction(
   _previousState: SchoolLifecycleState,
-  formData: FormData
+  formData: FormData,
 ): Promise<SchoolLifecycleState> {
   const { supabase } = await requireSuperAdminAccess();
   const school = await getLifecycleSchool(field(formData, "schoolId"));
   if (!school || !targetMatches(school, formData)) {
-    return { status: "error", message: "The selected school no longer matches this page." };
+    return {
+      status: "error",
+      message: "The selected school no longer matches this page.",
+    };
   }
-  if (!confirmationMatches(field(formData, "confirmation"), school.name, school.subdomain)) {
-    return { status: "error", message: "Type the exact school name or slug to confirm." };
+  if (
+    !confirmationMatches(
+      field(formData, "confirmation"),
+      school.name,
+      school.subdomain,
+    )
+  ) {
+    return {
+      status: "error",
+      message: "Type the exact school name or slug to confirm.",
+    };
   }
 
   const { data, error } = await supabase.rpc("restore_school", {
@@ -122,7 +186,10 @@ export async function restoreSchoolAction(
   if (error) return { status: "error", message: error.message };
   const result = data as RpcResult;
   if (result.status !== "success" && result.status !== "already_active") {
-    return { status: "error", message: lifecycleMessage(result.status, "restore") };
+    return {
+      status: "error",
+      message: lifecycleMessage(result.status, "restore"),
+    };
   }
 
   invalidateSchool(school.subdomain);
@@ -157,12 +224,14 @@ async function referencedStorageObjects(school: LifecycleSchool) {
     }
 
     const isLegacyLogo =
-      object.bucket === "school-logos" && object.path.startsWith(`logos/${school.subdomain}/`);
+      object.bucket === "school-logos" &&
+      object.path.startsWith(`logos/${school.subdomain}/`);
     const isLegacyResource =
       object.bucket === "resource-file" && object.path.startsWith("resources/");
     if (!isLegacyLogo && !isLegacyResource) continue;
 
-    if ((await countStorageReferences(url, school.id)) === 0) objects.push(object);
+    if ((await countStorageReferences(url, school.id)) === 0)
+      objects.push(object);
   }
 
   for (const location of [
@@ -176,7 +245,11 @@ async function referencedStorageObjects(school: LifecycleSchool) {
         .list(location.prefix, { limit: 100, offset });
       if (error) throw new Error(`${location.bucket}: ${error.message}`);
       for (const item of data || []) {
-        if (item.id) objects.push({ bucket: location.bucket, path: `${location.prefix}/${item.name}` });
+        if (item.id)
+          objects.push({
+            bucket: location.bucket,
+            path: `${location.prefix}/${item.name}`,
+          });
       }
       if (!data || data.length < 100) break;
       offset += data.length;
@@ -195,12 +268,21 @@ async function countStorageReferences(url: string, excludedSchoolId?: string) {
     ["announcements", "image_url"],
     ["events", "image_url"],
   ] as const) {
-    let query = service.from(table).select("id", { count: "exact", head: true }).eq(column, url);
+    let query = service
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .eq(column, url);
     if (excludedSchoolId) {
-      query = table === "schools" ? query.neq("id", excludedSchoolId) : query.neq("school_id", excludedSchoolId);
+      query =
+        table === "schools"
+          ? query.neq("id", excludedSchoolId)
+          : query.neq("school_id", excludedSchoolId);
     }
     const result = await query;
-    if (result.error && !["42703", "PGRST204"].includes(result.error.code || "")) {
+    if (
+      result.error &&
+      !["42703", "PGRST204"].includes(result.error.code || "")
+    ) {
       throw new Error(result.error.message);
     }
     count += result.count || 0;
@@ -216,34 +298,45 @@ function isStorageManifest(value: unknown): value is SchoolStorageObject[] {
         item &&
         typeof item === "object" &&
         typeof (item as SchoolStorageObject).bucket === "string" &&
-        typeof (item as SchoolStorageObject).path === "string"
+        typeof (item as SchoolStorageObject).path === "string",
     )
   );
 }
 
 async function runStorageCleanup(job: CleanupJob) {
   const service = createSupabaseServiceRoleClient();
-  if (!isStorageManifest(job.storage_manifest)) throw new Error("Invalid cleanup manifest.");
+  if (!isStorageManifest(job.storage_manifest))
+    throw new Error("Invalid cleanup manifest.");
 
   for (const object of job.storage_manifest) {
     if (isTenantScopedStorageObject(object, job.deleted_school_id)) continue;
     const legacyLogo =
       object.bucket === "school-logos" &&
       object.path.startsWith(`logos/${job.deleted_school_subdomain}/`);
-    const legacyResource = object.bucket === "resource-file" && object.path.startsWith("resources/");
-    if (!legacyLogo && !legacyResource) throw new Error("Cleanup manifest contains an unowned path.");
-    const publicUrl = service.storage.from(object.bucket).getPublicUrl(object.path).data.publicUrl;
+    const legacyResource =
+      object.bucket === "resource-file" && object.path.startsWith("resources/");
+    if (!legacyLogo && !legacyResource)
+      throw new Error("Cleanup manifest contains an unowned path.");
+    const publicUrl = service.storage
+      .from(object.bucket)
+      .getPublicUrl(object.path).data.publicUrl;
     if ((await countStorageReferences(publicUrl)) > 0) {
-      throw new Error("A legacy file is now referenced by another school and was not deleted.");
+      throw new Error(
+        "A legacy file is now referenced by another school and was not deleted.",
+      );
     }
   }
 
-  for (const bucket of [...new Set(job.storage_manifest.map((item) => item.bucket))]) {
+  for (const bucket of [
+    ...new Set(job.storage_manifest.map((item) => item.bucket)),
+  ]) {
     const paths = job.storage_manifest
       .filter((item) => item.bucket === bucket)
       .map((item) => item.path);
     for (let index = 0; index < paths.length; index += 100) {
-      const { error } = await service.storage.from(bucket).remove(paths.slice(index, index + 100));
+      const { error } = await service.storage
+        .from(bucket)
+        .remove(paths.slice(index, index + 100));
       if (error) throw new Error(`${bucket}: ${error.message}`);
     }
   }
@@ -251,7 +344,13 @@ async function runStorageCleanup(job: CleanupJob) {
   const now = new Date().toISOString();
   const { error } = await service
     .from("school_storage_cleanup_jobs")
-    .update({ status: "completed", storage_manifest: [], last_error: null, updated_at: now, completed_at: now })
+    .update({
+      status: "completed",
+      storage_manifest: [],
+      last_error: null,
+      updated_at: now,
+      completed_at: now,
+    })
     .eq("id", job.id);
   if (error) throw new Error(error.message);
   if (job.deletion_audit_id) {
@@ -264,10 +363,17 @@ async function runStorageCleanup(job: CleanupJob) {
 
 async function markStorageFailure(job: CleanupJob, error: unknown) {
   const service = createSupabaseServiceRoleClient();
-  const message = error instanceof Error ? error.message.slice(0, 1000) : "Storage cleanup failed.";
+  const message =
+    error instanceof Error
+      ? error.message.slice(0, 1000)
+      : "Storage cleanup failed.";
   await service
     .from("school_storage_cleanup_jobs")
-    .update({ status: "storage_failed", last_error: message, updated_at: new Date().toISOString() })
+    .update({
+      status: "storage_failed",
+      last_error: message,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", job.id);
   if (job.deletion_audit_id) {
     await service
@@ -279,29 +385,109 @@ async function markStorageFailure(job: CleanupJob, error: unknown) {
 
 export async function permanentlyDeleteSchoolAction(
   _previousState: SchoolLifecycleState,
-  formData: FormData
+  formData: FormData,
 ): Promise<SchoolLifecycleState> {
-  const { supabase, profile } = await requireSuperAdminAccess();
-  const school = await getLifecycleSchool(field(formData, "schoolId"));
-  if (!school || !targetMatches(school, formData)) {
-    return { status: "error", message: "The selected school no longer matches this page." };
+  logDeletionStage("server_action_entered");
+  let access: Awaited<ReturnType<typeof requireSuperAdminAccess>>;
+  try {
+    access = await requireSuperAdminAccess();
+  } catch {
+    console.warn("[School deletion]", {
+      stage: "authorization_failed",
+      reason: "superadmin_required",
+    });
+    return {
+      status: "error",
+      reason: "authorization_failure",
+      message:
+        "Only an authenticated SuperAdmin can permanently delete a school.",
+    };
   }
-  if (!school.archived_at) return { status: "error", message: "Archive this school before deleting it." };
-  if (!confirmationMatches(field(formData, "confirmation"), school.name, school.subdomain)) {
-    return { status: "error", message: "Type the exact school name or slug to confirm." };
+  const { supabase, profile } = access;
+  let school: LifecycleSchool | null;
+  try {
+    school = await getLifecycleSchool(field(formData, "schoolId"));
+  } catch (error) {
+    console.error("[School deletion]", {
+      stage: "target_lookup_failed",
+      ...safeDatabaseFailure(error),
+    });
+    return {
+      status: "error",
+      reason: "database_failure",
+      message:
+        "The school could not be verified for deletion. No school data was removed.",
+    };
+  }
+  if (!school || !targetMatches(school, formData)) {
+    return {
+      status: "error",
+      reason: "validation_failure",
+      message: "The selected school no longer matches this page.",
+    };
+  }
+  if (!school.archived_at) {
+    return {
+      status: "error",
+      reason: "validation_failure",
+      message: "Archive this school before deleting it.",
+    };
+  }
+  if (
+    !confirmationMatches(
+      field(formData, "confirmation"),
+      school.name,
+      school.subdomain,
+    )
+  ) {
+    return {
+      status: "error",
+      reason: "validation_failure",
+      message: "Type the exact school name or slug to confirm.",
+    };
   }
   if (field(formData, "irreversible") !== "yes") {
-    return { status: "error", message: "Confirm that permanent deletion is irreversible." };
+    return {
+      status: "error",
+      reason: "validation_failure",
+      message: "Confirm that permanent deletion is irreversible.",
+    };
   }
 
   const service = createSupabaseServiceRoleClient();
-  const manifest = await referencedStorageObjects(school);
-  const { data: existingJob } = await service
+  let manifest: SchoolStorageObject[];
+  try {
+    manifest = await referencedStorageObjects(school);
+  } catch (error) {
+    console.error("[School deletion]", {
+      stage: "storage_manifest_failed",
+      ...safeDatabaseFailure(error),
+    });
+    return {
+      status: "error",
+      reason: "storage_cleanup_failure",
+      message:
+        "Stored files could not be prepared for safe cleanup. No school data was deleted.",
+    };
+  }
+  const { data: existingJob, error: existingJobError } = await service
     .from("school_storage_cleanup_jobs")
     .select(CLEANUP_JOB_SELECT)
     .eq("deleted_school_id", school.id)
     .in("status", ["database_pending", "database_failed"])
     .maybeSingle<CleanupJob>();
+  if (existingJobError) {
+    console.error("[School deletion]", {
+      stage: "cleanup_job_lookup_failed",
+      ...safeDatabaseFailure(existingJobError),
+    });
+    return {
+      status: "error",
+      reason: "database_failure",
+      message:
+        "The deletion transaction could not be prepared. No school data was deleted.",
+    };
+  }
   let job = existingJob;
   if (!job) {
     const insertResult = await service
@@ -325,20 +511,76 @@ export async function permanentlyDeleteSchoolAction(
         .single<CleanupJob>();
       job = retry.data;
     } else if (insertResult.error) {
-      return { status: "error", message: insertResult.error.message };
+      console.error("[School deletion]", {
+        stage: "cleanup_job_failed",
+        ...safeDatabaseFailure(insertResult.error),
+      });
+      return {
+        status: "error",
+        reason: "database_failure",
+        message:
+          "The deletion transaction could not be prepared. No school data was deleted.",
+      };
     }
   }
-  if (!job) return { status: "error", message: "Could not prepare safe file cleanup." };
+  if (!job) {
+    return {
+      status: "error",
+      reason: "database_failure",
+      message:
+        "The deletion transaction could not be prepared. No school data was deleted.",
+    };
+  }
 
-  const { data, error } = await supabase.rpc("permanently_delete_archived_school", {
-    p_school_id: school.id,
-    p_expected_name: school.name,
-    p_expected_subdomain: school.subdomain,
-    p_cleanup_job_id: job.id,
-  });
+  logDeletionStage("deletion_transaction_started");
+  const { data, error } = await supabase.rpc(
+    "permanently_delete_archived_school",
+    {
+      p_school_id: school.id,
+      p_expected_name: school.name,
+      p_expected_subdomain: school.subdomain,
+      p_cleanup_job_id: job.id,
+    },
+  );
   const result = data as RpcResult | null;
   if (error || result?.status !== "success") {
-    return { status: "error", message: error?.message || lifecycleMessage(result?.status, "delete") };
+    const { data: failedJob } = await service
+      .from("school_storage_cleanup_jobs")
+      .select("last_error")
+      .eq("id", job.id)
+      .maybeSingle<{ last_error: string | null }>();
+    const resultFailure =
+      !error && result
+        ? {
+            code:
+              typeof result.code === "string" &&
+              /^[A-Z0-9_]{3,20}$/i.test(result.code)
+                ? result.code
+                : "unknown",
+            databaseObject:
+              [result.constraint, result.table, result.databaseObject].find(
+                (value) =>
+                  typeof value === "string" &&
+                  /^[a-z_][a-z0-9_$.,]{0,499}$/i.test(value),
+              ) || "unknown",
+          }
+        : safeDatabaseFailure(error || { message: failedJob?.last_error });
+    console.error("[School deletion]", {
+      stage: "database_deletion_failed",
+      reason: result?.status || "rpc_error",
+      ...resultFailure,
+    });
+    return {
+      status: "error",
+      reason:
+        result?.status === "permission_error"
+          ? "authorization_failure"
+          : "database_failure",
+      message:
+        result?.status === "permission_error"
+          ? "Only an authenticated SuperAdmin can permanently delete a school."
+          : "The database deletion failed. No school data was removed.",
+    };
   }
 
   const { data: updatedJob } = await service
@@ -353,12 +595,17 @@ export async function permanentlyDeleteSchoolAction(
     invalidateSchool(school.subdomain);
     return {
       status: "warning",
+      reason: "storage_cleanup_failure",
       message: `${school.name} was deleted. Some stored files remain; use Retry cleanup below.`,
     };
   }
 
   invalidateSchool(school.subdomain);
-  return { status: "success", message: `${school.name} was permanently deleted.` };
+  return {
+    status: "success",
+    reason: "success",
+    message: `${school.name} was permanently deleted.`,
+  };
 }
 
 export async function retrySchoolStorageCleanupAction(formData: FormData) {
