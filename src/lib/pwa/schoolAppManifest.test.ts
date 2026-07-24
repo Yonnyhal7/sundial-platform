@@ -132,11 +132,80 @@ describe("school App manifest", () => {
     expect(response.headers.get("cache-control")).toBe(
       "public, max-age=0, must-revalidate"
     );
+    expect(response.headers.get("vary")).toBe(
+      "Host, X-Forwarded-Host, X-Sundial-Forwarded-Host"
+    );
     expect(manifest).toMatchObject({
       id: "/app",
+      name: "Del Oro High School App",
+      short_name: "Del Oro High School",
       start_url: "/app",
       scope: "/app",
+      display: "standalone",
     });
+    expect(manifest.icons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          src: "/icon-192.png",
+          sizes: "192x192",
+          type: "image/png",
+        }),
+        expect.objectContaining({
+          src: "/icon-512.png",
+          sizes: "512x512",
+          type: "image/png",
+        }),
+      ])
+    );
+  });
+
+  it("does not reuse one tenant manifest response for another tenant", async () => {
+    const liberty: MobileAppSchool = {
+      ...delOro,
+      id: "school-liberty",
+      name: "Liberty High School",
+      subdomain: "liberty",
+      logo_url: "https://assets.example.com/liberty.png",
+    };
+    getSchoolLifecycleBySubdomain.mockImplementation(async (school) => {
+      const selected = school === "liberty" ? liberty : delOro;
+      return {
+        id: selected.id,
+        subdomain: selected.subdomain,
+        archived_at: null,
+      };
+    });
+    getMobileAppSchool.mockImplementation(async (school) =>
+      school === "liberty" ? liberty : delOro
+    );
+
+    const delOroResponse = await getSchoolAppManifestResponse(
+      new Request("https://deloro.sundialk12.com/app/manifest", {
+        headers: { host: "deloro.sundialk12.com" },
+      }),
+      "deloro"
+    );
+    const libertyResponse = await getSchoolAppManifestResponse(
+      new Request("https://liberty.sundialk12.com/app/manifest", {
+        headers: { host: "liberty.sundialk12.com" },
+      }),
+      "liberty"
+    );
+    const [delOroManifest, libertyManifest] = await Promise.all([
+      delOroResponse.json(),
+      libertyResponse.json(),
+    ]);
+
+    expect(delOroManifest).toMatchObject({
+      name: "Del Oro High School App",
+      start_url: "/app",
+    });
+    expect(libertyManifest).toMatchObject({
+      name: "Liberty High School App",
+      start_url: "/app",
+    });
+    expect(JSON.stringify(delOroManifest)).not.toContain("Liberty");
+    expect(JSON.stringify(libertyManifest)).not.toContain("Del Oro");
   });
 
   it("serves localhost and preview manifests with school-first paths", async () => {

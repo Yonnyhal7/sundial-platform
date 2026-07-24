@@ -147,4 +147,16 @@ describe("tenant domain routing", () => {
     );
     expect(response.headers.get("x-middleware-rewrite")).not.toContain("jonny-test1");
   });
+
+  it("keeps the visible tenant App URL at /app without redirecting to the website root", async () => {
+    const response = await proxy(
+      request("jonny-test1.sundialk12.com", "/app")
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-middleware-rewrite")).toBe(
+      "https://jonny-test1.sundialk12.com/jonny-test1/app"
+    );
+  });
 });

@@ -10,6 +10,10 @@ const footer = readFileSync(
   resolve(process.cwd(), "src/components/public-site/PublicSite.tsx"),
   "utf8"
 ).replace(/\r\n/g, "\n");
+const navigation = readFileSync(
+  resolve(process.cwd(), "src/components/SchoolPublicNav.tsx"),
+  "utf8"
+).replace(/\r\n/g, "\n");
 
 describe("public homepage mobile contracts", () => {
   it("keeps the hero compact on mobile and restores its desktop height", () => {
@@ -31,5 +35,15 @@ describe("public homepage mobile contracts", () => {
     expect(footer).toContain("school.phone_number");
     expect(footer).not.toContain("school_website");
     expect(footer).not.toContain("Contact the school office for location information.");
+  });
+
+  it("loads the School App as a fresh install document from every public entry point", () => {
+    expect(homepage).toContain(
+      '<SchoolAppInstallLink href={`/${slug}/app`}'
+    );
+    expect(footer).toContain(
+      '<SchoolAppInstallLink href={`${base}/app`}>'
+    );
+    expect(navigation).toContain("installSurface: true");
   });
 });

@@ -12,6 +12,9 @@ describe("School App PWA integration contract", () => {
     expect(appLayout).toContain("getSchoolAppManifestPath");
     expect(appLayout).not.toContain("`/${school}/manifest.webmanifest`");
     expect(appLayout).toContain('"apple-mobile-web-app-capable": "yes"');
+    expect(appLayout).toContain("title: appTitle");
+    expect(appLayout).toContain("applicationName: getSchoolAppName");
+    expect(appLayout).toContain('url: "/apple-touch-icon.png"');
     expect(appLayout).toContain("getSchoolAppCanonicalUrl");
   });
 
@@ -36,6 +39,22 @@ describe("School App PWA integration contract", () => {
     expect(server).toContain("getSchoolLifecycleBySubdomain");
     expect(server).toContain("schoolData.id !== lifecycle.id");
     expect(server).toContain("schoolData.subdomain.trim().toLowerCase()");
+  });
+
+  it("forces public School App entry points through a fresh document load", () => {
+    const installLink = source(
+      "src/components/pwa/SchoolAppInstallLink.tsx"
+    );
+    const homepage = source("src/app/[school]/page.tsx");
+    const navigation = source("src/components/SchoolPublicNav.tsx");
+    const footer = source("src/components/public-site/PublicSite.tsx");
+
+    expect(installLink).toContain("return <a {...props} />");
+    expect(installLink).toContain("manifest");
+    expect(homepage).toContain("<SchoolAppInstallLink");
+    expect(navigation).toContain("installSurface: true");
+    expect(navigation).toContain("<SchoolAppInstallLink");
+    expect(footer).toContain("<SchoolAppInstallLink");
   });
 
   it("uses network-first manifest refresh while preserving App and Kiosk navigation", () => {
