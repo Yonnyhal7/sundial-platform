@@ -1,3 +1,8 @@
+import type { Metadata } from "next";
+import { getSundialFaviconMetadata } from "@/lib/tenantFavicon";
+
+export const metadata: Metadata = getSundialFaviconMetadata();
+
 export default function Home() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-slate-50 px-6 text-center dark:bg-black">
