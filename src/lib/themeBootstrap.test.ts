@@ -110,6 +110,7 @@ describe("pre-hydration theme bootstrap", () => {
     expect(diagnostics.map((event) => event.type)).toEqual([
       "theme_read",
       "theme_class_applied",
+      "theme_bootstrap_executed",
     ]);
     expect(JSON.stringify(diagnostics)).not.toContain("davids");
   });

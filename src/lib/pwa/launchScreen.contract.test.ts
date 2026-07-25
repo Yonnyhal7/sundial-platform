@@ -26,11 +26,13 @@ describe("installed PWA loading screen integration", () => {
     expect(rootLayout.match(/<PwaLaunchScreen/g)).toHaveLength(1);
     expect(appLayout).not.toContain("<PwaLaunchScreen");
     expect(rootLayout.indexOf("<PwaLaunchScreen")).toBeLessThan(
-      rootLayout.indexOf("{children}")
+      rootLayout.indexOf("<Suspense")
     );
+    expect(rootLayout).toContain("<Suspense fallback={null}>{children}</Suspense>");
     expect(launchScreen).toContain('role="status"');
     expect(launchScreen).toContain("Opening your school app");
-    expect(launchScreen).toContain('src="/sundial-icon.png"');
+    expect(launchScreen).toContain("<svg");
+    expect(launchScreen).not.toContain("<img");
     expect(launchScreen).toContain("server_launch_shell_present");
   });
 
@@ -38,15 +40,33 @@ describe("installed PWA loading screen integration", () => {
     expect(rootLayout.indexOf("__html: getThemeBootstrapScript()")).toBeLessThan(
       rootLayout.indexOf("__html: PWA_LAUNCH_CRITICAL_CSS")
     );
-    expect(launchRuntime).toContain(`html.dark #\${PWA_LAUNCH_SCREEN_ID}`);
+    expect(launchRuntime).toContain(
+      'html[data-pwa-app-launch="true"][data-pwa-launch="pending"]'
+    );
     expect(launchRuntime).toContain("color-scheme: light");
-    expect(launchRuntime).toContain("color-scheme: dark");
+    expect(launchRuntime).not.toContain(
+      `html.dark #\${PWA_LAUNCH_SCREEN_ID}`
+    );
     expect(launchRuntime).toContain("env(safe-area-inset-top)");
     expect(launchRuntime).toContain("env(safe-area-inset-bottom)");
     expect(launchRuntime).toContain("prefers-reduced-motion: reduce");
     expect(launchRuntime).toContain("html, body");
     expect(launchRuntime).toContain("system-ui, -apple-system");
     expect(launchScreen).toContain("prepaint_shell_shown");
+  });
+
+  it("keeps first-paint metadata and inline document backgrounds non-black", () => {
+    expect(rootLayout).toContain('themeColor: "#f8fafc"');
+    expect(rootLayout).toContain('colorScheme: "light dark"');
+    expect(rootLayout).toContain('statusBarStyle: "default"');
+    expect(rootLayout).toContain('"apple-mobile-web-app-capable": "yes"');
+    expect(rootLayout).toContain(
+      'name="apple-mobile-web-app-status-bar-style"'
+    );
+    expect(rootLayout).toContain('name="mobile-web-app-capable"');
+    expect(rootLayout.match(/backgroundColor: "#f8fafc"/g)).toHaveLength(2);
+    expect(appLayout).toContain('themeColor: "#f8fafc"');
+    expect(appLayout).not.toContain("getSchoolAppThemeColor");
   });
 
   it("hands off only after cache and audience readiness resolve", () => {

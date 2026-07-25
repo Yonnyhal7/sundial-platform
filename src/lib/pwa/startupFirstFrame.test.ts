@@ -7,27 +7,48 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PWA startup first frame", () => {
-  it("marks app routes for the server launch shell before paint", () => {
+  function installPrepaint(pathname: string) {
     const dataset: Record<string, string> = {};
-    vi.stubGlobal("document", { documentElement: { dataset } });
-    vi.stubGlobal("location", { pathname: "/deloro/app" });
+    const removeProperty = vi.fn();
+    const root = { dataset, style: { removeProperty } };
+    const stored = new Map<string, string>();
+    vi.stubGlobal("document", {
+      documentElement: root,
+      visibilityState: "visible",
+    });
+    vi.stubGlobal("location", { pathname });
+    vi.stubGlobal("performance", { now: () => 1 });
+    vi.stubGlobal("sessionStorage", {
+      setItem: (key: string, value: string) => stored.set(key, value),
+    });
+    vi.stubGlobal("window", {});
+    return { dataset, removeProperty, stored };
+  }
+
+  it.each(["/deloro/app", "/app"])(
+    "marks %s for the server launch shell before paint",
+    (pathname) => {
+    const { dataset, stored } = installPrepaint(pathname);
 
     Function(getPwaLaunchPrepaintScript())();
 
     expect(dataset.pwaAppLaunch).toBe("true");
     expect(dataset.pwaLaunch).toBe("pending");
     expect(dataset.pwaStartupReady).toBe("false");
-  });
+    expect(stored.get("sundial:pwa-resume-diagnostics")).toContain(
+      "first_root_html_received"
+    );
+    }
+  );
 
   it("does not cover non-app routes", () => {
-    const dataset: Record<string, string> = {};
-    vi.stubGlobal("document", { documentElement: { dataset } });
-    vi.stubGlobal("location", { pathname: "/deloro/admin" });
+    const { dataset, removeProperty } = installPrepaint("/deloro/admin");
 
     Function(getPwaLaunchPrepaintScript())();
 
     expect(dataset.pwaAppLaunch).toBe("false");
     expect(dataset.pwaStartupReady).toBe("true");
+    expect(removeProperty).toHaveBeenCalledWith("background-color");
   });
 
   it("defines the document background and launch shell without external CSS or fonts", () => {

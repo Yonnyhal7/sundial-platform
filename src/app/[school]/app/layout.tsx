@@ -13,7 +13,6 @@ import {
   getSchoolAppIconUrl,
   getSchoolAppName,
   getSchoolAppShortName,
-  getSchoolAppThemeColor,
 } from "@/lib/pwa/schoolAppManifest";
 import { getTenantFaviconIconEntries } from "@/lib/tenantFavicon";
 import { getForwardedHost } from "@/lib/routing/hosts";
@@ -90,16 +89,10 @@ export async function generateMetadata({
   };
 }
 
-export async function generateViewport({
-  params,
-}: {
-  params: Promise<{ school: string }>;
-}): Promise<Viewport> {
-  const { school } = await params;
-  const schoolData = await requireMobileAppSchool(school);
-
+export async function generateViewport(): Promise<Viewport> {
   return {
-    themeColor: getSchoolAppThemeColor(schoolData.primary_color),
+    themeColor: "#f8fafc",
+    colorScheme: "light dark",
   };
 }
 

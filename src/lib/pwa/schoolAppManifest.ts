@@ -3,7 +3,6 @@ import type { MobileAppSchool } from "@/lib/mobileAppData";
 
 const DEFAULT_THEME_COLOR = "#2563EB";
 const LIGHT_BACKGROUND_COLOR = "#F8FAFC";
-const DARK_BACKGROUND_COLOR = "#050505";
 
 function normalizeColor(value: string | null | undefined, fallback: string) {
   const color = value?.trim();
@@ -60,11 +59,11 @@ export function buildSchoolAppManifest(
 ): MetadataRoute.Manifest {
   const normalizedName = school.name.replace(/\s+/g, " ").trim() || "Sundial";
   const schoolIcon = getSchoolAppIconUrl(school.logo_url);
-  const themeColor = getSchoolAppThemeColor(school.primary_color);
-  const backgroundColor =
-    school.default_appearance === "dark"
-      ? DARK_BACKGROUND_COLOR
-      : LIGHT_BACKGROUND_COLOR;
+  // iOS may paint these values before receiving any document HTML. Keep the
+  // native standalone launch surface deterministic and non-black; the
+  // synchronous theme bootstrap applies the tenant's resolved appearance.
+  const themeColor = LIGHT_BACKGROUND_COLOR;
+  const backgroundColor = LIGHT_BACKGROUND_COLOR;
   const icons: NonNullable<MetadataRoute.Manifest["icons"]> = [];
 
   if (schoolIcon) {

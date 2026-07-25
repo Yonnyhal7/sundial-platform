@@ -11,7 +11,12 @@ function installDom() {
     hidden: true,
     dataset: {} as Record<string, string>,
   };
-  const root = { dataset: {} as Record<string, string> };
+  const removeProperty = vi.fn();
+  const root = {
+    dataset: {} as Record<string, string>,
+    style: { removeProperty },
+  };
+  const body = { style: { removeProperty } };
   const requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
     callback(0);
     return 1;
@@ -19,12 +24,13 @@ function installDom() {
 
   vi.stubGlobal("document", {
     documentElement: root,
+    body,
     getElementById: (id: string) =>
       id === PWA_LAUNCH_SCREEN_ID ? screen : null,
   });
   vi.stubGlobal("window", { requestAnimationFrame });
 
-  return { screen, root, requestAnimationFrame };
+  return { screen, root, body, requestAnimationFrame };
 }
 
 afterEach(() => {
@@ -44,13 +50,15 @@ describe("PWA launch screen contract", () => {
   });
 
   it("marks the usable readiness state before hiding", () => {
-    const { screen, root } = installDom();
+    const { screen, root, body } = installDom();
 
     hidePwaLaunchScreen("cached_snapshot_ready");
 
     expect(screen.hidden).toBe(true);
     expect(screen.dataset.readiness).toBe("cached_snapshot_ready");
     expect(root.dataset.pwaLaunch).toBe("ready");
+    expect(root.style.removeProperty).toHaveBeenCalledWith("background-color");
+    expect(body.style.removeProperty).toHaveBeenCalledWith("background-color");
   });
 
   it("waits one paint frame after showing the update layer", async () => {

@@ -9,6 +9,10 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
   html.dark, html.dark body {
     background: #050505;
   }
+  html[data-pwa-app-launch="true"][data-pwa-launch="pending"],
+  html[data-pwa-app-launch="true"][data-pwa-launch="pending"] body {
+    background: #f8fafc;
+  }
   #${PWA_LAUNCH_SCREEN_ID} {
     position: fixed;
     inset: 0;
@@ -26,11 +30,6 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
   html[data-pwa-app-launch="true"] #${PWA_LAUNCH_SCREEN_ID}:not([hidden]) {
     display: flex;
   }
-  html.dark #${PWA_LAUNCH_SCREEN_ID} {
-    background: #050505;
-    color: #fff;
-    color-scheme: dark;
-  }
   #${PWA_LAUNCH_SCREEN_ID}[hidden] { display: none; }
   .sundial-pwa-launch-card {
     display: grid;
@@ -42,7 +41,7 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
   .sundial-pwa-launch-icon {
     width: 5.25rem;
     height: 5.75rem;
-    object-fit: contain;
+    color: var(--pwa-launch-accent, #2563eb);
   }
   .sundial-pwa-launch-title {
     margin: .25rem 0 0;
@@ -86,7 +85,7 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
 `;
 
 export function getPwaLaunchPrepaintScript() {
-  return `(()=>{const r=document.documentElement,p=location.pathname;r.dataset.pwaAppLaunch=/^\\/(?:[^/]+\\/)?app(?:\\/|$)/.test(p)?"true":"false";if(r.dataset.pwaAppLaunch==="true"){r.dataset.pwaLaunch="pending";r.dataset.pwaStartupReady="false"}else{r.dataset.pwaStartupReady="true"}})()`;
+  return `(()=>{const w=window,r=document.documentElement,p=location.pathname,k="__SUNDIAL_PWA_RESUME_DIAGNOSTICS__",add=(type,detail)=>{const e={type,at:new Date().toISOString(),visibility:document.visibilityState,detail:detail||Math.round(performance.now())+"ms"};w[k]=[...(w[k]||[]),e].slice(-48);try{sessionStorage.setItem("sundial:pwa-resume-diagnostics",JSON.stringify(w[k]))}catch{}};add("navigation_start","0ms");r.dataset.pwaAppLaunch=/^\\/(?:[^/]+\\/)?app(?:\\/|$)/.test(p)?"true":"false";if(r.dataset.pwaAppLaunch==="true"){r.dataset.pwaLaunch="pending";r.dataset.pwaStartupReady="false"}else{r.dataset.pwaStartupReady="true";r.style.removeProperty("background-color")}add("first_root_html_received");if("PerformanceObserver"in w){try{const o=new PerformanceObserver((list)=>{if(list.getEntries().some((e)=>e.name==="first-paint")){add("first_paint");o.disconnect()}});o.observe({type:"paint",buffered:true})}catch{}}})()`;
 }
 
 export type PwaStartupReadiness =
@@ -117,6 +116,8 @@ export function hidePwaLaunchScreen(readiness: PwaStartupReadiness) {
   if (!screen) return;
   screen.dataset.readiness = readiness;
   screen.hidden = true;
+  document.documentElement.style.removeProperty("background-color");
+  document.body.style.removeProperty("background-color");
   document.documentElement.dataset.pwaLaunch = "ready";
 }
 

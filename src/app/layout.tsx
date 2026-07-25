@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import ServiceWorkerRegister from "@/components/offline/ServiceWorkerRegister";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
@@ -31,6 +32,10 @@ export const metadata: Metadata = {
     title: "Sundial",
     statusBarStyle: "default",
   },
+  other: {
+    "apple-mobile-web-app-capable": "yes",
+    "apple-mobile-web-app-status-bar-style": "default",
+  },
   icons: {
     apple: [
       {
@@ -42,6 +47,11 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: "#f8fafc",
+  colorScheme: "light dark",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -51,9 +61,16 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      style={{ backgroundColor: "#f8fafc" }}
       suppressHydrationWarning
     >
       <head>
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="default"
+        />
         <script
           dangerouslySetInnerHTML={{ __html: getThemeBootstrapScript() }}
         />
@@ -62,13 +79,17 @@ export default function RootLayout({
         />
         <style dangerouslySetInnerHTML={{ __html: PWA_LAUNCH_CRITICAL_CSS }} />
       </head>
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+      <body
+        className="min-h-full flex flex-col"
+        style={{ backgroundColor: "#f8fafc" }}
+        suppressHydrationWarning
+      >
         <PwaLaunchScreen />
         <ServiceWorkerRegister
           deploymentVersion={getPwaDeploymentVersion()}
         />
         <ThemeRouteSync />
-        {children}
+        <Suspense fallback={null}>{children}</Suspense>
       </body>
     </html>
   );

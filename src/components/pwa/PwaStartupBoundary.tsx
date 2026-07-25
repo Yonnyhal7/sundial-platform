@@ -183,7 +183,13 @@ function StartupCoordinator({
       document.documentElement.dataset.pwaStartupReady = "true";
       recordOnce("recovery_shown");
     }
-    if (startup.state === "onboarding_required") recordOnce("onboarding_shown");
+    if (startup.state === "onboarding_required") {
+      recordOnce("onboarding_shown");
+      const paintFrame = window.requestAnimationFrame(() =>
+        recordOnce("audience_screen_painted")
+      );
+      return () => window.cancelAnimationFrame(paintFrame);
+    }
   }, [handoffComplete, recordOnce, startup.state]);
 
   const audience =

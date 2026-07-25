@@ -90,5 +90,6 @@ export function getThemeBootstrapScript(
     root.dataset.themePreference = preference;
     root.style.colorScheme = dark ? "dark" : "light";
     record("theme_class_applied", dark ? "dark" : "light");
+    record("theme_bootstrap_executed", dark ? "dark" : "light");
   })();`;
 }

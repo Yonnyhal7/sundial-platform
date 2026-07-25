@@ -74,16 +74,17 @@ describe("service worker lifecycle and caching", () => {
       "sundial-shell-v3",
       "sundial-assets-v4",
       "sundial-navigation-v3",
+      "sundial-navigation-v4",
     ]) {
       harness.stores.set(name, new Map());
     }
     await dispatchWaitUntil(harness.listeners.get("activate")!);
-    expect(harness.deleted).toEqual(["sundial-shell-v2"]);
+    expect(harness.deleted).toEqual(["sundial-shell-v2", "sundial-navigation-v3"]);
     expect([...harness.stores.keys()]).toEqual(
       expect.arrayContaining([
         "sundial-shell-v3",
         "sundial-assets-v4",
-        "sundial-navigation-v3",
+        "sundial-navigation-v4",
       ])
     );
     expect(harness.context.self.clients.claim).toHaveBeenCalled();
@@ -132,7 +133,7 @@ describe("service worker lifecycle and caching", () => {
     const assetStore = harness.stores.get("sundial-assets-v4")!;
     expect(assetStore.has(asset.url)).toBe(true);
 
-    const navigationStore = harness.stores.get("sundial-navigation-v3") || new Map();
+    const navigationStore = harness.stores.get("sundial-navigation-v4") || new Map();
     navigationStore.set("https://example.test/alpha/app", "alpha");
     expect(navigationStore.has("https://example.test/beta/app")).toBe(false);
   });
@@ -146,7 +147,7 @@ describe("service worker lifecycle and caching", () => {
 
   it("reports the foreground-resume worker version without changing push handling", () => {
     expect(workerSource).toContain(
-      'SERVICE_WORKER_VERSION = "2026-07-24-pwa-foreground-resume-v2"'
+      'SERVICE_WORKER_VERSION = "2026-07-25-pwa-first-paint-v1"'
     );
     expect(workerSource).toContain('event.data?.type === "GET_PWA_DIAGNOSTICS"');
     expect(workerSource).toContain('event.data?.type === "SKIP_WAITING"');

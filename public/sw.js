@@ -1,7 +1,7 @@
-const SERVICE_WORKER_VERSION = "2026-07-24-pwa-foreground-resume-v2";
+const SERVICE_WORKER_VERSION = "2026-07-25-pwa-first-paint-v1";
 const SHELL_CACHE = "sundial-shell-v3";
 const ASSET_CACHE = "sundial-assets-v4";
-const NAVIGATION_CACHE = "sundial-navigation-v3";
+const NAVIGATION_CACHE = "sundial-navigation-v4";
 
 const PRECACHE_URLS = [
   "/favicon.ico",
