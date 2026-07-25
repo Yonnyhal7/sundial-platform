@@ -157,8 +157,8 @@ export default function NotificationInbox({
     <main>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight">Notifications</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{audienceLabel} device</p>
+          <h1 className="text-3xl font-black tracking-tight dark:text-white">Notifications</h1>
+          <p className="mt-1 text-sm font-semibold text-[var(--school-primary)]">{audienceLabel} device</p>
         </div>
         <button type="button" disabled={!payload?.unreadCount} onClick={markAllRead} className="min-h-11 rounded-2xl bg-[var(--school-primary)] px-4 text-sm font-black text-[var(--school-primary-text)] disabled:cursor-not-allowed disabled:opacity-45">
           Mark all as read
@@ -168,19 +168,19 @@ export default function NotificationInbox({
         <button
           type="button"
           onClick={onOpenSettings}
-          className="mt-3 min-h-11 rounded-2xl border border-slate-300 px-4 text-sm font-black dark:border-slate-600"
+          className="mt-3 min-h-11 rounded-2xl border border-[var(--school-primary)] px-4 text-sm font-black text-[var(--school-primary)] hover:bg-[color-mix(in_srgb,var(--school-primary)_10%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--school-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#181818]"
         >
           Notification settings
         </button>
       )}
-      <div aria-live="polite" role="status" className="mt-3 min-h-5 text-sm font-semibold text-slate-600 dark:text-slate-300">{status}</div>
+      <div aria-live="polite" role="status" className="mt-3 min-h-5 text-sm font-semibold text-[var(--school-primary)]">{status}</div>
       {error && <p role="alert" className="mt-2 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
       {hasRead && <button ref={deleteReadButtonRef} type="button" onClick={() => setConfirmDeleteRead(true)} className="mt-3 min-h-11 rounded-2xl border border-slate-300 px-4 text-sm font-black dark:border-slate-600">Delete all read</button>}
       <div className="mt-5 space-y-3">
         {notifications.length === 0 ? (
           <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center dark:border-[#3a3a3a] dark:bg-[#242424]">
-            <p className="font-black">You&apos;re all caught up.</p>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">New notifications for this device will appear here.</p>
+            <p className="font-black dark:text-white">You&apos;re all caught up.</p>
+            <p className="mt-2 text-sm text-[var(--school-primary)]">New notifications for this device will appear here.</p>
           </div>
         ) : notifications.map((item) => <NotificationCard key={item.id} item={item} school={school} timeZone={timeZone} onSelect={onSelect} />)}
       </div>
@@ -197,11 +197,11 @@ function NotificationCard({ item, school, timeZone, onSelect }: { item: DeviceIn
       <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${unread ? "bg-[var(--school-primary)]" : "border border-slate-400"}`} aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
-          <h2 className={`text-base ${unread ? "font-black" : "font-semibold"}`}>{campaign.title}</h2>
-          {campaign.destination_url && <span className="shrink-0 text-xs font-bold text-slate-500" aria-label="Has a destination">Open ›</span>}
+          <h2 className={`text-base dark:text-white ${unread ? "font-black" : "font-semibold"}`}>{campaign.title}</h2>
+          {campaign.destination_url && <span className="shrink-0 text-xs font-bold text-[var(--school-primary)]" aria-label="Has a destination">Open ›</span>}
         </div>
         <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{campaign.body}</p>
-        <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">{getNotificationCategoryLabel(campaign.category)} · {receivedLabel(item.delivered_at || item.created_at, timeZone)}</p>
+        <p className="mt-2 text-xs font-bold text-[var(--school-primary)]">{getNotificationCategoryLabel(campaign.category)} · {receivedLabel(item.delivered_at || item.created_at, timeZone)}</p>
         <span className="sr-only">{unread ? "Unread" : "Read"}</span>
       </div>
     </div>

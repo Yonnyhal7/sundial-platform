@@ -59,4 +59,27 @@ describe("installed PWA notification drawer", () => {
     expect(detailRoute).toContain("<NotificationDrawerRoute");
     expect(detailRoute).toContain("deliveryId={deliveryId}");
   });
+
+  it("uses school branding instead of hard-coded blue drawer accents", () => {
+    const audience = read(
+      "src/components/mobile-app/NotificationAudienceSummary.tsx"
+    );
+    for (const source of [notifications, inbox, detail, audience]) {
+      expect(source).not.toMatch(
+        /(?:text|border|bg|ring)-(?:blue|sky|cyan|indigo)-/
+      );
+    }
+    expect(inbox).toContain(
+      "border-[var(--school-primary)]"
+    );
+    expect(inbox).toContain(
+      "text-[var(--school-primary)]"
+    );
+    expect(inbox).toContain(
+      "hover:bg-[color-mix(in_srgb,var(--school-primary)_10%,transparent)]"
+    );
+    expect(inbox).toContain(
+      "focus-visible:ring-[var(--school-primary)]"
+    );
+  });
 });

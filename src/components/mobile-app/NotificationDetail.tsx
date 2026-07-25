@@ -120,8 +120,8 @@ export default function NotificationDetail({ deliveryId, school, schoolId, timeZ
   if (!item) return (
     <main>
       {onBack ? <button type="button" onClick={onBack} className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black">← Back to Notifications</button> : <Link href={`/${school}/app/notifications`} className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black">← Back to Notifications</Link>}
-      <h1 className="mt-6 text-2xl font-black">Notification unavailable</h1>
-      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{error || "It may have been deleted from this device."}</p>
+      <h1 className="mt-6 text-2xl font-black dark:text-white">Notification unavailable</h1>
+      <p className="mt-2 text-sm text-[var(--school-primary)]">{error || "It may have been deleted from this device."}</p>
     </main>
   );
 
@@ -136,15 +136,15 @@ export default function NotificationDetail({ deliveryId, school, schoolId, timeZ
     <main>
       {onBack ? <button type="button" onClick={onBack} aria-label="Back to Notifications" className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black focus:ring-2 focus:ring-[var(--school-primary)]">← Back to Notifications</button> : <Link href={`/${school}/app/notifications`} aria-label="Back to Notifications" className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black focus:ring-2 focus:ring-[var(--school-primary)]">← Back to Notifications</Link>}
       <article className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#3a3a3a] dark:bg-[#242424]">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">{getNotificationCategoryLabel(campaign.category)}</p>
-        <h1 className="mt-3 text-3xl font-black tracking-tight">{campaign.title}</h1>
-        <p className="mt-3 text-sm font-semibold text-slate-500 dark:text-slate-400">Received {received}</p>
-        {campaign.related_entity_type && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Source: {getNotificationCategoryLabel(campaign.related_entity_type)}</p>}
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--school-primary)]">{getNotificationCategoryLabel(campaign.category)}</p>
+        <h1 className="mt-3 text-3xl font-black tracking-tight dark:text-white">{campaign.title}</h1>
+        <p className="mt-3 text-sm font-semibold text-[var(--school-primary)]">Received {received}</p>
+        {campaign.related_entity_type && <p className="mt-1 text-sm text-[var(--school-primary)]">Source: {getNotificationCategoryLabel(campaign.related_entity_type)}</p>}
         <div className="mt-6 whitespace-pre-wrap text-base leading-7 text-slate-700 dark:text-slate-200">{campaign.body}</div>
         {campaign.destination_url && <Link href={campaign.destination_url} className="mt-7 inline-flex min-h-11 items-center rounded-2xl bg-[var(--school-primary)] px-5 font-black text-[var(--school-primary-text)]">{destinationLabel(campaign.related_entity_type)}</Link>}
       </article>
       <button ref={deleteButtonRef} type="button" onClick={() => setConfirmDelete(true)} className="mt-5 min-h-11 rounded-2xl border border-red-300 px-5 font-black text-red-700 dark:border-red-800 dark:text-red-300">Delete notification</button>
-      <div aria-live="polite" role="status" className="mt-3 min-h-5 text-sm font-semibold text-slate-600 dark:text-slate-300">{status}</div>
+      <div aria-live="polite" role="status" className="mt-3 min-h-5 text-sm font-semibold text-[var(--school-primary)]">{status}</div>
       {error && <p role="alert" className="mt-2 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
       {confirmDelete && (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-black/50 p-5" role="presentation">
