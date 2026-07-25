@@ -33,6 +33,38 @@ function cacheKey(schoolId: string, installationId: string) {
   return `sundial:notifications:${schoolId}:${installationId}:inbox:v1`;
 }
 
+function pendingReadKey(schoolId: string, installationId: string) {
+  return `sundial:notifications:${schoolId}:${installationId}:pending-reads:v1`;
+}
+
+export function queuePendingRead(schoolId: string, deliveryId: string) {
+  const identity = getNotificationDeviceIdentity(schoolId);
+  if (!identity) return;
+  const key = pendingReadKey(schoolId, identity.installationId);
+  try {
+    const current = JSON.parse(localStorage.getItem(key) || "[]") as string[];
+    localStorage.setItem(key, JSON.stringify([...new Set([...current, deliveryId])]));
+  } catch {
+    localStorage.setItem(key, JSON.stringify([deliveryId]));
+  }
+}
+
+async function flushPendingReads(schoolId: string, school: string) {
+  const identity = getNotificationDeviceIdentity(schoolId);
+  if (!identity) return;
+  const key = pendingReadKey(schoolId, identity.installationId);
+  let pending: string[] = [];
+  try {
+    pending = JSON.parse(localStorage.getItem(key) || "[]");
+  } catch {
+    pending = [];
+  }
+  for (const deliveryId of pending) {
+    await mutateDeviceInbox(schoolId, school, { action: "mark_read", deliveryId });
+  }
+  if (pending.length) localStorage.removeItem(key);
+}
+
 export function readCachedInbox(schoolId: string): DeviceInboxPayload | null {
   const identity = getNotificationDeviceIdentity(schoolId);
   if (!identity) return null;
@@ -69,6 +101,7 @@ export function announceInboxChange(unreadCount: number) {
 export async function fetchDeviceInbox(schoolId: string, school: string) {
   const identity = getNotificationDeviceIdentity(schoolId);
   if (!identity) throw new Error("Notifications are not set up on this device.");
+  await flushPendingReads(schoolId, school);
   const response = await fetch(`/api/schools/${encodeURIComponent(school)}/notifications`, {
     headers: notificationDeviceHeaders(identity),
   });

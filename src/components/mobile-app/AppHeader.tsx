@@ -16,10 +16,7 @@ import {
 } from "@/lib/themeScope";
 import { isNotificationAudience } from "@/lib/notifications";
 import { getNotificationDeviceIdentity, notificationDeviceHeaders } from "@/lib/notifications/deviceClient";
-import NotificationAudienceSummary from "@/components/mobile-app/NotificationAudienceSummary";
 import { usePwaStartup } from "@/components/pwa/PwaStartupBoundary";
-import { formatDateInTimeZone } from "@/lib/localDate";
-import { formatTimeInTimeZone } from "@/lib/timezones";
 import {
   NOTIFICATION_INBOX_CHANGED_EVENT,
   readCachedInbox,
@@ -75,7 +72,6 @@ export default function AppHeader({
   logoUrl,
   quickLinks,
   schoolDefaultAppearance,
-  timeZone,
 }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuMounted, setMenuMounted] = useState(false);
@@ -83,15 +79,16 @@ export default function AppHeader({
     schoolDefaultAppearance
   );
   const [reportedUnreadCount, setReportedUnreadCount] = useState(0);
-  const { audience: registeredNotificationAudience, startupReady } =
-    usePwaStartup();
+  const { startupReady } = usePwaStartup();
   const homeHref = `/${school}/app`;
   const unreadCount = reportedUnreadCount;
 
   useEffect(() => {
     if (!startupReady) return;
     const cached = readCachedInbox(schoolId);
-    if (cached) setReportedUnreadCount(cached.unreadCount);
+    const cachedUpdate = cached
+      ? window.setTimeout(() => setReportedUnreadCount(cached.unreadCount), 0)
+      : null;
     const identity = getNotificationDeviceIdentity(schoolId);
     if (!identity) return;
     const controller = new AbortController();
@@ -104,18 +101,19 @@ export default function AppHeader({
       .then((payload) => {
         const persistedAudience = String(payload?.audience || "");
         if (!isNotificationAudience(persistedAudience)) return;
-        const rows = Array.isArray(payload?.notifications) ? payload.notifications : [];
         setReportedUnreadCount(Number.isSafeInteger(payload?.unreadCount) ? Math.max(0, payload.unreadCount) : 0);
       }).catch(() => undefined);
     return () => {
       controller.abort();
+      if (cachedUpdate !== null) window.clearTimeout(cachedUpdate);
     };
   }, [school, schoolId, startupReady]);
 
   useEffect(() => {
     function handleInboxChange(event: Event) {
       const count = (event as CustomEvent<{ unreadCount?: number }>).detail?.unreadCount;
-      if (Number.isSafeInteger(count)) setReportedUnreadCount(Math.max(0, count || 0));
+      if (count === 0) setReportedUnreadCount(0);
+      else if (Number.isSafeInteger(count)) setReportedUnreadCount(Math.max(0, count || 0));
     }
     window.addEventListener(NOTIFICATION_INBOX_CHANGED_EVENT, handleInboxChange);
     return () => window.removeEventListener(NOTIFICATION_INBOX_CHANGED_EVENT, handleInboxChange);

@@ -7,6 +7,7 @@ import { getNotificationCategoryLabel } from "@/lib/notifications";
 import {
   fetchDeviceInbox,
   mutateDeviceInbox,
+  queuePendingRead,
   readCachedInbox,
   updateCachedInbox,
   type DeviceInboxNotification,
@@ -47,7 +48,7 @@ export default function NotificationDetail({ deliveryId, school, schoolId, timeZ
     }).catch((reason: Error) => {
       if (!active) return;
       setLoading(false);
-      if (!item) setError(reason.message);
+      if (!readCachedInbox(schoolId)?.notifications.some((row) => row.id === deliveryId)) setError(reason.message);
       else setStatus("Showing the saved notification while offline.");
     });
     return () => { active = false; };
@@ -56,16 +57,20 @@ export default function NotificationDetail({ deliveryId, school, schoolId, timeZ
   useEffect(() => {
     if (!item || item.read_at) return;
     const readAt = new Date().toISOString();
-    setItem((current) => current ? { ...current, read_at: readAt } : current);
     updateCachedInbox(schoolId, (payload) => ({
       ...payload,
       unreadCount: Math.max(0, payload.unreadCount - 1),
       notifications: payload.notifications.map((row) => row.id === deliveryId ? { ...row, read_at: readAt } : row),
     }));
-    setStatus("Notification marked as read.");
+    const statusUpdate = window.setTimeout(() => {
+      setItem((current) => current ? { ...current, read_at: readAt } : current);
+      setStatus("Notification marked as read.");
+    }, 0);
     mutateDeviceInbox(schoolId, school, { action: "mark_read", deliveryId }).catch(() => {
+      queuePendingRead(schoolId, deliveryId);
       setStatus("Marked as read on this device. The server will reconcile when you refresh online.");
     });
+    return () => window.clearTimeout(statusUpdate);
   }, [deliveryId, item, school, schoolId]);
 
   useEffect(() => {

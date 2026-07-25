@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   getNotificationCategoryLabel,
   type NotificationAudience,
@@ -10,8 +10,8 @@ import {
   announceInboxChange,
   fetchDeviceInbox,
   mutateDeviceInbox,
+  queuePendingRead,
   readCachedInbox,
-  updateCachedInbox,
   writeCachedInbox,
   type DeviceInboxNotification,
   type DeviceInboxPayload,
@@ -41,22 +41,34 @@ function ConfirmDialog({
   confirmLabel,
   onCancel,
   onConfirm,
+  returnFocus,
 }: {
   title: string;
   body: string;
   confirmLabel: string;
   onCancel: () => void;
   onConfirm: () => void;
+  returnFocus: RefObject<HTMLButtonElement | null>;
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     cancelRef.current?.focus();
-    function escape(event: KeyboardEvent) {
-      if (event.key === "Escape") onCancel();
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onCancel();
+        returnFocus.current?.focus();
+      }
+      if (event.key === "Tab") {
+        const buttons = [cancelRef.current, confirmRef.current].filter(Boolean) as HTMLButtonElement[];
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        event.preventDefault();
+        buttons[event.shiftKey ? (index <= 0 ? buttons.length - 1 : index - 1) : (index + 1) % buttons.length]?.focus();
+      }
     }
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [onCancel]);
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onCancel, returnFocus]);
   return (
     <div className="fixed inset-0 z-[100] grid place-items-center bg-black/50 p-5" role="presentation">
       <div role="dialog" aria-modal="true" aria-labelledby="delete-read-title" aria-describedby="delete-read-body" className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl dark:bg-[#242424]">
@@ -64,7 +76,7 @@ function ConfirmDialog({
         <p id="delete-read-body" className="mt-2 text-sm text-slate-600 dark:text-slate-300">{body}</p>
         <div className="mt-6 grid grid-cols-2 gap-3">
           <button ref={cancelRef} type="button" onClick={onCancel} className="min-h-11 rounded-2xl border border-slate-300 px-4 font-bold dark:border-slate-600">Cancel</button>
-          <button type="button" onClick={onConfirm} className="min-h-11 rounded-2xl bg-red-600 px-4 font-bold text-white">{confirmLabel}</button>
+          <button ref={confirmRef} type="button" onClick={onConfirm} className="min-h-11 rounded-2xl bg-red-600 px-4 font-bold text-white">{confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -76,14 +88,18 @@ export default function NotificationInbox({ school, schoolId, timeZone, initialA
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [confirmDeleteRead, setConfirmDeleteRead] = useState(false);
+  const deleteReadButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const cached = readCachedInbox(schoolId);
-    if (cached) setPayload(cached);
+    const cachedUpdate = cached ? window.setTimeout(() => setPayload(cached), 0) : null;
     fetchDeviceInbox(schoolId, school).then(setPayload).catch((reason: Error) => {
       if (!cached) setError(reason.message);
       else setStatus("Showing saved notifications while offline.");
     });
+    return () => {
+      if (cachedUpdate !== null) window.clearTimeout(cachedUpdate);
+    };
   }, [school, schoolId]);
 
   const notifications = payload?.notifications || [];
@@ -106,6 +122,7 @@ export default function NotificationInbox({ school, schoolId, timeZone, initialA
     try {
       await mutateDeviceInbox(schoolId, school, { action: "mark_read", deliveryId: "all" });
     } catch {
+      queuePendingRead(schoolId, "all");
       setStatus("Read changes are saved on this device and will retry when you refresh online.");
     }
   }
@@ -140,7 +157,7 @@ export default function NotificationInbox({ school, schoolId, timeZone, initialA
       </div>
       <div aria-live="polite" role="status" className="mt-3 min-h-5 text-sm font-semibold text-slate-600 dark:text-slate-300">{status}</div>
       {error && <p role="alert" className="mt-2 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
-      {hasRead && <button type="button" onClick={() => setConfirmDeleteRead(true)} className="mt-3 min-h-11 rounded-2xl border border-slate-300 px-4 text-sm font-black dark:border-slate-600">Delete all read</button>}
+      {hasRead && <button ref={deleteReadButtonRef} type="button" onClick={() => setConfirmDeleteRead(true)} className="mt-3 min-h-11 rounded-2xl border border-slate-300 px-4 text-sm font-black dark:border-slate-600">Delete all read</button>}
       <div className="mt-5 space-y-3">
         {notifications.length === 0 ? (
           <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center dark:border-[#3a3a3a] dark:bg-[#242424]">
@@ -149,7 +166,7 @@ export default function NotificationInbox({ school, schoolId, timeZone, initialA
           </div>
         ) : notifications.map((item) => <NotificationCard key={item.id} item={item} school={school} timeZone={timeZone} />)}
       </div>
-      {confirmDeleteRead && <ConfirmDialog title="Delete all read notifications?" body="This removes read notifications from this device only. Unread notifications will remain." confirmLabel="Delete" onCancel={() => setConfirmDeleteRead(false)} onConfirm={deleteRead} />}
+      {confirmDeleteRead && <ConfirmDialog title="Delete all read notifications?" body="This removes read notifications from this device only. Unread notifications will remain." confirmLabel="Delete" onCancel={() => { setConfirmDeleteRead(false); deleteReadButtonRef.current?.focus(); }} onConfirm={deleteRead} returnFocus={deleteReadButtonRef} />}
     </main>
   );
 }
