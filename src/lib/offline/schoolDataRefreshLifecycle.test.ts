@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   SCHOOL_DATA_REFRESH_COALESCE_MS,
+  shouldSkipSchoolRouteRefresh,
   startSchoolDataRefreshLifecycle,
   type SchoolDataRefreshResult,
 } from "./schoolDataRefreshLifecycle";
@@ -51,6 +52,12 @@ describe("school data refresh lifecycle", () => {
     vi.setSystemTime(new Date("2026-07-24T19:00:00.000Z"));
   });
   afterEach(() => vi.useRealTimers());
+
+  it("keeps route refresh silent until startup has revealed the app", () => {
+    expect(shouldSkipSchoolRouteRefresh(false, false)).toBe(true);
+    expect(shouldSkipSchoolRouteRefresh(true, true)).toBe(true);
+    expect(shouldSkipSchoolRouteRefresh(true, false)).toBe(false);
+  });
 
   it("refreshes snapshot before route exactly once on foreground", async () => {
     const harness = createHarness();

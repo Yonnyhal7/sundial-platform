@@ -33,6 +33,7 @@ import {
 import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
 import {
   initialPwaStartupSnapshot,
+  isInstalledPwaLaunch,
   reducePwaStartup,
   reuseAudienceLookup,
   shouldWaitForPwaRoute,
@@ -121,6 +122,7 @@ function StartupCoordinator({
   );
   const [handoffComplete, setHandoffComplete] = useState(false);
   const diagnosticsRef = useRef(new Set<string>());
+  const previousStartupStateRef = useRef(startup.state);
 
   const recordOnce = useCallback((type: Parameters<typeof recordPwaResumeDiagnostic>[0], detail?: string) => {
     if (diagnosticsRef.current.has(type)) return;
@@ -131,13 +133,22 @@ function StartupCoordinator({
   const runAudienceLookup = useCallback(() => {
     dispatch({ type: "audience_lookup_started" });
     recordPwaResumeDiagnostic("audience_lookup_started");
-    const installedApp = window.matchMedia(
-      "(display-mode: standalone)"
-    ).matches;
+    const installedApp = isInstalledPwaLaunch(
+      window.matchMedia("(display-mode: standalone)").matches,
+      (navigator as Navigator & { standalone?: boolean }).standalone
+    );
     void reuseAudienceLookup(schoolId, () =>
       resolveAudience(schoolId, school, installedApp)
     ).then((result) => {
       recordPwaResumeDiagnostic("audience_lookup_result", result.status);
+      recordPwaResumeDiagnostic(
+        "device_registration_result",
+        result.status === "assigned"
+          ? "registered"
+          : result.status === "unassigned"
+            ? "not_registered"
+            : result.status
+      );
       dispatch({ type: "audience_resolved", result });
     });
   }, [school, schoolId]);
@@ -147,9 +158,24 @@ function StartupCoordinator({
     recordOnce("react_startup_boundary_mounted");
     recordOnce("react_mounted");
     recordOnce("tenant_resolved");
+    recordOnce("cache_hydration_started");
     dispatch({ type: "react_mounted" });
     runAudienceLookup();
+    return () => {
+      recordPwaResumeDiagnostic("startup_boundary_unmounted");
+    };
   }, [recordOnce, runAudienceLookup]);
+
+  useEffect(() => {
+    const previous = previousStartupStateRef.current;
+    if (previous !== startup.state) {
+      recordPwaResumeDiagnostic(
+        "startup_state_transition",
+        `${previous}->${startup.state}`
+      );
+      previousStartupStateRef.current = startup.state;
+    }
+  }, [startup.state]);
 
   useEffect(() => {
     if (!cacheHydrated) return;
@@ -181,6 +207,7 @@ function StartupCoordinator({
       firstFrame = window.requestAnimationFrame(() => {
         secondFrame = window.requestAnimationFrame(() => {
           recordOnce("stable_destination_painted", startup.state);
+          recordOnce("react_loader_hidden");
           hidePwaLaunchScreen(
             startup.state === "recovery_required"
               ? "recovery_required"
@@ -226,6 +253,7 @@ function StartupCoordinator({
     if (startup.state === "ready") {
       document.documentElement.dataset.pwaStartupReady = "true";
       recordOnce("app_ready");
+      recordOnce("app_shell_revealed");
     }
     if (startup.state === "recovery_required") {
       document.documentElement.dataset.pwaStartupReady = "true";

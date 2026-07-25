@@ -8,6 +8,13 @@ export type SchoolDataRefreshResult =
   | { status: "unavailable" }
   | { status: "error" };
 
+export function shouldSkipSchoolRouteRefresh(
+  startupReady: boolean,
+  applicationUpdatePending: boolean
+) {
+  return !startupReady || applicationUpdatePending;
+}
+
 type RefreshReason = "foreground" | "online" | "midnight";
 
 type SchoolDataRefreshLifecycleOptions = {

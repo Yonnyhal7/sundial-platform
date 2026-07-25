@@ -7,12 +7,16 @@ import OfflineStudentAppContent from "@/components/offline/OfflineStudentAppCont
 import {
   useOfflineSchoolData,
 } from "@/lib/offline/useOfflineSchoolData";
-import { startSchoolDataRefreshLifecycle } from "@/lib/offline/schoolDataRefreshLifecycle";
+import {
+  shouldSkipSchoolRouteRefresh,
+  startSchoolDataRefreshLifecycle,
+} from "@/lib/offline/schoolDataRefreshLifecycle";
 import {
   isPwaApplicationUpdatePending,
   waitForPwaUpdateCheck,
 } from "@/lib/pwa/resumeCoordination";
 import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
+import { usePwaStartup } from "@/components/pwa/PwaStartupBoundary";
 
 function hasUnsavedWork() {
   const event = new Event("beforeunload", { cancelable: true });
@@ -65,6 +69,7 @@ function OfflineStudentAppBody({
 function SchoolDataRefreshCoordinator({ timeZone }: { timeZone: string }) {
   const router = useRouter();
   const { refresh, markOffline } = useOfflineSchoolData();
+  const { startupReady } = usePwaStartup();
 
   useEffect(() => {
     const lifecycle = startSchoolDataRefreshLifecycle({
@@ -75,12 +80,16 @@ function SchoolDataRefreshCoordinator({ timeZone }: { timeZone: string }) {
       refreshRoute: () => router.refresh(),
       markOffline,
       hasUnsavedWork,
-      shouldSkipRouteRefresh: isPwaApplicationUpdatePending,
+      shouldSkipRouteRefresh: () =>
+        shouldSkipSchoolRouteRefresh(
+          startupReady,
+          isPwaApplicationUpdatePending()
+        ),
       waitForApplicationUpdateCheck: waitForPwaUpdateCheck,
       onResumeDiagnostic: recordPwaResumeDiagnostic,
     });
     return () => lifecycle.dispose();
-  }, [markOffline, refresh, router, timeZone]);
+  }, [markOffline, refresh, router, startupReady, timeZone]);
 
   return null;
 }

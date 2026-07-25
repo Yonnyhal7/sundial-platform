@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   initialPwaStartupSnapshot,
+  isInstalledPwaLaunch,
   reducePwaStartup,
   reuseAudienceLookup,
   shouldWaitForPwaRoute,
@@ -69,6 +70,23 @@ describe("PWA startup coordinator", () => {
     });
   });
 
+  it("never transitions ready back to a loading or onboarding state", () => {
+    const ready = reducePwaStartup(withCache(), {
+      type: "audience_resolved",
+      result: { status: "assigned", audience: "staff" },
+    });
+
+    expect(
+      reducePwaStartup(ready, { type: "audience_lookup_started" })
+    ).toBe(ready);
+    expect(
+      reducePwaStartup(ready, {
+        type: "audience_resolved",
+        result: { status: "unassigned", audience: null },
+      })
+    ).toBe(ready);
+  });
+
   it("shows retry instead of entering ready on a transport failure", () => {
     expect(
       reducePwaStartup(withCache(), {
@@ -112,6 +130,12 @@ describe("PWA startup coordinator", () => {
       audience: null,
     });
     expect(lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it("recognizes iOS Home Screen launches without relying on display-mode", () => {
+    expect(isInstalledPwaLaunch(false, true)).toBe(true);
+    expect(isInstalledPwaLaunch(true, undefined)).toBe(true);
+    expect(isInstalledPwaLaunch(false, undefined)).toBe(false);
   });
 
   it("locks a confirmed application reload state", () => {

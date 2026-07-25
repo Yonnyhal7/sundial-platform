@@ -69,7 +69,12 @@ export function reducePwaStartup(
   snapshot: PwaStartupSnapshot,
   event: PwaStartupEvent
 ): PwaStartupSnapshot {
-  if (snapshot.state === "application_reload_pending") return snapshot;
+  if (
+    snapshot.state === "application_reload_pending" ||
+    snapshot.state === "ready"
+  ) {
+    return snapshot;
+  }
 
   switch (event.type) {
     case "react_mounted":
@@ -113,4 +118,11 @@ export function reuseAudienceLookup(
   });
   audienceLookups.set(schoolId, promise);
   return promise;
+}
+
+export function isInstalledPwaLaunch(
+  matchStandalone: boolean,
+  navigatorStandalone: unknown
+) {
+  return matchStandalone || navigatorStandalone === true;
 }
