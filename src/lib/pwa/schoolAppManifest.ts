@@ -1,8 +1,9 @@
 import type { MetadataRoute } from "next";
 import type { MobileAppSchool } from "@/lib/mobileAppData";
+import { PWA_LAUNCH_VISUAL } from "@/lib/pwa/launchScreen";
 
 const DEFAULT_THEME_COLOR = "#2563EB";
-const LIGHT_BACKGROUND_COLOR = "#F8FAFC";
+const LIGHT_BACKGROUND_COLOR = PWA_LAUNCH_VISUAL.background.toUpperCase();
 
 function normalizeColor(value: string | null | undefined, fallback: string) {
   const color = value?.trim();

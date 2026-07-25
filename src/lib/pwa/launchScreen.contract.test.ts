@@ -30,7 +30,7 @@ describe("installed PWA loading screen integration", () => {
     );
     expect(rootLayout).toContain("<Suspense fallback={null}>{children}</Suspense>");
     expect(launchScreen).toContain('role="status"');
-    expect(launchScreen).toContain("Opening your school app");
+    expect(launchRuntime).toContain("Opening your school app");
     expect(launchScreen).toContain("<svg");
     expect(launchScreen).not.toContain("<img");
     expect(launchScreen).toContain("server_launch_shell_present");
@@ -56,7 +56,7 @@ describe("installed PWA loading screen integration", () => {
   });
 
   it("keeps first-paint metadata and inline document backgrounds non-black", () => {
-    expect(rootLayout).toContain('themeColor: "#f8fafc"');
+    expect(rootLayout).toContain("themeColor: PWA_LAUNCH_VISUAL.background");
     expect(rootLayout).toContain('colorScheme: "light dark"');
     expect(rootLayout).toContain('statusBarStyle: "default"');
     expect(rootLayout).toContain('"apple-mobile-web-app-capable": "yes"');
@@ -64,8 +64,8 @@ describe("installed PWA loading screen integration", () => {
       'name="apple-mobile-web-app-status-bar-style"'
     );
     expect(rootLayout).toContain('name="mobile-web-app-capable"');
-    expect(rootLayout.match(/backgroundColor: "#f8fafc"/g)).toHaveLength(2);
-    expect(appLayout).toContain('themeColor: "#f8fafc"');
+    expect(rootLayout.match(/backgroundColor: PWA_LAUNCH_VISUAL.background/g)).toHaveLength(2);
+    expect(appLayout).toContain("themeColor: PWA_LAUNCH_VISUAL.background");
     expect(appLayout).not.toContain("getSchoolAppThemeColor");
   });
 

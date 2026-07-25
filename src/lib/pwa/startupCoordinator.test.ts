@@ -3,6 +3,7 @@ import {
   initialPwaStartupSnapshot,
   reducePwaStartup,
   reuseAudienceLookup,
+  shouldWaitForPwaRoute,
 } from "./startupCoordinator";
 
 function mountedStartup() {
@@ -68,17 +69,23 @@ describe("PWA startup coordinator", () => {
     });
   });
 
-  it.each(["transport_error", "offline_unknown"] as const)(
-    "does not flash onboarding for %s",
-    (status) => {
-      expect(
-        reducePwaStartup(withCache(), {
-          type: "audience_resolved",
-          result: { status, audience: null },
-        }).state
-      ).toBe("ready");
-    }
-  );
+  it("shows retry instead of entering ready on a transport failure", () => {
+    expect(
+      reducePwaStartup(withCache(), {
+        type: "audience_resolved",
+        result: { status: "transport_error", audience: null },
+      }).state
+    ).toBe("retry_required");
+  });
+
+  it("shows recovery instead of onboarding or app for an unknown offline device", () => {
+    expect(
+      reducePwaStartup(withCache(), {
+        type: "audience_resolved",
+        result: { status: "offline_unknown", audience: null },
+      }).state
+    ).toBe("recovery_required");
+  });
 
   it("shows recovery only after both cache and audience resolve", () => {
     expect(
@@ -118,5 +125,13 @@ describe("PWA startup coordinator", () => {
         result: { status: "unassigned", audience: null },
       }).state
     ).toBe("application_reload_pending");
+  });
+
+  it("waits for route fallback removal only when the app is the destination", () => {
+    expect(shouldWaitForPwaRoute("ready", true)).toBe(true);
+    expect(shouldWaitForPwaRoute("ready", false)).toBe(false);
+    expect(shouldWaitForPwaRoute("onboarding_required", true)).toBe(false);
+    expect(shouldWaitForPwaRoute("retry_required", true)).toBe(false);
+    expect(shouldWaitForPwaRoute("recovery_required", true)).toBe(false);
   });
 });

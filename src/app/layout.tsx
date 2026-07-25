@@ -9,6 +9,7 @@ import PwaLaunchScreen from "@/components/pwa/PwaLaunchScreen";
 import {
   getPwaLaunchPrepaintScript,
   PWA_LAUNCH_CRITICAL_CSS,
+  PWA_LAUNCH_VISUAL,
 } from "@/lib/pwa/launchScreen";
 import "./globals.css";
 
@@ -48,7 +49,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f8fafc",
+  themeColor: PWA_LAUNCH_VISUAL.background,
   colorScheme: "light dark",
 };
 
@@ -61,7 +62,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-      style={{ backgroundColor: "#f8fafc" }}
+      style={{ backgroundColor: PWA_LAUNCH_VISUAL.background }}
       suppressHydrationWarning
     >
       <head>
@@ -81,7 +82,7 @@ export default function RootLayout({
       </head>
       <body
         className="min-h-full flex flex-col"
-        style={{ backgroundColor: "#f8fafc" }}
+        style={{ backgroundColor: PWA_LAUNCH_VISUAL.background }}
         suppressHydrationWarning
       >
         <PwaLaunchScreen />

@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  isNotificationAudience,
+  type NotificationAudience,
+} from "@/lib/notifications";
+
 export type NotificationDeviceIdentity = { installationId: string; token: string };
 export type NotificationDeviceIdentityState =
   | { status: "available"; identity: NotificationDeviceIdentity }
@@ -8,6 +13,40 @@ export type NotificationDeviceIdentityState =
 
 function key(schoolId: string) {
   return `sundial:notifications:${schoolId}:device`;
+}
+
+function audienceKey(schoolId: string) {
+  return `sundial:notifications:${schoolId}:confirmed-audience:v1`;
+}
+
+export function getConfirmedNotificationAudience(
+  schoolId: string
+): NotificationAudience | null {
+  try {
+    const audience = localStorage.getItem(audienceKey(schoolId));
+    return audience && isNotificationAudience(audience) ? audience : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setConfirmedNotificationAudience(
+  schoolId: string,
+  audience: NotificationAudience
+) {
+  try {
+    localStorage.setItem(audienceKey(schoolId), audience);
+  } catch {
+    // An online server confirmation still remains authoritative for this run.
+  }
+}
+
+export function clearConfirmedNotificationAudience(schoolId: string) {
+  try {
+    localStorage.removeItem(audienceKey(schoolId));
+  } catch {
+    // Storage may be unavailable. The server response remains authoritative.
+  }
 }
 
 export function getNotificationDeviceIdentityState(

@@ -30,7 +30,7 @@ function installBrowser(permission: NotificationPermission = "default") {
     PushManager: function PushManager() {},
     matchMedia: () => ({ matches: true }),
   });
-  return { order, requestPermission, subscribe };
+  return { order, requestPermission, subscribe, values };
 }
 
 afterEach(() => {
@@ -58,6 +58,11 @@ describe("notification audience onboarding", () => {
       school: "deloro",
       audience: "student",
     });
+    expect(
+      browser.values.get(
+        "sundial:notifications:school-1:confirmed-audience:v1"
+      )
+    ).toBe("student");
     await requestNotificationPermissionAndSubscribe({
       school: "deloro",
       identity,
@@ -102,6 +107,11 @@ describe("notification audience onboarding", () => {
         audience: "staff",
       })
     ).rejects.toThrow("audience_transport_failed");
+    expect(
+      browser.values.get(
+        "sundial:notifications:school-1:confirmed-audience:v1"
+      )
+    ).toBeUndefined();
     expect(browser.requestPermission).not.toHaveBeenCalled();
   });
 });

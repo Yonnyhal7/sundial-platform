@@ -17,8 +17,11 @@ import {
   useOfflineSchoolData,
 } from "@/lib/offline/useOfflineSchoolData";
 import {
+  clearConfirmedNotificationAudience,
+  getConfirmedNotificationAudience,
   getNotificationDeviceIdentityState,
   notificationDeviceHeaders,
+  setConfirmedNotificationAudience,
 } from "@/lib/notifications/deviceClient";
 import {
   isNotificationAudience,
@@ -32,6 +35,7 @@ import {
   initialPwaStartupSnapshot,
   reducePwaStartup,
   reuseAudienceLookup,
+  shouldWaitForPwaRoute,
   type PwaAudienceResolution,
 } from "@/lib/pwa/startupCoordinator";
 
@@ -46,23 +50,31 @@ const PwaStartupContext = createContext<PwaStartupContextValue>({
 });
 
 const AUDIENCE_LOOKUP_TIMEOUT_MS = 4_000;
+const ROUTE_LOADING_SELECTOR = '[data-pwa-route-loading="true"]';
 
-async function resolveAudience(
+export async function resolveAudience(
   schoolId: string,
   school: string,
   installedApp: boolean
 ): Promise<PwaAudienceResolution> {
   if (!installedApp) return { status: "assigned", audience: null };
-  if (!navigator.onLine) return { status: "offline_unknown", audience: null };
 
   const identityState = getNotificationDeviceIdentityState(schoolId);
   if (identityState.status === "unavailable") {
-    return { status: "transport_error", audience: null };
+    clearConfirmedNotificationAudience(schoolId);
+    return { status: "unassigned", audience: null };
   }
   if (identityState.status === "missing") {
+    clearConfirmedNotificationAudience(schoolId);
     return { status: "unassigned", audience: null };
   }
   const identity = identityState.identity;
+  if (!navigator.onLine) {
+    const cachedAudience = getConfirmedNotificationAudience(schoolId);
+    return cachedAudience
+      ? { status: "assigned", audience: cachedAudience }
+      : { status: "offline_unknown", audience: null };
+  }
 
   try {
     const response = await fetch(
@@ -73,15 +85,18 @@ async function resolveAudience(
       }
     );
     if (response.status === 401 || response.status === 404) {
+      clearConfirmedNotificationAudience(schoolId);
       return { status: "unassigned", audience: null };
     }
     if (!response.ok) return { status: "transport_error", audience: null };
 
     const payload = await response.json();
     const audience = String(payload?.audience || "");
-    return isNotificationAudience(audience)
-      ? { status: "assigned", audience }
-      : { status: "transport_error", audience: null };
+    if (!isNotificationAudience(audience)) {
+      return { status: "transport_error", audience: null };
+    }
+    setConfirmedNotificationAudience(schoolId, audience);
+    return { status: "assigned", audience };
   } catch {
     return navigator.onLine
       ? { status: "transport_error", audience: null }
@@ -113,23 +128,28 @@ function StartupCoordinator({
     recordPwaResumeDiagnostic(type, detail);
   }, []);
 
-  useEffect(() => {
-    recordOnce("react_mounted");
-    recordOnce("tenant_resolved");
-    dispatch({ type: "react_mounted" });
+  const runAudienceLookup = useCallback(() => {
     dispatch({ type: "audience_lookup_started" });
-    recordOnce("audience_lookup_started");
-
+    recordPwaResumeDiagnostic("audience_lookup_started");
     const installedApp = window.matchMedia(
       "(display-mode: standalone)"
     ).matches;
     void reuseAudienceLookup(schoolId, () =>
       resolveAudience(schoolId, school, installedApp)
     ).then((result) => {
-      recordOnce("audience_lookup_result", result.status);
+      recordPwaResumeDiagnostic("audience_lookup_result", result.status);
       dispatch({ type: "audience_resolved", result });
     });
-  }, [recordOnce, school, schoolId]);
+  }, [school, schoolId]);
+
+  useEffect(() => {
+    recordOnce("react_hydration_start");
+    recordOnce("react_startup_boundary_mounted");
+    recordOnce("react_mounted");
+    recordOnce("tenant_resolved");
+    dispatch({ type: "react_mounted" });
+    runAudienceLookup();
+  }, [recordOnce, runAudienceLookup]);
 
   useEffect(() => {
     if (!cacheHydrated) return;
@@ -146,29 +166,57 @@ function StartupCoordinator({
 
   const stableState =
     startup.state === "onboarding_required" ||
+    startup.state === "retry_required" ||
     startup.state === "ready" ||
     startup.state === "recovery_required";
 
   useEffect(() => {
     if (!stableState || handoffComplete) return;
 
+    let observer: MutationObserver | null = null;
+    let firstFrame = 0;
     let secondFrame = 0;
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        hidePwaLaunchScreen(
-          startup.state === "recovery_required"
-            ? "recovery_required"
-            : startup.state === "ready"
-              ? "app_shell_ready"
-              : "onboarding_required"
-        );
-        recordOnce("launch_shell_removed", startup.state);
-        setHandoffComplete(true);
+
+    const completeHandoff = () => {
+      firstFrame = window.requestAnimationFrame(() => {
+        secondFrame = window.requestAnimationFrame(() => {
+          recordOnce("stable_destination_painted", startup.state);
+          hidePwaLaunchScreen(
+            startup.state === "recovery_required"
+              ? "recovery_required"
+              : startup.state === "retry_required"
+                ? "audience_retry_required"
+                : startup.state === "ready"
+                  ? "app_shell_ready"
+                  : "onboarding_required"
+          );
+          recordOnce("launch_shell_removed", startup.state);
+          setHandoffComplete(true);
+        });
       });
-    });
+    };
+
+    const routeIsLoading = shouldWaitForPwaRoute(
+      startup.state,
+      Boolean(document.querySelector(ROUTE_LOADING_SELECTOR))
+    );
+
+    if (routeIsLoading) {
+      recordOnce("react_loader_rendered");
+      observer = new MutationObserver(() => {
+        if (document.querySelector(ROUTE_LOADING_SELECTOR)) return;
+        observer?.disconnect();
+        observer = null;
+        completeHandoff();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    } else {
+      completeHandoff();
+    }
 
     return () => {
-      window.cancelAnimationFrame(firstFrame);
+      observer?.disconnect();
+      if (firstFrame) window.cancelAnimationFrame(firstFrame);
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
     };
   }, [handoffComplete, recordOnce, stableState, startup.state]);
@@ -202,14 +250,17 @@ function StartupCoordinator({
   );
   const showOnboarding = startup.state === "onboarding_required";
   const showApp = startup.state === "ready" && handoffComplete;
-  const showRecovery =
-    startup.state === "recovery_required" && handoffComplete;
+  const appDestinationMounted = startup.state === "ready";
+  const showRecovery = startup.state === "recovery_required";
+  const showRetry =
+    startup.state === "retry_required" ||
+    (startup.state === "checking_audience" && handoffComplete);
 
   return (
     <PwaStartupContext.Provider value={context}>
       <div
         data-pwa-startup-state={startup.state}
-        style={{ visibility: showApp ? "visible" : "hidden" }}
+        style={{ visibility: appDestinationMounted ? "visible" : "hidden" }}
         aria-hidden={!showApp}
       >
         {children}
@@ -221,6 +272,23 @@ function StartupCoordinator({
             <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
               This installation needs one online sync before it can open offline.
             </p>
+          </section>
+        </main>
+      )}
+      {showRetry && (
+        <main className="grid min-h-dvh place-items-center bg-slate-50 px-5 text-slate-950 dark:bg-black dark:text-white">
+          <section className="max-w-sm rounded-[2rem] border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
+            <h1 className="text-xl font-black">We couldn&apos;t finish opening Sundial</h1>
+            <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
+              Check your connection and try the device setup check again.
+            </p>
+            <button
+              type="button"
+              onClick={runAudienceLookup}
+              className="mt-5 min-h-12 w-full rounded-xl bg-[var(--school-primary)] px-4 py-3 font-black text-[var(--school-primary-text)]"
+            >
+              Try again
+            </button>
           </section>
         </main>
       )}

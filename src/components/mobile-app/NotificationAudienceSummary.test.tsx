@@ -18,7 +18,7 @@ describe("NotificationAudienceSummary", () => {
       `This device is configured for ${label} notifications.`
     );
     expect(markup).toContain(
-      "To change the notification audience, remove Sundial from your Home Screen and install it again."
+      "This audience is saved for this browser and may remain if the Home Screen app is removed."
     );
     expect(markup).not.toContain(`>${audience}<`);
     expect(markup).not.toContain("<select");

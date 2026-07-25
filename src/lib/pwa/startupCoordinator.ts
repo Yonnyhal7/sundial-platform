@@ -11,6 +11,7 @@ export type PwaStartupState =
   | "hydrating_cached_state"
   | "checking_audience"
   | "onboarding_required"
+  | "retry_required"
   | "ready"
   | "recovery_required"
   | "application_reload_pending";
@@ -37,19 +38,31 @@ export const initialPwaStartupSnapshot: PwaStartupSnapshot = {
   audience: null,
 };
 
+export function shouldWaitForPwaRoute(
+  state: PwaStartupState,
+  routeFallbackMounted: boolean
+) {
+  return state === "ready" && routeFallbackMounted;
+}
+
 function settleStartup(
   snapshot: PwaStartupSnapshot
 ): PwaStartupSnapshot {
   if (!snapshot.cacheResolved || !snapshot.audience) return snapshot;
 
-  if (snapshot.audience.status === "unassigned") {
-    return { ...snapshot, state: "onboarding_required" };
+  switch (snapshot.audience.status) {
+    case "assigned":
+      return {
+        ...snapshot,
+        state: snapshot.recoveryRequired ? "recovery_required" : "ready",
+      };
+    case "unassigned":
+      return { ...snapshot, state: "onboarding_required" };
+    case "offline_unknown":
+      return { ...snapshot, state: "recovery_required" };
+    case "transport_error":
+      return { ...snapshot, state: "retry_required" };
   }
-
-  return {
-    ...snapshot,
-    state: snapshot.recoveryRequired ? "recovery_required" : "ready",
-  };
 }
 
 export function reducePwaStartup(
@@ -62,7 +75,7 @@ export function reducePwaStartup(
     case "react_mounted":
       return { ...snapshot, state: "hydrating_cached_state" };
     case "audience_lookup_started":
-      return { ...snapshot, state: "checking_audience" };
+      return { ...snapshot, state: "checking_audience", audience: null };
     case "cache_resolved":
       return settleStartup({
         ...snapshot,

@@ -2,6 +2,7 @@ import {
   createNotificationDeviceIdentity,
   getNotificationDeviceIdentity,
   notificationDeviceHeaders,
+  setConfirmedNotificationAudience,
   type NotificationDeviceIdentity,
 } from "@/lib/notifications/deviceClient";
 import type { NotificationAudience } from "@/lib/notifications";
@@ -51,6 +52,7 @@ export async function saveNotificationAudience({
     throw new Error("audience_transport_failed");
   }
 
+  setConfirmedNotificationAudience(schoolId, audience);
   return identity;
 }
 

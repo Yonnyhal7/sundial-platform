@@ -23,6 +23,7 @@ import {
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
 import { normalizeAppearancePreference } from "@/lib/themeScope";
 import { getThemeBootstrapScript } from "@/lib/themeBootstrap";
+import { PWA_LAUNCH_VISUAL } from "@/lib/pwa/launchScreen";
 
 type AppLayoutProps = {
   children: ReactNode;
@@ -91,7 +92,7 @@ export async function generateMetadata({
 
 export async function generateViewport(): Promise<Viewport> {
   return {
-    themeColor: "#f8fafc",
+    themeColor: PWA_LAUNCH_VISUAL.background,
     colorScheme: "light dark",
   };
 }

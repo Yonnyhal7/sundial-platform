@@ -33,8 +33,8 @@ export default function NotificationAudienceSummary({
         This device is configured for {label} notifications.
       </p>
       <p className="mt-1 max-w-xs text-xs font-medium leading-relaxed text-[color-mix(in_srgb,var(--school-primary-text)_72%,transparent)]">
-        To change the notification audience, remove Sundial from your Home Screen
-        and install it again.
+        This audience is saved for this browser and may remain if the Home Screen
+        app is removed.
       </p>
     </div>
   );

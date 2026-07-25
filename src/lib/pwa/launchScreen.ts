@@ -1,17 +1,25 @@
 export const PWA_LAUNCH_SCREEN_ID = "sundial-pwa-launch";
+export const PWA_LAUNCH_VISUAL = {
+  background: "#f8fafc",
+  accent: "#2563eb",
+  title: "Sundial",
+  copy: "Opening your school app…",
+  markWidth: 84,
+  markHeight: 92,
+} as const;
 
 export const PWA_LAUNCH_CRITICAL_CSS = `
   html, body {
     min-height: 100%;
     margin: 0;
-    background: #f8fafc;
+    background: ${PWA_LAUNCH_VISUAL.background};
   }
   html.dark, html.dark body {
     background: #050505;
   }
   html[data-pwa-app-launch="true"][data-pwa-launch="pending"],
   html[data-pwa-app-launch="true"][data-pwa-launch="pending"] body {
-    background: #f8fafc;
+    background: ${PWA_LAUNCH_VISUAL.background};
   }
   #${PWA_LAUNCH_SCREEN_ID} {
     position: fixed;
@@ -23,7 +31,7 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
     justify-content: center;
     box-sizing: border-box;
     padding: calc(2rem + env(safe-area-inset-top)) 1.5rem calc(2rem + env(safe-area-inset-bottom));
-    background: #f8fafc;
+    background: ${PWA_LAUNCH_VISUAL.background};
     color: #0f172a;
     color-scheme: light;
   }
@@ -41,7 +49,7 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
   .sundial-pwa-launch-icon {
     width: 5.25rem;
     height: 5.75rem;
-    color: var(--pwa-launch-accent, #2563eb);
+    color: var(--pwa-launch-accent, ${PWA_LAUNCH_VISUAL.accent});
   }
   .sundial-pwa-launch-title {
     margin: .25rem 0 0;
@@ -60,7 +68,7 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
     height: .25rem;
     overflow: hidden;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--pwa-launch-accent, #2563eb) 18%, transparent);
+    background: color-mix(in srgb, var(--pwa-launch-accent, ${PWA_LAUNCH_VISUAL.accent}) 18%, transparent);
   }
   .sundial-pwa-launch-indicator::after {
     content: "";
@@ -68,7 +76,7 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
     width: 45%;
     height: 100%;
     border-radius: inherit;
-    background: var(--pwa-launch-accent, #2563eb);
+    background: var(--pwa-launch-accent, ${PWA_LAUNCH_VISUAL.accent});
     animation: sundial-pwa-launch 1.35s ease-in-out infinite alternate;
   }
   @keyframes sundial-pwa-launch {
@@ -93,6 +101,7 @@ export type PwaStartupReadiness =
   | "cached_snapshot_ready"
   | "app_shell_ready"
   | "onboarding_required"
+  | "audience_retry_required"
   | "application_reload_pending"
   | "recovery_required";
 

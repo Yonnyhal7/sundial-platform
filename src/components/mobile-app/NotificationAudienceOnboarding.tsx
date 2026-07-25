@@ -134,8 +134,8 @@ export default function NotificationAudienceOnboarding({
               ))}
             </div>
             <p className="mt-5 text-xs font-semibold leading-5 text-slate-500 dark:text-[#999]">
-              To change this later, remove Sundial from your Home Screen and
-              install it again.
+              This choice is saved for this browser and may remain if you remove
+              the Home Screen app.
             </p>
             {stage === "error" && (
               <p role="alert" className="mt-4 text-sm font-bold text-red-600 dark:text-red-400">
