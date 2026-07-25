@@ -5,6 +5,7 @@ const migration = readFileSync(new URL("../../supabase/migrations/20260724110000
 const worker = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf8");
 const api = readFileSync(new URL("../app/api/schools/[school]/notifications/route.ts", import.meta.url), "utf8");
 const service = readFileSync(new URL("./notifications/service.server.ts", import.meta.url), "utf8");
+const processorPolicy = readFileSync(new URL("./notifications/processorPolicy.ts", import.meta.url), "utf8");
 const header = readFileSync(new URL("../components/mobile-app/AppHeader.tsx", import.meta.url), "utf8");
 const startup = readFileSync(new URL("../components/pwa/PwaStartupBoundary.tsx", import.meta.url), "utf8");
 const audienceSummary = readFileSync(new URL("../components/mobile-app/NotificationAudienceSummary.tsx", import.meta.url), "utf8");
@@ -52,15 +53,16 @@ describe("notification foundation security", () => {
     expect(migration).toContain("for update of c skip locked");
   });
   it("does not resend terminal deliveries and preserves aggregate retry results", () => {
-    expect(service).toContain('["sent", "inbox_only", "disabled_subscription"].includes');
+    expect(service).toContain("isProvenUnattempted");
     expect(service).toContain("const pendingEligible = eligible.filter");
-    expect(service).toContain('.select("delivery_status")');
-    expect(service).toContain('status === "sent"');
-    expect(service).toContain('status === "inbox_only"');
-    expect(service).toContain('status === "disabled_subscription"');
+    expect(processorPolicy).toContain('return status === "pending"');
+    expect(processorPolicy).toContain('status === "sent"');
+    expect(processorPolicy).toContain('status === "inbox_only"');
+    expect(processorPolicy).toContain('status === "disabled_subscription"');
     expect(service).toContain("statusCode === 404 || statusCode === 410");
     expect(service).toContain('reason.disable ? "disabled_subscription" : "failed"');
-    expect(service).toContain("status: finalStatus");
+    expect(service).toContain("summarizeCampaignDeliveries");
+    expect(service).toContain("duplicate_protection");
   });
   it("keeps device inbox state exact and tenant-scoped", () => {
     expect(api).toContain('{ count: "exact", head: true }');

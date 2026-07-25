@@ -1,0 +1,61 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  NOTIFICATION_FINALIZATION_RESERVE_MS,
+  WEB_PUSH_HARD_TIMEOUT_MS,
+  WebPushTimeoutError,
+  canStartProviderAttempt,
+  isProvenUnattempted,
+  summarizeCampaignDeliveries,
+  withWebPushDeadline,
+} from "./processorPolicy";
+
+describe("notification processor policy", () => {
+  it("enforces the hard provider deadline", async () => {
+    vi.useFakeTimers();
+    const operation = withWebPushDeadline(
+      () => new Promise<never>(() => undefined),
+      100
+    );
+    const expectation = expect(operation).rejects.toBeInstanceOf(WebPushTimeoutError);
+    await vi.advanceTimersByTimeAsync(100);
+    await expectation;
+    vi.useRealTimers();
+  });
+
+  it("resolves promptly when the provider resolves", async () => {
+    await expect(withWebPushDeadline(async () => "sent", 100)).resolves.toBe("sent");
+  });
+
+  it("stops before consuming the finalization reserve", () => {
+    const startedAt = 1_000;
+    const budget = 60_000;
+    expect(canStartProviderAttempt(startedAt, startedAt, budget)).toBe(true);
+    expect(canStartProviderAttempt(
+      startedAt,
+      startedAt + budget - WEB_PUSH_HARD_TIMEOUT_MS
+        - NOTIFICATION_FINALIZATION_RESERVE_MS + 1,
+      budget
+    )).toBe(false);
+  });
+
+  it("only retries deliveries proven unattempted", () => {
+    expect(isProvenUnattempted("pending")).toBe(true);
+    for (const status of [
+      "sending", "sent", "inbox_only", "failed", "disabled_subscription",
+    ] as const) expect(isProvenUnattempted(status)).toBe(false);
+  });
+
+  it.each([
+    [[], 0, "sent", 0, 0],
+    [["sent", "sent"], 2, "sent", 2, 0],
+    [["sent", "failed"], 2, "partially_failed", 2, 1],
+    [["failed", "failed"], 2, "failed", 2, 2],
+    [["pending", "pending"], 2, "failed", 0, 0],
+    [["sent", "pending"], 2, "partially_failed", 1, 0],
+    [["sending"], 1, "failed", 0, 0],
+  ] as const)("summarizes %j", (statuses, eligible, status, attempted, failed) => {
+    expect(summarizeCampaignDeliveries([...statuses], eligible)).toMatchObject({
+      status, attempted, failed,
+    });
+  });
+});
