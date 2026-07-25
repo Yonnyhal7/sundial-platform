@@ -30,6 +30,7 @@ type HarnessOptions = {
   visibility?: DocumentVisibilityState;
   storage?: Map<string, string>;
   pageDeploymentVersion?: string | null;
+  prepareForReload?: () => Promise<void>;
 };
 
 function createHarness({
@@ -37,6 +38,7 @@ function createHarness({
   visibility = "visible",
   storage = new Map<string, string>(),
   pageDeploymentVersion = null,
+  prepareForReload,
 }: HarnessOptions = {}) {
   let currentOnline = online;
   let currentVisibility = visibility;
@@ -94,6 +96,7 @@ function createHarness({
     onUpdateReady: prompt,
     onDiagnostics: diagnostics,
     onApplicationUpdatePending: markApplicationUpdatePending,
+    prepareForReload,
     onResumeDiagnostic: resumeDiagnostics,
     now: () => currentTime,
   });
@@ -212,6 +215,30 @@ describe("PWA update lifecycle", () => {
       "full_reload_scheduled",
       "new_deployment"
     );
+    harness.lifecycle.dispose();
+  });
+
+  it("paints the launch cover once before a confirmed deployment reload", async () => {
+    const order: string[] = [];
+    const prepareForReload = vi.fn(async () => {
+      order.push("launch-cover");
+    });
+    const harness = createHarness({
+      pageDeploymentVersion: "page-v1",
+      prepareForReload,
+    });
+    harness.reload.mockImplementation(() => {
+      order.push("reload");
+    });
+    await settleLaunch(harness);
+    harness.fetchDeploymentVersion.mockResolvedValue("page-v2");
+
+    harness.windowTarget.dispatchEvent(new Event("pageshow"));
+    await runForeground();
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(prepareForReload).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["launch-cover", "reload"]);
     harness.lifecycle.dispose();
   });
 

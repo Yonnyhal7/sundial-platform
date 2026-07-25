@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import OfflineStatusIndicator from "@/components/offline/OfflineStatusIndicator";
 import OfflineStudentAppContent from "@/components/offline/OfflineStudentAppContent";
@@ -14,6 +14,10 @@ import {
   waitForPwaUpdateCheck,
 } from "@/lib/pwa/resumeCoordination";
 import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
+import {
+  hidePwaLaunchScreen,
+  PWA_LAUNCH_MAX_MS,
+} from "@/lib/pwa/launchScreen";
 
 function hasUnsavedWork() {
   const event = new Event("beforeunload", { cancelable: true });
@@ -86,6 +90,37 @@ function SchoolDataRefreshCoordinator({ timeZone }: { timeZone: string }) {
   return null;
 }
 
+function PwaStartupCoordinator() {
+  const { cacheHydrated, snapshot, isOnline, syncState } =
+    useOfflineSchoolData();
+  const revealedRef = useRef(false);
+
+  useEffect(() => {
+    const reveal = (timedOut = false) => {
+      if (revealedRef.current) return;
+      revealedRef.current = true;
+      if (timedOut) {
+        recordPwaResumeDiagnostic("startup_timeout", "cache_hydration");
+      }
+      const readiness = snapshot
+        ? "cached_snapshot_ready"
+        : !isOnline || syncState === "offline-empty"
+          ? "recovery_required"
+          : "app_shell_ready";
+      window.requestAnimationFrame(() => hidePwaLaunchScreen(readiness));
+    };
+    const timeout = window.setTimeout(() => reveal(true), PWA_LAUNCH_MAX_MS);
+
+    if (cacheHydrated) reveal();
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [cacheHydrated, isOnline, snapshot, syncState]);
+
+  return null;
+}
+
 export default function OfflineStudentAppRuntime({
   schoolId,
   school,
@@ -99,6 +134,7 @@ export default function OfflineStudentAppRuntime({
 }) {
   return (
     <OfflineSchoolDataProvider schoolId={schoolId} schoolSlug={school}>
+      <PwaStartupCoordinator />
       <SchoolDataRefreshCoordinator timeZone={timeZone} />
       <OfflineStudentAppBody school={school}>{children}</OfflineStudentAppBody>
     </OfflineSchoolDataProvider>

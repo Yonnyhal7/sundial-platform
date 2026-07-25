@@ -11,6 +11,20 @@ import PublicFooterRoute from "@/components/public-site/PublicFooterRoute";
 import { requirePublicSchool } from "@/lib/publicSite";
 import { getContrastTextColor } from "@/lib/schoolTheme";
 import type { CSSProperties } from "react";
+import type { Metadata } from "next";
+import { getSchoolForSetup } from "@/lib/schools";
+import { getTenantFaviconMetadata } from "@/lib/tenantFavicon";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ school: string }>;
+}): Promise<Metadata> {
+  const { school } = await params;
+  const schoolData = await getSchoolForSetup(school);
+
+  return getTenantFaviconMetadata(school, schoolData?.logo_url);
+}
 
 async function getSchoolDefaultAppearance(
   school: string

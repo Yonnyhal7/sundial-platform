@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { cache } from "react";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 import type { SetupStepSlug } from "@/lib/setupSteps";
 import { isReservedSchoolSlug } from "@/lib/routing/hosts";
@@ -216,7 +217,7 @@ export type SetupSchool = {
   setup_step?: SetupStepSlug | null;
 };
 
-export async function getSchoolForSetup(subdomain: string) {
+export const getSchoolForSetup = cache(async (subdomain: string) => {
   const serviceSupabase = createSupabaseServiceRoleClient();
   const normalizedSubdomain = subdomain.trim().toLowerCase();
 
@@ -254,4 +255,4 @@ export async function getSchoolForSetup(subdomain: string) {
     .maybeSingle<SetupSchool>();
 
   return fallbackData || null;
-}
+});

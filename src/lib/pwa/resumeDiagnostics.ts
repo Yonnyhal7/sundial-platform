@@ -14,7 +14,8 @@ export type PwaResumeDiagnosticType =
   | "full_reload_scheduled"
   | "active_worker_script_version"
   | "theme_read"
-  | "theme_class_applied";
+  | "theme_class_applied"
+  | "startup_timeout";
 
 export type PwaResumeDiagnostic = {
   type: PwaResumeDiagnosticType;

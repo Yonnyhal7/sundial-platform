@@ -39,6 +39,7 @@ type OfflineSchoolDataContextValue = {
   isOnline: boolean;
   lastSuccessfulSyncAt: string | null;
   lastError: string | null;
+  cacheHydrated: boolean;
   refresh: () => Promise<SchoolDataRefreshResult>;
   markOffline: () => void;
 };
@@ -59,6 +60,7 @@ export function OfflineSchoolDataProvider({
   const [syncState, setSyncState] = useState<OfflineSyncState>("loading-cache");
   const [isOnline, setIsOnline] = useState(getHydrationSafeInitialOnlineState);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [cacheHydrated, setCacheHydrated] = useState(false);
   const mountedRef = useRef(true);
   const syncingRef = useRef<Promise<SchoolDataRefreshResult> | null>(null);
   const snapshotRef = useRef<SchoolOfflineSnapshot | null>(null);
@@ -165,6 +167,7 @@ export function OfflineSchoolDataProvider({
         setSyncState(navigator.onLine ? "idle" : "offline-empty");
       }
 
+      setCacheHydrated(true);
       void refresh();
     });
 
@@ -200,11 +203,12 @@ export function OfflineSchoolDataProvider({
         isOnline,
         lastSuccessfulSyncAt: activeSnapshot?.syncedAt || null,
         lastError,
+        cacheHydrated,
         refresh,
         markOffline,
       };
     },
-    [isOnline, lastError, markOffline, refresh, schoolId, schoolSlug, snapshot, syncState]
+    [cacheHydrated, isOnline, lastError, markOffline, refresh, schoolId, schoolSlug, snapshot, syncState]
   );
 
   return (

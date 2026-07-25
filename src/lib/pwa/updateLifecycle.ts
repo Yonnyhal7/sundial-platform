@@ -51,6 +51,7 @@ export type PwaUpdateLifecycleOptions = {
   onApplicationUpdatePending?: () => void;
   onUpdateCheckStart?: () => void;
   onUpdateCheckComplete?: () => void;
+  prepareForReload?: () => Promise<void>;
   onResumeDiagnostic?: (
     type:
       | "pageshow"
@@ -252,10 +253,19 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
         recordDiagnostic("reload_suppressed", "unsaved_work_before_reload");
         return;
       }
-      reloadAttemptedAt = now();
-      markReload(options.window, reloadAttemptedAt);
-      saveScrollPosition();
-      options.window.location.reload();
+      const performReload = () => {
+        if (disposed) return;
+        reloadAttemptedAt = now();
+        markReload(options.window, reloadAttemptedAt);
+        saveScrollPosition();
+        options.window.location.reload();
+      };
+      const preparation = options.prepareForReload?.();
+      if (preparation) {
+        void preparation.then(performReload, performReload);
+      } else {
+        performReload();
+      }
     }, 0);
   };
 

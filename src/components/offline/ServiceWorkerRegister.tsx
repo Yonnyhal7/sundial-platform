@@ -11,6 +11,7 @@ import {
   markPwaUpdateCheckStarted,
 } from "@/lib/pwa/resumeCoordination";
 import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
+import { preparePwaLaunchScreenForReload } from "@/lib/pwa/launchScreen";
 
 export default function ServiceWorkerRegister({
   deploymentVersion,
@@ -72,6 +73,7 @@ export default function ServiceWorkerRegister({
           onApplicationUpdatePending: markPwaApplicationUpdatePending,
           onUpdateCheckStart: markPwaUpdateCheckStarted,
           onUpdateCheckComplete: markPwaUpdateCheckFinished,
+          prepareForReload: preparePwaLaunchScreenForReload,
           onResumeDiagnostic: recordPwaResumeDiagnostic,
           onDiagnostics: (diagnostics: PwaDiagnostics) => {
             try {

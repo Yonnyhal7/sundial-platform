@@ -5,6 +5,7 @@ import AppBottomNav from "@/components/mobile-app/AppBottomNav";
 import AppHeader from "@/components/mobile-app/AppHeader";
 import AppRoutePrefetch from "@/components/mobile-app/AppRoutePrefetch";
 import AppSwipeNavigation from "@/components/mobile-app/AppSwipeNavigation";
+import PwaLaunchScreen from "@/components/pwa/PwaLaunchScreen";
 import OfflineStudentAppRuntime from "@/components/offline/OfflineStudentAppRuntime";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { getMobileAppQuickLinks, requireMobileAppSchool } from "@/lib/mobileAppData";
@@ -14,6 +15,7 @@ import {
   getSchoolAppShortName,
   getSchoolAppThemeColor,
 } from "@/lib/pwa/schoolAppManifest";
+import { getTenantFaviconIconEntries } from "@/lib/tenantFavicon";
 import { getForwardedHost } from "@/lib/routing/hosts";
 import {
   getSchoolAppCanonicalUrl,
@@ -76,12 +78,7 @@ export async function generateMetadata({
       "apple-mobile-web-app-capable": "yes",
     },
     icons: {
-      icon: [
-        ...(schoolIcon ? [{ url: schoolIcon }] : []),
-        { url: "/favicon.ico" },
-        { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
-        { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
-      ],
+      icon: getTenantFaviconIconEntries(school, schoolData.logo_url),
       apple: [
         ...(schoolIcon ? [{ url: schoolIcon }] : []),
         {
@@ -142,6 +139,10 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
             schoolDefaultAppearance,
           }),
         }}
+      />
+      <PwaLaunchScreen
+        schoolName={schoolData.name}
+        primaryColor={schoolData.primary_color}
       />
       <ThemeRouteSync
         schoolDefaultAppearance={schoolDefaultAppearance}

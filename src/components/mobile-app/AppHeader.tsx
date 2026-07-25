@@ -325,7 +325,7 @@ export default function AppHeader({
           className="relative grid h-[clamp(3rem,8vw,4rem)] w-[clamp(3rem,8vw,4rem)] place-items-center rounded-[clamp(0.9rem,2.4vw,1.35rem)] border border-transparent bg-[var(--school-primary)] text-[var(--school-primary-text)] shadow-[0_10px_24px_rgb(15_23_42/0.08)]"
         >
           <BellIcon className="h-[clamp(1.25rem,3vw,1.75rem)] w-[clamp(1.25rem,3vw,1.75rem)]" />
-          {unreadCount > 0 && <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-purple-500 ring-2 ring-[var(--school-primary)]" />}
+          {unreadCount > 0 && <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-[var(--school-accent-visible-primary)] ring-2 ring-[var(--school-primary)]" />}
         </button>
       </header>
 
