@@ -31,11 +31,11 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "Sundial",
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent",
   },
   other: {
     "apple-mobile-web-app-capable": "yes",
-    "apple-mobile-web-app-status-bar-style": "default",
+    "apple-mobile-web-app-status-bar-style": "black-translucent",
   },
   icons: {
     apple: [
@@ -70,7 +70,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta
           name="apple-mobile-web-app-status-bar-style"
-          content="default"
+          content="black-translucent"
         />
         <script
           dangerouslySetInnerHTML={{ __html: getThemeBootstrapScript() }}

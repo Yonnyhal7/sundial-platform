@@ -70,7 +70,7 @@ export async function generateMetadata({
     manifest: manifestPath,
     appleWebApp: {
       capable: true,
-      statusBarStyle: "default",
+      statusBarStyle: "black-translucent",
       title: appTitle,
     },
     other: {

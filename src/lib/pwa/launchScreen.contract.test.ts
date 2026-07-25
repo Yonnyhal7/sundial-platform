@@ -31,19 +31,25 @@ describe("installed PWA loading screen integration", () => {
     expect(rootLayout).toContain("<Suspense fallback={null}>{children}</Suspense>");
     expect(launchScreen).toContain('role="status"');
     expect(launchRuntime).toContain("Opening your school app");
-    expect(launchScreen).toContain("<svg");
-    expect(launchScreen).not.toContain("<img");
+    expect(launchScreen).toContain("<Image");
+    expect(launchScreen).toContain("PWA_LAUNCH_VISUAL.iconSrc");
+    expect(launchScreen).toContain('import Image from "next/image"');
     expect(launchScreen).toContain("server_launch_shell_present");
   });
 
-  it("keeps light, dark, safe-area, and reduced-motion behavior in critical CSS", () => {
+  it("keeps an always-dark, safe-area-aware, reduced-motion launch shell", () => {
     expect(rootLayout.indexOf("__html: getThemeBootstrapScript()")).toBeLessThan(
       rootLayout.indexOf("__html: PWA_LAUNCH_CRITICAL_CSS")
     );
     expect(launchRuntime).toContain(
       'html[data-pwa-app-launch="true"][data-pwa-launch="pending"]'
     );
-    expect(launchRuntime).toContain("color-scheme: light");
+    expect(launchRuntime).toContain("color-scheme: dark");
+    expect(launchRuntime).toContain('background: "#000000"');
+    expect(launchRuntime).toContain('accent: "#f8c531"');
+    expect(launchRuntime).toContain('track: "#374151"');
+    expect(launchRuntime).toContain('copyColor: "#a1a1aa"');
+    expect(launchRuntime).toContain('iconSrc: "/sundial-icon.png"');
     expect(launchRuntime).not.toContain(
       `html.dark #\${PWA_LAUNCH_SCREEN_ID}`
     );
@@ -55,10 +61,10 @@ describe("installed PWA loading screen integration", () => {
     expect(launchScreen).toContain("prepaint_shell_shown");
   });
 
-  it("keeps first-paint metadata and inline document backgrounds non-black", () => {
+  it("keeps first-paint metadata and inline document backgrounds black", () => {
     expect(rootLayout).toContain("themeColor: PWA_LAUNCH_VISUAL.background");
     expect(rootLayout).toContain('colorScheme: "light dark"');
-    expect(rootLayout).toContain('statusBarStyle: "default"');
+    expect(rootLayout).toContain('statusBarStyle: "black-translucent"');
     expect(rootLayout).toContain('"apple-mobile-web-app-capable": "yes"');
     expect(rootLayout).toContain(
       'name="apple-mobile-web-app-status-bar-style"'

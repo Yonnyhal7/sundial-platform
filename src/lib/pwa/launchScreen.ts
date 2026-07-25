@@ -1,11 +1,14 @@
 export const PWA_LAUNCH_SCREEN_ID = "sundial-pwa-launch";
 export const PWA_LAUNCH_VISUAL = {
-  background: "#f8fafc",
-  accent: "#2563eb",
+  background: "#000000",
+  accent: "#f8c531",
+  track: "#374151",
+  copyColor: "#a1a1aa",
+  iconSrc: "/sundial-icon.png",
   title: "Sundial",
   copy: "Opening your school app…",
-  markWidth: 84,
-  markHeight: 92,
+  markWidth: 120,
+  markHeight: 131,
 } as const;
 
 export const PWA_LAUNCH_CRITICAL_CSS = `
@@ -13,9 +16,6 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
     min-height: 100%;
     margin: 0;
     background: ${PWA_LAUNCH_VISUAL.background};
-  }
-  html.dark, html.dark body {
-    background: #050505;
   }
   html[data-pwa-app-launch="true"][data-pwa-launch="pending"],
   html[data-pwa-app-launch="true"][data-pwa-launch="pending"] body {
@@ -32,8 +32,8 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
     box-sizing: border-box;
     padding: calc(2rem + env(safe-area-inset-top)) 1.5rem calc(2rem + env(safe-area-inset-bottom));
     background: ${PWA_LAUNCH_VISUAL.background};
-    color: #0f172a;
-    color-scheme: light;
+    color: #ffffff;
+    color-scheme: dark;
   }
   html[data-pwa-app-launch="true"] #${PWA_LAUNCH_SCREEN_ID}:not([hidden]) {
     display: flex;
@@ -47,28 +47,28 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
     text-align: center;
   }
   .sundial-pwa-launch-icon {
-    width: 5.25rem;
-    height: 5.75rem;
-    color: var(--pwa-launch-accent, ${PWA_LAUNCH_VISUAL.accent});
+    display: block;
+    width: 7.5rem;
+    height: auto;
   }
   .sundial-pwa-launch-title {
     margin: .25rem 0 0;
-    font: 800 clamp(1.75rem, 8vw, 2.25rem)/1.05 system-ui, -apple-system, sans-serif;
+    color: #ffffff;
+    font: 800 clamp(2rem, 9vw, 2.75rem)/1.05 system-ui, -apple-system, sans-serif;
     letter-spacing: -.035em;
   }
   .sundial-pwa-launch-copy {
     min-height: 1.25rem;
     margin: 0;
-    color: #64748b;
-    font: 600 .9rem/1.4 system-ui, -apple-system, sans-serif;
+    color: ${PWA_LAUNCH_VISUAL.copyColor};
+    font: 500 1rem/1.4 system-ui, -apple-system, sans-serif;
   }
-  html.dark .sundial-pwa-launch-copy { color: #a3a3a3; }
   .sundial-pwa-launch-indicator {
-    width: 2.75rem;
-    height: .25rem;
+    width: 3.5rem;
+    height: .3rem;
     overflow: hidden;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--pwa-launch-accent, ${PWA_LAUNCH_VISUAL.accent}) 18%, transparent);
+    background: ${PWA_LAUNCH_VISUAL.track};
   }
   .sundial-pwa-launch-indicator::after {
     content: "";

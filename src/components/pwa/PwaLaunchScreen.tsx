@@ -1,3 +1,4 @@
+import Image from "next/image";
 import {
   PWA_LAUNCH_SCREEN_ID,
   PWA_LAUNCH_VISUAL,
@@ -21,19 +22,16 @@ export default function PwaLaunchScreen({
         suppressHydrationWarning
       >
         <div className="sundial-pwa-launch-card">
-          <svg
+          <Image
             className="sundial-pwa-launch-icon"
             aria-hidden="true"
+            alt=""
+            src={PWA_LAUNCH_VISUAL.iconSrc}
             width={PWA_LAUNCH_VISUAL.markWidth}
             height={PWA_LAUNCH_VISUAL.markHeight}
-            viewBox="0 0 84 92"
-            fill="none"
-          >
-            <circle cx="42" cy="46" r="29" fill="currentColor" opacity=".14" />
-            <circle cx="42" cy="46" r="22" stroke="currentColor" strokeWidth="5" />
-            <path d="M42 29v18l12 8" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M42 7v7M42 78v7M3 46h7M74 46h7M14 18l5 5M65 69l5 5M70 18l-5 5M19 69l-5 5" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-          </svg>
+            fetchPriority="high"
+            unoptimized
+          />
           <p className="sundial-pwa-launch-title">{PWA_LAUNCH_VISUAL.title}</p>
           <p className="sundial-pwa-launch-copy">{PWA_LAUNCH_VISUAL.copy}</p>
           <span className="sundial-pwa-launch-indicator" aria-hidden="true" />

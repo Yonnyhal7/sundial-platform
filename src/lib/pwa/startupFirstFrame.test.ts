@@ -53,8 +53,8 @@ describe("PWA startup first frame", () => {
 
   it("defines the document background and launch shell without external CSS or fonts", () => {
     expect(PWA_LAUNCH_CRITICAL_CSS).toContain("html, body");
-    expect(PWA_LAUNCH_CRITICAL_CSS).toContain("background: #f8fafc");
-    expect(PWA_LAUNCH_CRITICAL_CSS).toContain("html.dark");
+    expect(PWA_LAUNCH_CRITICAL_CSS).toContain("background: #000000");
+    expect(PWA_LAUNCH_CRITICAL_CSS).toContain("color-scheme: dark");
     expect(PWA_LAUNCH_CRITICAL_CSS).toContain(
       'html[data-pwa-app-launch="true"]'
     );
