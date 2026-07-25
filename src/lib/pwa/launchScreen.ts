@@ -1,9 +1,10 @@
 export const PWA_LAUNCH_SCREEN_ID = "sundial-pwa-launch";
-export const PWA_LAUNCH_MAX_MS = 4_000;
 
 export type PwaStartupReadiness =
+  | "booting"
   | "cached_snapshot_ready"
   | "app_shell_ready"
+  | "onboarding_required"
   | "application_reload_pending"
   | "recovery_required";
 

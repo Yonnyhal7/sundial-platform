@@ -10,6 +10,7 @@ import {
   requestNotificationPermissionAndSubscribe,
   saveNotificationAudience,
 } from "@/lib/notifications/onboarding";
+import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
 
 export default function NotificationAudienceOnboarding({
   schoolId,
@@ -48,6 +49,7 @@ export default function NotificationAudienceOnboarding({
     if (!identity) return;
     setPushError(false);
     setStage("permission");
+    recordPwaResumeDiagnostic("notification_permission_requested");
     try {
       await requestNotificationPermissionAndSubscribe({ school, identity });
       if (audience) onComplete(audience);

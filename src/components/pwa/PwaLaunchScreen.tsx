@@ -6,7 +6,7 @@ import {
 export default function PwaLaunchScreen({
   schoolName,
   primaryColor,
-  readiness = "app_shell_ready",
+  readiness = "booting",
 }: {
   schoolName?: string | null;
   primaryColor?: string | null;
@@ -17,6 +17,13 @@ export default function PwaLaunchScreen({
   return (
     <>
       <style>{`
+        html, body {
+          min-height: 100%;
+          background: #f8fafc;
+        }
+        html.dark, html.dark body {
+          background: #050505;
+        }
         #${PWA_LAUNCH_SCREEN_ID} {
           position: fixed;
           inset: 0;
@@ -51,14 +58,14 @@ export default function PwaLaunchScreen({
         }
         .sundial-pwa-launch-title {
           margin: .25rem 0 0;
-          font: 800 clamp(1.75rem, 8vw, 2.25rem)/1.05 var(--font-geist-sans), system-ui, sans-serif;
+          font: 800 clamp(1.75rem, 8vw, 2.25rem)/1.05 system-ui, -apple-system, sans-serif;
           letter-spacing: -.035em;
         }
         .sundial-pwa-launch-copy {
           min-height: 1.25rem;
           margin: 0;
           color: #64748b;
-          font: 600 .9rem/1.4 var(--font-geist-sans), system-ui, sans-serif;
+          font: 600 .9rem/1.4 system-ui, -apple-system, sans-serif;
         }
         html.dark .sundial-pwa-launch-copy { color: #a3a3a3; }
         .sundial-pwa-launch-indicator {
@@ -117,6 +124,11 @@ export default function PwaLaunchScreen({
           <span className="sundial-pwa-launch-indicator" aria-hidden="true" />
         </div>
       </div>
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `(()=>{document.documentElement.dataset.pwaLaunch="pending";const w=window,k="__SUNDIAL_PWA_RESUME_DIAGNOSTICS__",e={type:"prepaint_shell_shown",at:new Date().toISOString(),visibility:document.visibilityState};w[k]=[...(w[k]||[]),e].slice(-48)})()`,
+        }}
+      />
     </>
   );
 }

@@ -50,8 +50,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ scho
     const { data } = await ctx.db.from("notification_device_preferences").select("category,enabled,lead_time_minutes").eq("school_id", ctx.school.id).eq("device_id", ctx.device.id);
     return NextResponse.json({ audience: ctx.device.audience, preferences: data || [] });
   }
-  const { data } = await ctx.db.from("notification_deliveries").select("id,read_at,opened_at,created_at,notification_campaigns!inner(title,body,category,destination_url,status)").eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).in("delivery_status", ["sent", "inbox_only"]).order("created_at", { ascending: false }).limit(100);
-  const { count: unreadCount } = await ctx.db.from("notification_deliveries").select("id", { count: "exact", head: true }).eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).in("delivery_status", ["sent", "inbox_only"]).is("read_at", null);
+  const deliveryId = url.searchParams.get("id");
+  if (deliveryId) {
+    const { data } = await ctx.db.from("notification_deliveries")
+      .select("id,read_at,opened_at,delivered_at,created_at,notification_campaigns!inner(title,body,category,destination_url,status,related_entity_type)")
+      .eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).eq("id", deliveryId)
+      .in("delivery_status", ["sent", "inbox_only"]).is("deleted_at", null).maybeSingle();
+    return data
+      ? NextResponse.json({ audience: ctx.device.audience, notification: data })
+      : NextResponse.json({ error: "Notification unavailable" }, { status: 404 });
+  }
+  const { data } = await ctx.db.from("notification_deliveries").select("id,read_at,opened_at,delivered_at,created_at,notification_campaigns!inner(title,body,category,destination_url,status,related_entity_type)").eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).in("delivery_status", ["sent", "inbox_only"]).is("deleted_at", null).order("created_at", { ascending: false }).limit(100);
+  const { count: unreadCount } = await ctx.db.from("notification_deliveries").select("id", { count: "exact", head: true }).eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).in("delivery_status", ["sent", "inbox_only"]).is("deleted_at", null).is("read_at", null);
   return NextResponse.json({
     audience: ctx.device.audience,
     notifications: data || [],
@@ -128,12 +138,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ sch
   }
   if (action === "mark_read") {
     const deliveryId = String(body?.deliveryId || "");
-    let query = ctx.db.from("notification_deliveries").update({ read_at: new Date().toISOString() }).eq("school_id", ctx.school.id).eq("device_id", ctx.device.id);
+    let query = ctx.db.from("notification_deliveries").update({ read_at: new Date().toISOString(), opened_at: deliveryId === "all" ? undefined : new Date().toISOString() }).eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).is("deleted_at", null).is("read_at", null);
     query = deliveryId === "all" ? query.is("read_at", null) : query.eq("id", deliveryId);
     const { error } = await query;
     return error
       ? NextResponse.json({ error: "Unable to update inbox" }, { status: 400 })
       : NextResponse.json({ saved: true });
+  }
+  if (action === "delete") {
+    const deliveryId = String(body?.deliveryId || "");
+    if (!/^[0-9a-f-]{36}$/i.test(deliveryId)) return NextResponse.json({ error: "Invalid notification" }, { status: 400 });
+    const { error } = await ctx.db.from("notification_deliveries")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).eq("id", deliveryId).is("deleted_at", null);
+    return error
+      ? NextResponse.json({ error: "Unable to delete notification" }, { status: 400 })
+      : NextResponse.json({ deleted: true });
+  }
+  if (action === "delete_read") {
+    const { error } = await ctx.db.from("notification_deliveries")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).is("deleted_at", null).not("read_at", "is", null);
+    return error
+      ? NextResponse.json({ error: "Unable to delete read notifications" }, { status: 400 })
+      : NextResponse.json({ deleted: true });
   }
   return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
 }

@@ -11,6 +11,9 @@ describe("installed PWA loading screen integration", () => {
   const runtime = source(
     "src/components/offline/OfflineStudentAppRuntime.tsx"
   );
+  const startupBoundary = source(
+    "src/components/pwa/PwaStartupBoundary.tsx"
+  );
   const offlineData = source("src/lib/offline/useOfflineSchoolData.tsx");
   const appLayout = source("src/app/[school]/app/layout.tsx");
   const serviceWorkerRegister = source(
@@ -33,15 +36,20 @@ describe("installed PWA loading screen integration", () => {
     expect(launchScreen).toContain("env(safe-area-inset-top)");
     expect(launchScreen).toContain("env(safe-area-inset-bottom)");
     expect(launchScreen).toContain("prefers-reduced-motion: reduce");
+    expect(launchScreen).toContain("html, body");
+    expect(launchScreen).toContain("system-ui, -apple-system");
+    expect(launchScreen).toContain("prepaint_shell_shown");
   });
 
-  it("reveals after cache hydration rather than waiting for network refresh", () => {
+  it("hands off only after cache and audience readiness resolve", () => {
     expect(offlineData).toContain("cacheHydrated: boolean");
     expect(offlineData).toContain("setCacheHydrated(true)");
-    expect(runtime).toContain("if (cacheHydrated) reveal()");
-    expect(runtime).toContain("PWA_LAUNCH_MAX_MS");
-    expect(runtime).toContain('"recovery_required"');
-    expect(runtime).toContain('"cached_snapshot_ready"');
+    expect(startupBoundary).toContain("cacheHydrated");
+    expect(startupBoundary).toContain("audience_lookup_started");
+    expect(startupBoundary).toContain("onboarding_required");
+    expect(startupBoundary).toContain("hidePwaLaunchScreen");
+    expect(runtime).not.toContain("hidePwaLaunchScreen");
+    expect(runtime).not.toContain("PWA_LAUNCH_MAX_MS");
   });
 
   it("covers a confirmed reload before the controlled reload paints", () => {
@@ -58,5 +66,6 @@ describe("installed PWA loading screen integration", () => {
     expect(appLayout).toContain("apple-touch-icon.png");
     expect(serviceWorkerRegister).not.toContain("push");
     expect(runtime).not.toContain("notification");
+    expect(startupBoundary).not.toContain("serviceWorker");
   });
 });

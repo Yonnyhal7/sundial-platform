@@ -15,7 +15,18 @@ export type PwaResumeDiagnosticType =
   | "active_worker_script_version"
   | "theme_read"
   | "theme_class_applied"
-  | "startup_timeout";
+  | "startup_timeout"
+  | "prepaint_shell_shown"
+  | "react_mounted"
+  | "tenant_resolved"
+  | "cached_snapshot_ready"
+  | "audience_lookup_started"
+  | "audience_lookup_result"
+  | "onboarding_selected"
+  | "notification_permission_requested"
+  | "app_ready"
+  | "launch_shell_removed"
+  | "recovery_shown";
 
 export type PwaResumeDiagnostic = {
   type: PwaResumeDiagnosticType;

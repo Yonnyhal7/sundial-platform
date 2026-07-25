@@ -1,18 +1,40 @@
 "use client";
 
 export type NotificationDeviceIdentity = { installationId: string; token: string };
+export type NotificationDeviceIdentityState =
+  | { status: "available"; identity: NotificationDeviceIdentity }
+  | { status: "missing"; identity: null }
+  | { status: "unavailable"; identity: null };
 
 function key(schoolId: string) {
   return `sundial:notifications:${schoolId}:device`;
 }
 
-export function getNotificationDeviceIdentity(schoolId: string) {
+export function getNotificationDeviceIdentityState(
+  schoolId: string
+): NotificationDeviceIdentityState {
   try {
     const value = localStorage.getItem(key(schoolId));
-    return value ? JSON.parse(value) as NotificationDeviceIdentity : null;
+    if (!value) return { status: "missing", identity: null };
+    const identity = JSON.parse(value) as Partial<NotificationDeviceIdentity>;
+    return typeof identity.installationId === "string" &&
+      typeof identity.token === "string"
+      ? {
+          status: "available",
+          identity: {
+            installationId: identity.installationId,
+            token: identity.token,
+          },
+        }
+      : { status: "unavailable", identity: null };
   } catch {
-    return null;
+    return { status: "unavailable", identity: null };
   }
+}
+
+export function getNotificationDeviceIdentity(schoolId: string) {
+  const state = getNotificationDeviceIdentityState(schoolId);
+  return state.status === "available" ? state.identity : null;
 }
 
 export function createNotificationDeviceIdentity(schoolId: string) {

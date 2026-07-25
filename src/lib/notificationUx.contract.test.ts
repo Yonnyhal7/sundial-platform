@@ -29,13 +29,14 @@ describe("notification UX integration contracts", () => {
       "src/app/[school]/admin/notifications/settings/page.tsx"
     );
     const header = read("src/components/mobile-app/AppHeader.tsx");
+    const startup = read("src/components/pwa/PwaStartupBoundary.tsx");
     expect(settings).not.toContain("audience");
     expect(header).not.toContain("<select value={notificationAudience}");
-    expect(header).toContain("display-mode: standalone");
-    expect(header).toContain('status: "unavailable"');
-    expect(header).toContain(
-      'currentNotificationDeviceState.status === "missing"'
-    );
+    expect(startup).toContain("display-mode: standalone");
+    expect(startup).toContain('status: "transport_error"');
+    expect(startup).toContain('status: "unassigned"');
+    expect(startup).toContain("<NotificationAudienceOnboarding");
+    expect(header).not.toContain("<NotificationAudienceOnboarding");
     expect(header).not.toContain(
       'currentNotificationDeviceState.status === "registered" && ('
     );

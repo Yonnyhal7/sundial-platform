@@ -6,6 +6,7 @@ const worker = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf
 const api = readFileSync(new URL("../app/api/schools/[school]/notifications/route.ts", import.meta.url), "utf8");
 const service = readFileSync(new URL("./notifications/service.server.ts", import.meta.url), "utf8");
 const header = readFileSync(new URL("../components/mobile-app/AppHeader.tsx", import.meta.url), "utf8");
+const startup = readFileSync(new URL("../components/pwa/PwaStartupBoundary.tsx", import.meta.url), "utf8");
 const audienceSummary = readFileSync(new URL("../components/mobile-app/NotificationAudienceSummary.tsx", import.meta.url), "utf8");
 const newAnnouncement = readFileSync(new URL("../app/[school]/admin/announcements/new/page.tsx", import.meta.url), "utf8");
 const editAnnouncement = readFileSync(new URL("../app/[school]/admin/announcements/[announcementId]/edit/page.tsx", import.meta.url), "utf8");
@@ -92,8 +93,10 @@ describe("notification foundation security", () => {
     expect(existingDeviceUpdate).not.toContain("audience");
     expect(header).toContain('const persistedAudience = String(payload?.audience || "")');
     expect(header).toContain("isNotificationAudience(persistedAudience)");
-    expect(header).toContain('status: "registered"');
-    expect(header).toContain('currentNotificationDeviceState.status === "missing"');
+    expect(startup).toContain('status: "assigned"');
+    expect(startup).toContain("isNotificationAudience(audience)");
+    expect(startup).toContain('status: "unassigned"');
+    expect(header).not.toContain("NotificationAudienceOnboarding");
     expect(header).not.toContain("SchoolAdmin");
     expect(header).not.toContain("Editor");
     expect(audienceSummary).toContain("Notifications, ${label} device");

@@ -110,3 +110,10 @@ export async function processNotificationQueue(campaignId?: string) {
   }
   return { processed: (claimed || []).length };
 }
+
+export async function cleanupNotificationDeviceInbox() {
+  const db = createSupabaseServiceRoleClient();
+  const { data, error } = await db.rpc("cleanup_notification_device_inbox");
+  if (error) throw new Error("Unable to clean notification inbox");
+  return data;
+}

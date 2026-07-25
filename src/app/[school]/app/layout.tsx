@@ -6,6 +6,7 @@ import AppHeader from "@/components/mobile-app/AppHeader";
 import AppRoutePrefetch from "@/components/mobile-app/AppRoutePrefetch";
 import AppSwipeNavigation from "@/components/mobile-app/AppSwipeNavigation";
 import PwaLaunchScreen from "@/components/pwa/PwaLaunchScreen";
+import PwaStartupBoundary from "@/components/pwa/PwaStartupBoundary";
 import OfflineStudentAppRuntime from "@/components/offline/OfflineStudentAppRuntime";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { getMobileAppQuickLinks, requireMobileAppSchool } from "@/lib/mobileAppData";
@@ -144,37 +145,38 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
         schoolName={schoolData.name}
         primaryColor={schoolData.primary_color}
       />
-      <ThemeRouteSync
-        schoolDefaultAppearance={schoolDefaultAppearance}
-        schoolSlug={school}
-      />
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] md:max-w-2xl md:px-6">
-        <AppHeader
-          schoolId={schoolData.id}
-          school={school}
-          schoolName={schoolData.name}
-          logoUrl={schoolData.logo_url || null}
-          quickLinks={quickLinks}
+      <PwaStartupBoundary schoolId={schoolData.id} school={school}>
+        <ThemeRouteSync
           schoolDefaultAppearance={schoolDefaultAppearance}
-          timeZone={schoolData.timezone || "America/Los_Angeles"}
+          schoolSlug={school}
         />
-        <div className="mt-[clamp(1.25rem,3.2vw,1.75rem)] flex min-h-0 flex-1 flex-col">
-          <AppSwipeNavigation
+        <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] md:max-w-2xl md:px-6">
+          <AppHeader
+            schoolId={schoolData.id}
             school={school}
-            className="flex min-h-0 flex-1 flex-col"
-          >
-            <OfflineStudentAppRuntime
-              schoolId={schoolData.id}
+            schoolName={schoolData.name}
+            logoUrl={schoolData.logo_url || null}
+            quickLinks={quickLinks}
+            schoolDefaultAppearance={schoolDefaultAppearance}
+            timeZone={schoolData.timezone || "America/Los_Angeles"}
+          />
+          <div className="mt-[clamp(1.25rem,3.2vw,1.75rem)] flex min-h-0 flex-1 flex-col">
+            <AppSwipeNavigation
               school={school}
-              timeZone={schoolData.timezone || "America/Los_Angeles"}
+              className="flex min-h-0 flex-1 flex-col"
             >
-              {children}
-            </OfflineStudentAppRuntime>
-          </AppSwipeNavigation>
+              <OfflineStudentAppRuntime
+                school={school}
+                timeZone={schoolData.timezone || "America/Los_Angeles"}
+              >
+                {children}
+              </OfflineStudentAppRuntime>
+            </AppSwipeNavigation>
+          </div>
         </div>
-      </div>
-      <AppRoutePrefetch school={school} />
-      <AppBottomNav school={school} />
+        <AppRoutePrefetch school={school} />
+        <AppBottomNav school={school} />
+      </PwaStartupBoundary>
     </div>
   );
 }

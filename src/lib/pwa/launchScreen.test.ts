@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   hidePwaLaunchScreen,
   preparePwaLaunchScreenForReload,
-  PWA_LAUNCH_MAX_MS,
   PWA_LAUNCH_SCREEN_ID,
   showPwaLaunchScreen,
 } from "./launchScreen";
@@ -33,11 +32,6 @@ afterEach(() => {
 });
 
 describe("PWA launch screen contract", () => {
-  it("has a bounded startup duration", () => {
-    expect(PWA_LAUNCH_MAX_MS).toBeGreaterThan(0);
-    expect(PWA_LAUNCH_MAX_MS).toBeLessThanOrEqual(5_000);
-  });
-
   it("reveals a single existing launch layer for a real update", () => {
     const { screen, root } = installDom();
 
