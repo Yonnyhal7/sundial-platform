@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import LoginForm from "./login-form";
 import { getSchoolForSetup, getSchoolSetupStatus } from "@/lib/schools";
-import { getSundialFaviconMetadata } from "@/lib/tenantFavicon";
+import { getSundialAdminMetadata } from "@/lib/tabTitles";
 
-export const metadata: Metadata = getSundialFaviconMetadata();
+export const metadata: Metadata = getSundialAdminMetadata();
 
 export default async function LoginPage({
   params,

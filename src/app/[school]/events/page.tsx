@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { PublicContainer, PublicEmptyState, PublicPageHeader } from "@/components/public-site/PublicSite";
 import { formatDateInTimeZone } from "@/lib/localDate";
 import { requirePublicSchool } from "@/lib/publicSite";
 import { formatPeriodTime } from "@/lib/scheduleTime";
+
+export const metadata: Metadata = { title: "Events" };
 
 export default async function EventsPage({ params }: { params: Promise<{ school: string }> }) {
   const { school: slug } = await params; const { supabase, school } = await requirePublicSchool(slug); const today = formatDateInTimeZone(new Date(), school.timezone);

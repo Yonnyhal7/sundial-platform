@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import PublicCalendarPage from "@/components/public-site/calendar/PublicCalendarPage";
 import { PublicContainer, PublicPageHeader } from "@/components/public-site/PublicSite";
 import { loadPublicCalendar } from "@/lib/publicCalendar.server";
+
+export const metadata: Metadata = { title: "Calendar" };
 
 export default async function SchoolSchedulePage({ params }: { params: Promise<{ school: string }> }) {
   const { school: slug } = await params;

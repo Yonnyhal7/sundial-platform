@@ -4,9 +4,9 @@ import ForgotPasswordForm from "@/components/admin/ForgotPasswordForm";
 import { getSchoolForSetup } from "@/lib/schools";
 import { getPasswordRecoveryRedirectUrl } from "@/lib/auth/passwordRecovery.server";
 import { getSchoolLoginPath } from "@/lib/routing/paths";
-import { getSundialFaviconMetadata } from "@/lib/tenantFavicon";
+import { getSundialAdminMetadata } from "@/lib/tabTitles";
 
-export const metadata: Metadata = getSundialFaviconMetadata();
+export const metadata: Metadata = getSundialAdminMetadata();
 
 export default async function SchoolForgotPasswordPage({ params }: { params: Promise<{ school: string }> }) {
   const { school } = await params;

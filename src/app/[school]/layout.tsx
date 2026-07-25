@@ -6,14 +6,35 @@ import {
   normalizeAppearancePreference,
   type AppearancePreference,
 } from "@/lib/themeScope";
-import { getSchoolLifecycleBySubdomain } from "@/lib/schools";
+import {
+  getSchoolForSetup,
+  getSchoolLifecycleBySubdomain,
+} from "@/lib/schools";
 import PublicFooterRoute from "@/components/public-site/PublicFooterRoute";
 import { requirePublicSchool } from "@/lib/publicSite";
 import { getContrastTextColor } from "@/lib/schoolTheme";
 import type { CSSProperties } from "react";
 import type { Metadata } from "next";
-import { getSchoolForSetup } from "@/lib/schools";
 import { getTenantFaviconMetadata } from "@/lib/tenantFavicon";
+import { getSundialAdminMetadata, getTenantTitle } from "@/lib/tabTitles";
+
+function isAdminExperiencePath(pathname: string, school: string) {
+  const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+  const schoolPath = `/${school}`;
+
+  return (
+    normalizedPath === "/admin" ||
+    normalizedPath.startsWith("/admin/") ||
+    normalizedPath === "/login" ||
+    normalizedPath === "/forgot-password" ||
+    normalizedPath === `${schoolPath}/login` ||
+    normalizedPath === `${schoolPath}/forgot-password` ||
+    normalizedPath === `${schoolPath}/admin` ||
+    normalizedPath.startsWith(`${schoolPath}/admin/`) ||
+    normalizedPath === `${schoolPath}/dashboard` ||
+    normalizedPath.startsWith(`${schoolPath}/dashboard/`)
+  );
+}
 
 export async function generateMetadata({
   params,
@@ -21,9 +42,20 @@ export async function generateMetadata({
   params: Promise<{ school: string }>;
 }): Promise<Metadata> {
   const { school } = await params;
+  const headerStore = await headers();
+  const pathname =
+    headerStore.get("x-sundial-pathname") || `/${school}`;
+
+  if (isAdminExperiencePath(pathname, school)) {
+    return getSundialAdminMetadata();
+  }
+
   const schoolData = await getSchoolForSetup(school);
 
-  return getTenantFaviconMetadata(school, schoolData?.logo_url);
+  return {
+    ...getTenantFaviconMetadata(school, schoolData?.logo_url),
+    title: getTenantTitle(schoolData?.name || "Sundial"),
+  };
 }
 
 async function getSchoolDefaultAppearance(

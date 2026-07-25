@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import CalendarScheduleClient, {
   type CalendarScheduleDay,
   type CalendarScheduleMonth,
@@ -16,6 +17,8 @@ import {
   sortPeriodsByScheduleOrder,
   type SchedulePeriod,
 } from "@/lib/scheduleTime";
+
+export const metadata: Metadata = { title: "Calendar" };
 
 type CalendarDay = {
   id: string;

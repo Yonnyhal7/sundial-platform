@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSchoolAdminPath, getSchoolSetupPath, requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
@@ -5,6 +6,8 @@ import { ADMIN_TAB_ICONS } from "@/components/admin/AdminNavIcons";
 import { notFound, redirect } from "next/navigation";
 import { getSchoolForSetup, isSchoolSetupComplete } from "@/lib/schools";
 import { addDaysToLocalDateString, formatDateInTimeZone } from "@/lib/localDate";
+
+export const metadata: Metadata = { title: "Dashboard" };
 
 function QuickActionIcon({
   icon: Icon,

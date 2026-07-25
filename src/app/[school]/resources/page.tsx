@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { PublicContainer, PublicEmptyState, PublicPageHeader } from "@/components/public-site/PublicSite";
 import { requirePublicSchool } from "@/lib/publicSite";
 import { safePublicUrl } from "@/lib/publicUrl";
+
+export const metadata: Metadata = { title: "Resources" };
 
 export default async function ResourcesPage({ params }: { params: Promise<{ school: string }> }) {
   const { school: slug } = await params; const { supabase, school } = await requirePublicSchool(slug);

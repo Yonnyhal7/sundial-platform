@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
 import NotificationInbox from "@/components/mobile-app/NotificationInbox";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
+
+export const metadata: Metadata = { title: "Notifications" };
 
 export default async function NotificationsPage({ params }: { params: Promise<{ school: string }> }) {
   const { school } = await params;

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import KioskDisplay from "./KioskDisplay";
 import OfflineKioskRuntime from "@/components/offline/OfflineKioskRuntime";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
@@ -12,8 +13,23 @@ import { addDaysToLocalDateString, formatDateInTimeZone } from "@/lib/localDate"
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeAppearancePreference } from "@/lib/themeScope";
 import { isSchoolFeatureAvailable } from "@/lib/schoolFeatures.server";
+import { getSchoolForSetup } from "@/lib/schools";
+import { getKioskTitle } from "@/lib/tabTitles";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ school: string }>;
+}): Promise<Metadata> {
+  const { school } = await params;
+  const schoolData = await getSchoolForSetup(school);
+
+  return {
+    title: getKioskTitle(schoolData?.name),
+  };
+}
 
 type Period = {
   id: string;
@@ -84,21 +100,7 @@ export default async function KioskPage({
 }) {
   const { school } = await params;
   const supabase = await createSupabaseServerClient();
-
-  const { data: schoolData } = await supabase
-    .rpc("get_available_school_by_subdomain", {
-      subdomain_input: school,
-    })
-    .single<{
-      id: string;
-      name: string;
-      mascot: string | null;
-      logo_url: string | null;
-      primary_color: string | null;
-      secondary_color: string | null;
-      default_appearance: "light" | "dark" | "system" | null;
-      timezone: string | null;
-    }>();
+  const schoolData = await getSchoolForSetup(school);
 
   if (!schoolData || !await isSchoolFeatureAvailable(schoolData.id,"kiosk")) return null;
 

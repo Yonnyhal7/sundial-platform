@@ -65,7 +65,6 @@ export async function generateMetadata({
   const schoolIcon = getSchoolAppIconUrl(schoolData.logo_url);
 
   return {
-    title: appTitle,
     description: "Student and staff school app",
     applicationName: getSchoolAppName(schoolData.name),
     alternates: { canonical: canonicalUrl },

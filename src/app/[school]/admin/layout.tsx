@@ -7,7 +7,7 @@ import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
 import { getForwardedHost } from "@/lib/routing/hosts";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
 import { getSchoolForSetup } from "@/lib/schools";
-import { getSundialFaviconMetadata } from "@/lib/tenantFavicon";
+import { getSundialAdminMetadata } from "@/lib/tabTitles";
 import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
 
 type AdminLayoutProps = {
@@ -28,7 +28,7 @@ type AdminStyle = CSSProperties & {
   "--school-accent-visible-primary-dark": string;
 };
 
-export const metadata: Metadata = getSundialFaviconMetadata();
+export const metadata: Metadata = getSundialAdminMetadata();
 
 export default async function AdminLayout({
   children,

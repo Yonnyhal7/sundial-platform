@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   getSchoolAdminPath,
   getSchoolSetupPath,
   requireSuperAdminAccess,
 } from "@/lib/auth/adminPermissions";
+
 import {
   getSchoolSetupStatus,
   getSchoolSetupStatusLabel,
@@ -11,6 +13,8 @@ import {
 } from "@/lib/schools";
 import { formatShortDate } from "@/lib/formatDate";
 import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
+
+export const metadata: Metadata = { title: "Dashboard" };
 
 type School = SuperAdminSchoolSummary;
 

@@ -1,7 +1,10 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { getSchoolSetupInvitationViewFromSession } from "@/lib/invitations/acceptance.server";
 import InvitationExperience from "./InvitationExperience";
 import { SCHOOL_SETUP_ACCEPTANCE_COOKIE } from "@/lib/invitations/constants";
+
+export const metadata: Metadata = { title: "Invitations" };
 
 export default async function SchoolSetupInvitationPage() {
   const cookieStore = await cookies();

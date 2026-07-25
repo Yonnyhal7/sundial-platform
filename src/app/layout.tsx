@@ -17,10 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: {
-    default: "Sundial",
-    template: "%s | Sundial",
-  },
+  title: "Sundial",
   description:
     "School schedules, announcements, events, and communication in one place.",
   applicationName: "Sundial",

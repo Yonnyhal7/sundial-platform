@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   getSchoolAdminPath,
   getSchoolSetupPath,
   requireSuperAdminAccess,
 } from "@/lib/auth/adminPermissions";
+
 import {
   getSchoolSetupStatus,
   getSchoolSetupStatusLabel,
@@ -16,6 +18,8 @@ import SchoolLifecycleDialog from "./SchoolLifecycleDialog";
 import { retrySchoolStorageCleanupAction } from "./lifecycle-actions";
 import ResendSetupEmailButton from "./ResendSetupEmailButton";
 import CreatedSchoolNotice from "./CreatedSchoolNotice";
+
+export const metadata: Metadata = { title: "Schools" };
 
 type SchoolsPageProps = {
   searchParams: Promise<{

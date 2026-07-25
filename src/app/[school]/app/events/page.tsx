@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import { CalendarIcon, MapPinIcon } from "@/components/mobile-app/AppIcons";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
@@ -5,6 +6,8 @@ import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatDateInTimeZone } from "@/lib/localDate";
 import { formatPeriodTime } from "@/lib/scheduleTime";
+
+export const metadata: Metadata = { title: "Events" };
 
 type Event = {
   id: string;

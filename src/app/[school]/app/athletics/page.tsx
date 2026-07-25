@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import SportIcon from "@/components/SportIcon";
 import { formatGameDateTime } from "@/lib/athletics";
@@ -5,6 +6,8 @@ import { requireMobileAppSchool } from "@/lib/mobileAppData";
 import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatDateInTimeZone } from "@/lib/localDate";
+
+export const metadata: Metadata = { title: "Athletics" };
 
 type Sport = {
   id: string;

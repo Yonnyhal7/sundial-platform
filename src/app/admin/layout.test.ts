@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { metadata } from "./layout";
 import { SUNDIAL_FAVICON_PATH } from "@/lib/tenantFavicon";
+import { getSundialAdminMetadata } from "@/lib/tabTitles";
 
 function source(path: string) {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -10,20 +11,14 @@ function source(path: string) {
 
 describe("admin metadata", () => {
   it("uses the cache-versioned Sundial icon for every admin route", () => {
-    expect(metadata).toEqual({
-      icons: {
-        icon: [
-          {
-            url: SUNDIAL_FAVICON_PATH,
-            type: "image/png",
-          },
-        ],
-      },
-    });
+    expect(metadata).toEqual(getSundialAdminMetadata());
   });
 
-  it("does not override titles, the manifest, or Home Screen icons", () => {
-    expect(metadata).not.toHaveProperty("title");
+  it("sets the admin title order without changing the manifest or Home Screen icons", () => {
+    expect(metadata.title).toEqual({
+      default: "Sundial",
+      template: "Sundial | %s",
+    });
     expect(metadata).not.toHaveProperty("manifest");
     expect(metadata.icons).not.toHaveProperty("apple");
   });
@@ -33,20 +28,23 @@ describe("admin metadata", () => {
     "src/app/[school]/login/page.tsx",
     "src/app/[school]/forgot-password/page.tsx",
   ])("forces school admin boundary %s to the Sundial favicon", (path) => {
-    expect(source(path)).toContain("getSundialFaviconMetadata()");
+    expect(source(path)).toContain("getSundialAdminMetadata()");
   });
 
   it("keeps SuperAdmin login, dashboard, schools, and invitations under one metadata boundary", () => {
     const adminLayout = source("src/app/admin/layout.tsx");
 
-    expect(adminLayout).toContain("getSundialFaviconMetadata()");
+    expect(adminLayout).toContain("getSundialAdminMetadata()");
     expect(SUNDIAL_FAVICON_PATH).toContain("/sundial-icon.png");
     expect(source("src/app/admin/page.tsx")).not.toContain("metadata");
-    expect(source("src/app/admin/dashboard/layout.tsx")).not.toContain(
-      "metadata"
+    expect(source("src/app/admin/dashboard/page.tsx")).toContain(
+      'title: "Dashboard"'
     );
-    expect(source("src/app/admin/invitations/page.tsx")).not.toContain(
-      "metadata"
+    expect(source("src/app/admin/dashboard/schools/page.tsx")).toContain(
+      'title: "Schools"'
+    );
+    expect(source("src/app/admin/invitations/page.tsx")).toContain(
+      'title: "Invitations"'
     );
   });
 
@@ -56,8 +54,11 @@ describe("admin metadata", () => {
     const kioskPage = source("src/app/[school]/kiosk/page.tsx");
 
     expect(schoolLayout).toContain("getTenantFaviconMetadata");
+    expect(schoolLayout).toContain("getTenantTitle");
+    expect(schoolLayout).toContain("getSundialAdminMetadata");
     expect(appLayout).toContain("getTenantFaviconIconEntries");
     expect(appLayout).toContain("manifest: manifestPath");
-    expect(kioskPage).not.toContain("generateMetadata");
+    expect(kioskPage).toContain("generateMetadata");
+    expect(kioskPage).toContain("Kiosk");
   });
 });
