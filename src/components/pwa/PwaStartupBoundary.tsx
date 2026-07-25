@@ -2,10 +2,12 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -103,15 +105,20 @@ function StartupCoordinator({
     initialPwaStartupSnapshot
   );
   const [handoffComplete, setHandoffComplete] = useState(false);
-  const [selectedAudience, setSelectedAudience] =
-    useState<NotificationAudience | null>(null);
+  const diagnosticsRef = useRef(new Set<string>());
+
+  const recordOnce = useCallback((type: Parameters<typeof recordPwaResumeDiagnostic>[0], detail?: string) => {
+    if (diagnosticsRef.current.has(type)) return;
+    diagnosticsRef.current.add(type);
+    recordPwaResumeDiagnostic(type, detail);
+  }, []);
 
   useEffect(() => {
-    recordPwaResumeDiagnostic("react_mounted");
-    recordPwaResumeDiagnostic("tenant_resolved");
+    recordOnce("react_mounted");
+    recordOnce("tenant_resolved");
     dispatch({ type: "react_mounted" });
     dispatch({ type: "audience_lookup_started" });
-    recordPwaResumeDiagnostic("audience_lookup_started");
+    recordOnce("audience_lookup_started");
 
     const installedApp = window.matchMedia(
       "(display-mode: standalone)"
@@ -119,15 +126,15 @@ function StartupCoordinator({
     void reuseAudienceLookup(schoolId, () =>
       resolveAudience(schoolId, school, installedApp)
     ).then((result) => {
-      recordPwaResumeDiagnostic("audience_lookup_result", result.status);
+      recordOnce("audience_lookup_result", result.status);
       dispatch({ type: "audience_resolved", result });
     });
-  }, [school, schoolId]);
+  }, [recordOnce, school, schoolId]);
 
   useEffect(() => {
     if (!cacheHydrated) return;
-    recordPwaResumeDiagnostic(
-      "cached_snapshot_ready",
+    recordOnce(
+      "cache_hydration_complete",
       snapshot ? "available" : "empty"
     );
     dispatch({
@@ -135,7 +142,7 @@ function StartupCoordinator({
       recoveryRequired:
         !snapshot && (!isOnline || syncState === "offline-empty"),
     });
-  }, [cacheHydrated, isOnline, snapshot, syncState]);
+  }, [cacheHydrated, isOnline, recordOnce, snapshot, syncState]);
 
   const stableState =
     startup.state === "onboarding_required" ||
@@ -155,12 +162,7 @@ function StartupCoordinator({
               ? "app_shell_ready"
               : "onboarding_required"
         );
-        recordPwaResumeDiagnostic("launch_shell_removed", startup.state);
-        if (startup.state === "ready") {
-          recordPwaResumeDiagnostic("app_ready");
-        } else if (startup.state === "recovery_required") {
-          recordPwaResumeDiagnostic("recovery_shown");
-        }
+        recordOnce("launch_shell_removed", startup.state);
         setHandoffComplete(true);
       });
     });
@@ -169,39 +171,59 @@ function StartupCoordinator({
       window.cancelAnimationFrame(firstFrame);
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
     };
-  }, [handoffComplete, stableState, startup.state]);
+  }, [handoffComplete, recordOnce, stableState, startup.state]);
+
+  useEffect(() => {
+    if (!handoffComplete) return;
+    if (startup.state === "ready") {
+      document.documentElement.dataset.pwaStartupReady = "true";
+      recordOnce("app_ready");
+    }
+    if (startup.state === "recovery_required") {
+      document.documentElement.dataset.pwaStartupReady = "true";
+      recordOnce("recovery_shown");
+    }
+    if (startup.state === "onboarding_required") recordOnce("onboarding_shown");
+  }, [handoffComplete, recordOnce, startup.state]);
 
   const audience =
-    selectedAudience ||
-    (startup.audience?.status === "assigned"
+    startup.audience?.status === "assigned"
       ? startup.audience.audience
-      : null);
+      : null;
   const context = useMemo(
-    () => ({ audience, startupReady: stableState }),
-    [audience, stableState]
+    () => ({ audience, startupReady: startup.state === "ready" }),
+    [audience, startup.state]
   );
-  const showOnboarding =
-    startup.state === "onboarding_required" && !selectedAudience;
+  const showOnboarding = startup.state === "onboarding_required";
+  const showApp = startup.state === "ready" && handoffComplete;
+  const showRecovery =
+    startup.state === "recovery_required" && handoffComplete;
 
   return (
     <PwaStartupContext.Provider value={context}>
       <div
         data-pwa-startup-state={startup.state}
-        style={{
-          visibility:
-            handoffComplete && !showOnboarding ? "visible" : "hidden",
-        }}
-        aria-hidden={!handoffComplete || showOnboarding}
+        style={{ visibility: showApp ? "visible" : "hidden" }}
+        aria-hidden={!showApp}
       >
         {children}
       </div>
+      {showRecovery && (
+        <main className="grid min-h-dvh place-items-center bg-slate-50 px-5 text-slate-950 dark:bg-black dark:text-white">
+          <section className="max-w-sm rounded-[2rem] border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
+            <h1 className="text-xl font-black">Connect to finish opening Sundial</h1>
+            <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
+              This installation needs one online sync before it can open offline.
+            </p>
+          </section>
+        </main>
+      )}
       {showOnboarding && (
         <NotificationAudienceOnboarding
           schoolId={schoolId}
           school={school}
           onComplete={(nextAudience) => {
-            recordPwaResumeDiagnostic("onboarding_selected");
-            setSelectedAudience(nextAudience);
+            dispatch({ type: "onboarding_completed", audience: nextAudience });
           }}
         />
       )}

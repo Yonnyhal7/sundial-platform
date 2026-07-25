@@ -51,6 +51,23 @@ describe("PWA startup coordinator", () => {
     ).toBe("ready");
   });
 
+  it("moves onboarding completion directly to ready without remounting loading", () => {
+    const onboarding = reducePwaStartup(withCache(), {
+      type: "audience_resolved",
+      result: { status: "unassigned", audience: null },
+    });
+    const completed = reducePwaStartup(onboarding, {
+      type: "onboarding_completed",
+      audience: "parent",
+    });
+
+    expect(completed.state).toBe("ready");
+    expect(completed.audience).toEqual({
+      status: "assigned",
+      audience: "parent",
+    });
+  });
+
   it.each(["transport_error", "offline_unknown"] as const)(
     "does not flash onboarding for %s",
     (status) => {

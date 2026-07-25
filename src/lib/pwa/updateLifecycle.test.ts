@@ -31,6 +31,7 @@ type HarnessOptions = {
   storage?: Map<string, string>;
   pageDeploymentVersion?: string | null;
   prepareForReload?: () => Promise<void>;
+  isStartupInProgress?: () => boolean;
 };
 
 function createHarness({
@@ -39,6 +40,7 @@ function createHarness({
   storage = new Map<string, string>(),
   pageDeploymentVersion = null,
   prepareForReload,
+  isStartupInProgress,
 }: HarnessOptions = {}) {
   let currentOnline = online;
   let currentVisibility = visibility;
@@ -97,6 +99,7 @@ function createHarness({
     onDiagnostics: diagnostics,
     onApplicationUpdatePending: markApplicationUpdatePending,
     prepareForReload,
+    isStartupInProgress,
     onResumeDiagnostic: resumeDiagnostics,
     now: () => currentTime,
   });
@@ -214,6 +217,29 @@ describe("PWA update lifecycle", () => {
     expect(harness.resumeDiagnostics).toHaveBeenCalledWith(
       "full_reload_scheduled",
       "new_deployment"
+    );
+    harness.lifecycle.dispose();
+  });
+
+  it("does not interrupt first-run onboarding with a deployment reload", async () => {
+    const harness = createHarness({
+      pageDeploymentVersion: "page-v1",
+      isStartupInProgress: () => true,
+    });
+    await settleLaunch(harness);
+    harness.fetchDeploymentVersion.mockResolvedValue("page-v2");
+
+    harness.windowTarget.dispatchEvent(new Event("pageshow"));
+    await runForeground();
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(harness.markApplicationUpdatePending).toHaveBeenCalled();
+    expect(harness.reload).not.toHaveBeenCalled();
+    expect(latestDiagnostics(harness)?.events).toContainEqual(
+      expect.objectContaining({
+        type: "reload_suppressed",
+        reason: "startup_in_progress",
+      })
     );
     harness.lifecycle.dispose();
   });

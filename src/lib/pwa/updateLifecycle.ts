@@ -52,6 +52,7 @@ export type PwaUpdateLifecycleOptions = {
   onUpdateCheckStart?: () => void;
   onUpdateCheckComplete?: () => void;
   prepareForReload?: () => Promise<void>;
+  isStartupInProgress?: () => boolean;
   onResumeDiagnostic?: (
     type:
       | "pageshow"
@@ -186,6 +187,10 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
   const reloadIfSafe = (force = false) => {
     if (!pendingControllerRefresh && !pendingDeploymentRefresh) return;
 
+    if (options.isStartupInProgress?.()) {
+      recordDiagnostic("reload_suppressed", "startup_in_progress");
+      return;
+    }
     if (options.document.visibilityState !== "visible") {
       recordDiagnostic("reload_suppressed", "document_hidden");
       return;

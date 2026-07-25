@@ -74,6 +74,8 @@ export default function ServiceWorkerRegister({
           onUpdateCheckStart: markPwaUpdateCheckStarted,
           onUpdateCheckComplete: markPwaUpdateCheckFinished,
           prepareForReload: preparePwaLaunchScreenForReload,
+          isStartupInProgress: () =>
+            document.documentElement.dataset.pwaStartupReady !== "true",
           onResumeDiagnostic: recordPwaResumeDiagnostic,
           onDiagnostics: (diagnostics: PwaDiagnostics) => {
             try {

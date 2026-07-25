@@ -5,7 +5,6 @@ import AppBottomNav from "@/components/mobile-app/AppBottomNav";
 import AppHeader from "@/components/mobile-app/AppHeader";
 import AppRoutePrefetch from "@/components/mobile-app/AppRoutePrefetch";
 import AppSwipeNavigation from "@/components/mobile-app/AppSwipeNavigation";
-import PwaLaunchScreen from "@/components/pwa/PwaLaunchScreen";
 import PwaStartupBoundary from "@/components/pwa/PwaStartupBoundary";
 import OfflineStudentAppRuntime from "@/components/offline/OfflineStudentAppRuntime";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
@@ -139,10 +138,6 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
             schoolDefaultAppearance,
           }),
         }}
-      />
-      <PwaLaunchScreen
-        schoolName={schoolData.name}
-        primaryColor={schoolData.primary_color}
       />
       <PwaStartupBoundary schoolId={schoolData.id} school={school}>
         <ThemeRouteSync

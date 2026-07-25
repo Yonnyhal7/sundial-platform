@@ -27,6 +27,7 @@ export type PwaStartupEvent =
   | { type: "audience_lookup_started" }
   | { type: "cache_resolved"; recoveryRequired: boolean }
   | { type: "audience_resolved"; result: PwaAudienceResolution }
+  | { type: "onboarding_completed"; audience: NotificationAudience }
   | { type: "application_reload_pending" };
 
 export const initialPwaStartupSnapshot: PwaStartupSnapshot = {
@@ -70,6 +71,12 @@ export function reducePwaStartup(
       });
     case "audience_resolved":
       return settleStartup({ ...snapshot, audience: event.result });
+    case "onboarding_completed":
+      return {
+        ...snapshot,
+        state: snapshot.recoveryRequired ? "recovery_required" : "ready",
+        audience: { status: "assigned", audience: event.audience },
+      };
     case "application_reload_pending":
       return { ...snapshot, state: "application_reload_pending" };
   }

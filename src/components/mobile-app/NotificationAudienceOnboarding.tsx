@@ -39,6 +39,7 @@ export default function NotificationAudienceOnboarding({
         audience,
       });
       setIdentity(savedIdentity);
+      recordPwaResumeDiagnostic("audience_selected");
       setStage("benefits");
     } catch {
       setStage("error");
@@ -51,9 +52,10 @@ export default function NotificationAudienceOnboarding({
     setStage("permission");
     recordPwaResumeDiagnostic("notification_permission_requested");
     try {
-      await requestNotificationPermissionAndSubscribe({ school, identity });
-      if (audience) onComplete(audience);
+      const result = await requestNotificationPermissionAndSubscribe({ school, identity });
+      recordPwaResumeDiagnostic("notification_permission_result", result.permission);
       setStage("done");
+      if (audience) onComplete(audience);
     } catch {
       setPushError(true);
       setStage("benefits");
@@ -96,8 +98,9 @@ export default function NotificationAudienceOnboarding({
             <button
               type="button"
               onClick={() => {
-                if (audience) onComplete(audience);
+                recordPwaResumeDiagnostic("notification_permission_result", "skipped");
                 setStage("done");
+                if (audience) onComplete(audience);
               }}
               className="mt-2 min-h-11 w-full rounded-xl px-4 py-2 text-sm font-bold text-slate-600 dark:text-[#b3b3b3]"
             >

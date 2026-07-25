@@ -4,6 +4,11 @@ import ServiceWorkerRegister from "@/components/offline/ServiceWorkerRegister";
 import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { getPwaDeploymentVersion } from "@/lib/pwa/deploymentVersion";
 import { getThemeBootstrapScript } from "@/lib/themeBootstrap";
+import PwaLaunchScreen from "@/components/pwa/PwaLaunchScreen";
+import {
+  getPwaLaunchPrepaintScript,
+  PWA_LAUNCH_CRITICAL_CSS,
+} from "@/lib/pwa/launchScreen";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -52,8 +57,13 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{ __html: getThemeBootstrapScript() }}
         />
+        <script
+          dangerouslySetInnerHTML={{ __html: getPwaLaunchPrepaintScript() }}
+        />
+        <style dangerouslySetInnerHTML={{ __html: PWA_LAUNCH_CRITICAL_CSS }} />
       </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <PwaLaunchScreen />
         <ServiceWorkerRegister
           deploymentVersion={getPwaDeploymentVersion()}
         />
