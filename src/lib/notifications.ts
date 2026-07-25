@@ -16,7 +16,7 @@ export const NOTIFICATION_AUDIENCE_LABELS: Record<NotificationAudience, string> 
 };
 
 export const NOTIFICATION_CATEGORY_LABELS: Record<NotificationCategory, string> = {
-  emergency: "Emergency alert", closure_delay: "Closure or delay",
+  emergency: "Emergency alert", closure_delay: "Closure or Delay",
   important_announcement: "Important announcement",
   calendar_schedule_change: "Calendar or schedule change",
   school_event: "School event", athletics: "Athletics",
@@ -62,6 +62,53 @@ export function isNotificationAudience(value: string): value is NotificationAudi
 
 export function getNotificationAudienceLabel(value: string) {
   return isNotificationAudience(value) ? NOTIFICATION_AUDIENCE_LABELS[value] : null;
+}
+
+export function getNotificationAudienceListLabel(values: string[]) {
+  return values
+    .map(getNotificationAudienceLabel)
+    .filter((value): value is string => Boolean(value))
+    .join(" and ");
+}
+
+export function getNotificationCategoryLabel(value: string) {
+  return isNotificationCategory(value)
+    ? NOTIFICATION_CATEGORY_LABELS[value]
+    : value.replaceAll("_", " ");
+}
+
+export function getZeroRecipientCampaignCompletion(
+  audiences: string[],
+  completedAt: string
+) {
+  const audienceLabel =
+    getNotificationAudienceListLabel(audiences) || "the selected audience";
+  return {
+    campaign: {
+      status: "sent",
+      sent_at: completedAt,
+      eligible_count: 0,
+      attempted_count: 0,
+      successful_count: 0,
+      failed_count: 0,
+      disabled_subscription_count: 0,
+      updated_at: completedAt,
+    },
+    audit: {
+      action: "campaign_delivery_completed",
+      summary: `No eligible subscribed devices matched ${audienceLabel}.`,
+      new_values: {
+        eligible: 0,
+        attempted: 0,
+        sent: 0,
+        failed: 0,
+        inbox_only: 0,
+        disabled: 0,
+        zero_recipient_reason: "no_eligible_devices",
+      },
+      result_status: "success",
+    },
+  } as const;
 }
 
 export function resolveNotificationAudiences(values: string[], everyone = false) {

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   categoryAvailableForAudience,
   getNotificationAudienceLabel,
+  getNotificationAudienceListLabel,
+  getNotificationCategoryLabel,
   getRecommendedPreferences,
+  getZeroRecipientCampaignCompletion,
   resolveNotificationAudiences,
   sanitizeNotificationDestination,
   sanitizeNotificationText,
@@ -25,6 +28,30 @@ describe("notification contracts", () => {
     expect(getNotificationAudienceLabel("parent")).toBe("Parent");
     expect(getNotificationAudienceLabel("SchoolAdmin")).toBeNull();
     expect(getNotificationAudienceLabel("unknown")).toBeNull();
+    expect(getNotificationAudienceListLabel(["student", "parent"])).toBe(
+      "Student and Parent"
+    );
+    expect(getNotificationCategoryLabel("closure_delay")).toBe(
+      "Closure or Delay"
+    );
+  });
+  it("finalizes a zero-recipient campaign successfully without a delivery attempt", () => {
+    const completion = getZeroRecipientCampaignCompletion(
+      ["student", "parent"],
+      "2026-07-25T17:42:20.000Z"
+    );
+    expect(completion.campaign).toMatchObject({
+      status: "sent",
+      eligible_count: 0,
+      attempted_count: 0,
+      successful_count: 0,
+      failed_count: 0,
+      disabled_subscription_count: 0,
+    });
+    expect(completion.audit.summary).toBe(
+      "No eligible subscribed devices matched Student and Parent."
+    );
+    expect(completion.audit.result_status).toBe("success");
   });
   it("sanitizes text and only accepts tenant-local destinations", () => {
     expect(sanitizeNotificationText("  hi\u0000   there ", 60)).toBe("hi there");

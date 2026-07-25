@@ -2,6 +2,7 @@ import "server-only";
 import webpush from "web-push";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 import { getPushEnvironment } from "./env.server";
+import { getZeroRecipientCampaignCompletion } from "@/lib/notifications";
 
 type Campaign = {
   id: string; school_id: string; title: string; body: string; category: string;
@@ -44,6 +45,25 @@ export async function processNotificationQueue(campaignId?: string) {
     const { data: prefs } = deviceIds.length ? await db.from("notification_device_preferences").select("device_id,enabled").eq("school_id", campaign.school_id).eq("category", campaign.category).in("device_id", deviceIds) : { data: [] };
     const enabled = new Set((prefs || []).filter((pref) => pref.enabled).map((pref) => pref.device_id));
     const eligible = deviceRows.filter((device) => enabled.has(device.id));
+    if (eligible.length === 0) {
+      const completedAt = new Date().toISOString();
+      const completion = getZeroRecipientCampaignCompletion(
+        audiences,
+        completedAt
+      );
+      await db
+        .from("notification_campaigns")
+        .update(completion.campaign)
+        .eq("id", campaign.id)
+        .eq("school_id", campaign.school_id)
+        .eq("claim_token", campaign.claim_token);
+      await db.from("notification_audit").insert({
+        school_id: campaign.school_id,
+        campaign_id: campaign.id,
+        ...completion.audit,
+      });
+      continue;
+    }
     if (eligible.length) {
       await db.from("notification_deliveries").upsert(eligible.map((device) => ({ school_id: campaign.school_id, campaign_id: campaign.id, device_id: device.id, audience: device.audience })), { onConflict: "campaign_id,device_id", ignoreDuplicates: true });
     }

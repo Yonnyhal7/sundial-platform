@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NOTIFICATION_CATEGORY_GROUPS, NOTIFICATION_CATEGORY_LABELS, NOTIFICATION_TEMPLATES } from "@/lib/notifications";
 
 export default function NotificationComposer({ action, timezone, error }: { action: (formData: FormData) => void; timezone: string; error?: string }) {
@@ -9,6 +9,19 @@ export default function NotificationComposer({ action, timezone, error }: { acti
   const [category, setCategory] = useState("important_announcement");
   const [audiences, setAudiences] = useState<string[]>(["student", "parent"]);
   const idempotency = useMemo(() => crypto.randomUUID(), []);
+  const dirty = Boolean(title || body || category !== "important_announcement" || audiences.join(",") !== "student,parent");
+  useEffect(() => {
+    document.body.dataset.notificationComposerDirty = String(dirty);
+    const protectUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", protectUnload);
+    return () => {
+      window.removeEventListener("beforeunload", protectUnload);
+      delete document.body.dataset.notificationComposerDirty;
+    };
+  }, [dirty]);
   function template(key: string) {
     const value = NOTIFICATION_TEMPLATES[key as keyof typeof NOTIFICATION_TEMPLATES];
     if (value) { setTitle(value.title); setBody(value.body); setCategory(value.category); }

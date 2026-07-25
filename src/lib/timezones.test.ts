@@ -13,6 +13,7 @@ import {
   getTimeZoneLabel,
   getTimeZoneOptions,
   getTimeZoneOffsetLabel,
+  formatTimestampInTimeZone,
   isSupportedTimeZone,
   schoolLocalDateStartToUtc,
   timeZoneObservesDst,
@@ -54,6 +55,21 @@ describe("school timezone catalog", () => {
     expect(getTimeZoneOffsetLabel("Pacific/Honolulu", new Date("2026-07-15T12:00:00Z"))).toBe("UTC−10:00");
     expect(timeZoneObservesDst("America/Phoenix", 2026)).toBe(false);
     expect(getTimeZoneLabel("America/Phoenix", new Date("2026-07-15T12:00:00Z"))).toContain("no DST");
+  });
+
+  it("formats notification timestamps in the school's DST-aware timezone", () => {
+    expect(
+      formatTimestampInTimeZone(
+        "2026-07-25T17:42:20Z",
+        "America/Los_Angeles"
+      )
+    ).toBe("7/25/2026, 10:42 AM");
+    expect(
+      formatTimestampInTimeZone(
+        "2026-01-25T18:42:20Z",
+        "America/Los_Angeles"
+      )
+    ).toBe("1/25/2026, 10:42 AM");
   });
 });
 

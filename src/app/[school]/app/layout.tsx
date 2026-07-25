@@ -155,6 +155,7 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
           logoUrl={schoolData.logo_url || null}
           quickLinks={quickLinks}
           schoolDefaultAppearance={schoolDefaultAppearance}
+          timeZone={schoolData.timezone || "America/Los_Angeles"}
         />
         <div className="mt-[clamp(1.25rem,3.2vw,1.75rem)] flex min-h-0 flex-1 flex-col">
           <AppSwipeNavigation

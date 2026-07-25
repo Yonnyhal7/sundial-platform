@@ -178,6 +178,40 @@ export function formatTimestampDateInTimeZone(date: Date, timeZone: string) {
   }).format(date);
 }
 
+export function formatTimestampInTimeZone(
+  value: string | Date | null | undefined,
+  timeZone: string,
+  options: { includeTimeZoneName?: boolean } = {}
+) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    ...(options.includeTimeZoneName ? { timeZoneName: "short" as const } : {}),
+  }).format(date);
+}
+
+export function formatTimeInTimeZone(
+  value: string | Date | null | undefined,
+  timeZone: string
+) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export function schoolLocalDateStartToUtc(dateKey: string, timeZone: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null;
   const [year, month, day] = dateKey.split("-").map(Number);
