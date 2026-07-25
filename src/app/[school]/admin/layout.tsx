@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
+import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import AdminSidebar from "@/components/AdminSidebar";
 import { requireAdminPortalAccess } from "@/lib/auth/adminPermissions";
 import { getForwardedHost } from "@/lib/routing/hosts";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
 import { getSchoolForSetup } from "@/lib/schools";
+import { getSundialFaviconMetadata } from "@/lib/tenantFavicon";
 import { isSchoolAdminRole, isSuperAdminRole } from "@/lib/userAccess";
 
 type AdminLayoutProps = {
@@ -25,6 +27,8 @@ type AdminStyle = CSSProperties & {
   "--school-accent-visible-primary-light": string;
   "--school-accent-visible-primary-dark": string;
 };
+
+export const metadata: Metadata = getSundialFaviconMetadata();
 
 export default async function AdminLayout({
   children,

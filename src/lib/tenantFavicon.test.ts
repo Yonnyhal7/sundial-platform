@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getSundialFaviconMetadata,
   getTenantFaviconMetadata,
   getTenantFaviconPath,
   SUNDIAL_FAVICON_PATH,
@@ -15,8 +16,11 @@ describe("tenant favicon metadata", () => {
     ).toEqual({
       icons: {
         icon: [
-          { url: "/api/schools/deloro/tab-icon" },
-          { url: SUNDIAL_FAVICON_PATH },
+          {
+            url: expect.stringMatching(
+              /^\/api\/schools\/deloro\/tab-icon\?v=[a-f0-9]{8}$/
+            ),
+          },
         ],
       },
     });
@@ -35,6 +39,37 @@ describe("tenant favicon metadata", () => {
     expect(getTenantFaviconPath("north valley")).toBe(
       "/api/schools/north%20valley/tab-icon"
     );
+  });
+
+  it("uses a stable fingerprint that changes when the stored logo changes", () => {
+    const first = getTenantFaviconPath(
+      "deloro",
+      "https://assets.example.com/logo-a.png"
+    );
+    const repeated = getTenantFaviconPath(
+      "deloro",
+      "https://assets.example.com/logo-a.png"
+    );
+    const updated = getTenantFaviconPath(
+      "deloro",
+      "https://assets.example.com/logo-b.png"
+    );
+
+    expect(first).toBe(repeated);
+    expect(updated).not.toBe(first);
+  });
+
+  it("uses only the existing Sundial asset for admin metadata", () => {
+    expect(getSundialFaviconMetadata()).toEqual({
+      icons: {
+        icon: [
+          {
+            url: SUNDIAL_FAVICON_PATH,
+            type: "image/png",
+          },
+        ],
+      },
+    });
   });
 
   it("keeps the metadata contract scoped to icons so parent titles are preserved", () => {

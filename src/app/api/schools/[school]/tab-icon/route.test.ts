@@ -8,6 +8,7 @@ const { getSchoolForSetup } = vi.hoisted(() => ({
 vi.mock("@/lib/schools", () => ({ getSchoolForSetup }));
 
 import { GET } from "./route";
+import { SUNDIAL_FAVICON_PATH } from "@/lib/tenantFavicon";
 
 function request() {
   return new NextRequest(
@@ -63,7 +64,7 @@ describe("tenant favicon route", () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(
-      "https://deloro.sundialk12.com/favicon.ico"
+      `https://deloro.sundialk12.com${SUNDIAL_FAVICON_PATH}`
     );
   });
 
@@ -88,7 +89,7 @@ describe("tenant favicon route", () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(
-      "https://deloro.sundialk12.com/favicon.ico"
+      `https://deloro.sundialk12.com${SUNDIAL_FAVICON_PATH}`
     );
   });
 

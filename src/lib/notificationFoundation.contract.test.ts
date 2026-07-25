@@ -69,7 +69,9 @@ describe("notification foundation security", () => {
     expect(api).toContain('deliveryId === "all"');
     expect(header).toContain("reportedUnreadCount");
     expect(header).toContain("setReportedUnreadCount(0)");
-    expect(header).toContain("bg-purple-500");
+    expect(header).toContain(
+      "bg-[var(--school-accent-visible-primary)]"
+    );
   });
   it("reads a device audience from its verified tenant registration and keeps it read-only", () => {
     const getHandler = api.slice(
