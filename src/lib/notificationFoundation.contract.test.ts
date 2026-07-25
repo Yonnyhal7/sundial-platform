@@ -6,6 +6,7 @@ const worker = readFileSync(new URL("../../public/sw.js", import.meta.url), "utf
 const api = readFileSync(new URL("../app/api/schools/[school]/notifications/route.ts", import.meta.url), "utf8");
 const service = readFileSync(new URL("./notifications/service.server.ts", import.meta.url), "utf8");
 const processorPolicy = readFileSync(new URL("./notifications/processorPolicy.ts", import.meta.url), "utf8");
+const processorClaimMigration = readFileSync(new URL("../../supabase/migrations/20260725123000_notification_processor_single_claim.sql", import.meta.url), "utf8");
 const header = readFileSync(new URL("../components/mobile-app/AppHeader.tsx", import.meta.url), "utf8");
 const startup = readFileSync(new URL("../components/pwa/PwaStartupBoundary.tsx", import.meta.url), "utf8");
 const audienceSummary = readFileSync(new URL("../components/mobile-app/NotificationAudienceSummary.tsx", import.meta.url), "utf8");
@@ -63,6 +64,12 @@ describe("notification foundation security", () => {
     expect(service).toContain('reason.disable ? "disabled_subscription" : "failed"');
     expect(service).toContain("summarizeCampaignDeliveries");
     expect(service).toContain("duplicate_protection");
+    expect(service).toContain("checkedRows");
+    expect(service).not.toMatch(/const \{\s*data(?::|,|\s*\})/);
+    expect(service).toContain("finally {");
+    expect(service).toContain("insert_campaign_finalization_audit");
+    expect(processorClaimMigration).toContain("limit 1");
+    expect(processorClaimMigration).toContain("c.claimed_at<now()-interval '10 minutes'");
   });
   it("keeps device inbox state exact and tenant-scoped", () => {
     expect(api).toContain('{ count: "exact", head: true }');

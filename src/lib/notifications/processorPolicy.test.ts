@@ -26,6 +26,20 @@ describe("notification processor policy", () => {
     await expect(withWebPushDeadline(async () => "sent", 100)).resolves.toBe("sent");
   });
 
+  it("bounds two stalled providers independently", async () => {
+    vi.useFakeTimers();
+    const stall = () => new Promise<never>(() => undefined);
+    const first = withWebPushDeadline(stall, 100);
+    const firstExpectation = expect(first).rejects.toBeInstanceOf(WebPushTimeoutError);
+    await vi.advanceTimersByTimeAsync(100);
+    await firstExpectation;
+    const second = withWebPushDeadline(stall, 100);
+    const secondExpectation = expect(second).rejects.toBeInstanceOf(WebPushTimeoutError);
+    await vi.advanceTimersByTimeAsync(100);
+    await secondExpectation;
+    vi.useRealTimers();
+  });
+
   it("stops before consuming the finalization reserve", () => {
     const startedAt = 1_000;
     const budget = 60_000;

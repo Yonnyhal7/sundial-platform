@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireCronAuthorization } from "@/lib/notifications/env.server";
 import { cleanupNotificationDeviceInbox, processNotificationQueue } from "@/lib/notifications/service.server";
-import { NOTIFICATION_ROUTE_MAX_DURATION_SECONDS } from "@/lib/notifications/processorPolicy";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = NOTIFICATION_ROUTE_MAX_DURATION_SECONDS;
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
   if (!requireCronAuthorization(request.headers.get("authorization"))) {

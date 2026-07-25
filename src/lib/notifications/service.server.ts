@@ -53,6 +53,18 @@ async function checked<T>(operation: string, response: DbResponse<T>) {
   return result.data;
 }
 
+async function checkedRows<T extends { id: unknown }>(
+  operation: string,
+  response: DbResponse<T[] | null>
+) {
+  const rows = await checked(operation, response);
+  if (!rows?.length) {
+    diagnostic("database_operation_affected_no_rows", { operation }, true);
+    throw new NotificationDatabaseError(operation);
+  }
+  return rows;
+}
+
 function providerFailure(error: unknown) {
   if (error instanceof WebPushTimeoutError) {
     return { code: "web_push_timeout", disable: false, timedOut: true };
@@ -94,7 +106,7 @@ async function finalizeCampaign(
   const completedAt = new Date().toISOString();
 
   try {
-    const updated = await checked(
+    await checkedRows(
       "finalize_campaign",
       db.from("notification_campaigns").update({
         status: totals.status,
@@ -108,7 +120,6 @@ async function finalizeCampaign(
       }).eq("id", campaign.id).eq("school_id", campaign.school_id)
         .eq("claim_token", campaign.claim_token).select("id")
     );
-    if (!updated?.length) throw new NotificationDatabaseError("finalize_campaign_claim");
   } catch {
     finalizationFailed = true;
   }
@@ -256,21 +267,21 @@ export async function processNotificationQueue(campaignId?: string) {
         }
         const subscription = byDevice.get(device.id);
         if (!subscription) {
-          await checked(
+          await checkedRows(
             "persist_inbox_only_delivery",
             db.from("notification_deliveries").update({ delivery_status: "inbox_only" })
               .eq("school_id", campaign.school_id).eq("campaign_id", campaign.id)
-              .eq("device_id", device.id)
+              .eq("device_id", device.id).select("id")
           );
           diagnostic("delivery_persisted", { status: "inbox_only" });
           continue;
         }
 
-        await checked(
+        await checkedRows(
           "mark_delivery_sending",
           db.from("notification_deliveries").update({ delivery_status: "sending" })
             .eq("school_id", campaign.school_id).eq("campaign_id", campaign.id)
-            .eq("device_id", device.id)
+            .eq("device_id", device.id).select("id")
         );
         diagnostic("delivery_attempt_started", {
           remaining_budget_ms: Math.max(0, remainingBudget),
@@ -296,20 +307,21 @@ export async function processNotificationQueue(campaignId?: string) {
             ),
             WEB_PUSH_HARD_TIMEOUT_MS
           );
-          await checked(
+          await checkedRows(
             "record_subscription_success",
             db.from("push_subscriptions").update({
               last_success_at: new Date().toISOString(), failure_count: 0,
             }).eq("id", subscription.id).eq("school_id", campaign.school_id)
+              .select("id")
           );
-          await checked(
+          await checkedRows(
             "persist_sent_delivery",
             db.from("notification_deliveries").update({
               delivery_status: "sent",
               delivered_at: new Date().toISOString(),
               provider_message_id: response.headers?.location?.slice(0, 200) || null,
             }).eq("school_id", campaign.school_id).eq("campaign_id", campaign.id)
-              .eq("device_id", device.id)
+              .eq("device_id", device.id).select("id")
           );
           diagnostic("delivery_persisted", { status: "sent" });
         } catch (caught) {
@@ -318,21 +330,22 @@ export async function processNotificationQueue(campaignId?: string) {
           outcome = reason.timedOut ? "timed_out" : "failed";
           diagnostic(reason.timedOut ? "provider_timeout" : "provider_failure",
             reason.timedOut ? {} : { reason: reason.code });
-          await checked(
+          await checkedRows(
             "record_subscription_failure",
             db.from("push_subscriptions").update({
               last_failure_at: new Date().toISOString(),
               failure_count: subscription.failure_count + 1,
               disabled_at: reason.disable ? new Date().toISOString() : null,
             }).eq("id", subscription.id).eq("school_id", campaign.school_id)
+              .select("id")
           );
-          await checked(
+          await checkedRows(
             "persist_failed_delivery",
             db.from("notification_deliveries").update({
               delivery_status: reason.disable ? "disabled_subscription" : "failed",
               failed_at: new Date().toISOString(), failure_reason: reason.code,
             }).eq("school_id", campaign.school_id).eq("campaign_id", campaign.id)
-              .eq("device_id", device.id)
+              .eq("device_id", device.id).select("id")
           );
           diagnostic("delivery_persisted", {
             status: reason.disable ? "disabled_subscription" : "failed",
