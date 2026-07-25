@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BellIcon,
   MenuIcon,
@@ -15,12 +15,15 @@ import {
   type AppearancePreference,
 } from "@/lib/themeScope";
 import { isNotificationAudience } from "@/lib/notifications";
+import type { NotificationAudience } from "@/lib/notifications";
 import { getNotificationDeviceIdentity, notificationDeviceHeaders } from "@/lib/notifications/deviceClient";
 import { usePwaStartup } from "@/components/pwa/PwaStartupBoundary";
 import {
   NOTIFICATION_INBOX_CHANGED_EVENT,
   readCachedInbox,
 } from "@/lib/notifications/inboxClient";
+import NotificationDrawer from "@/components/mobile-app/NotificationDrawer";
+import OverlayDrawer from "@/components/mobile-app/OverlayDrawer";
 
 type QuickLink = {
   title: string;
@@ -72,13 +75,17 @@ export default function AppHeader({
   logoUrl,
   quickLinks,
   schoolDefaultAppearance,
+  timeZone,
 }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuMounted, setMenuMounted] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const bellButtonRef = useRef<HTMLButtonElement>(null);
   const [appearance, setAppearance] = useState<AppearancePreference>(
     schoolDefaultAppearance
   );
   const [reportedUnreadCount, setReportedUnreadCount] = useState(0);
+  const [notificationAudience, setNotificationAudience] = useState<NotificationAudience | null>(null);
   const { startupReady } = usePwaStartup();
   const homeHref = `/${school}/app`;
   const unreadCount = reportedUnreadCount;
@@ -87,7 +94,10 @@ export default function AppHeader({
     if (!startupReady) return;
     const cached = readCachedInbox(schoolId);
     const cachedUpdate = cached
-      ? window.setTimeout(() => setReportedUnreadCount(cached.unreadCount), 0)
+      ? window.setTimeout(() => {
+          setReportedUnreadCount(cached.unreadCount);
+          setNotificationAudience(cached.audience);
+        }, 0)
       : null;
     const identity = getNotificationDeviceIdentity(schoolId);
     if (!identity) return;
@@ -101,6 +111,7 @@ export default function AppHeader({
       .then((payload) => {
         const persistedAudience = String(payload?.audience || "");
         if (!isNotificationAudience(persistedAudience)) return;
+        setNotificationAudience(persistedAudience);
         setReportedUnreadCount(Number.isSafeInteger(payload?.unreadCount) ? Math.max(0, payload.unreadCount) : 0);
       }).catch(() => undefined);
     return () => {
@@ -135,28 +146,13 @@ export default function AppHeader({
     };
   }, [school, schoolDefaultAppearance]);
 
-  useEffect(() => {
-    if (!menuMounted) return;
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        if (menuMounted) closeMenu();
-      }
-    }
-
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [menuMounted]);
-
   function openMenu() {
-    setMenuMounted(true);
-    window.requestAnimationFrame(() => setMenuOpen(true));
+    setMenuOpen(true);
   }
 
-  function closeMenu() {
-    setMenuOpen(false);
-    window.setTimeout(() => setMenuMounted(false), 260);
-  }
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+
+  const closeNotifications = useCallback(() => setNotificationsOpen(false), []);
 
   function setUserAppearance(nextAppearance: AppearancePreference) {
     const nextTheme = resolveAppearanceTheme(nextAppearance);
@@ -170,6 +166,7 @@ export default function AppHeader({
     <>
       <header className="relative flex items-center justify-between gap-[clamp(0.75rem,2.2vw,1rem)]">
         <button
+          ref={menuButtonRef}
           type="button"
           aria-label="Open utilities"
           onClick={openMenu}
@@ -190,29 +187,20 @@ export default function AppHeader({
           />
         </Link>
 
-        <Link
-          href={`/${school}/app/notifications`}
+        <button
+          ref={bellButtonRef}
+          type="button"
+          onClick={() => setNotificationsOpen(true)}
           aria-label={unreadCount > 0 ? `Open notifications, ${unreadCount} unread` : "Open notifications"}
           className="relative grid h-[clamp(3rem,8vw,4rem)] w-[clamp(3rem,8vw,4rem)] place-items-center rounded-[clamp(0.9rem,2.4vw,1.35rem)] border border-transparent bg-[var(--school-primary)] text-[var(--school-primary-text)] shadow-[0_10px_24px_rgb(15_23_42/0.08)]"
         >
           <BellIcon className="h-[clamp(1.25rem,3vw,1.75rem)] w-[clamp(1.25rem,3vw,1.75rem)]" />
           {unreadCount > 0 && <span className="absolute right-1.5 top-1.5 grid min-h-5 min-w-5 place-items-center rounded-full bg-[var(--school-accent-visible-primary)] px-1 text-[0.65rem] font-black text-[var(--school-secondary-text)] ring-2 ring-[var(--school-primary)]">{unreadCount > 99 ? "99+" : unreadCount}</span>}
-        </Link>
+        </button>
       </header>
 
-      {menuMounted && (
-        <div
-          className={`fixed inset-0 z-[80] transition-colors duration-[250ms] ease-out ${
-            menuOpen ? "bg-black/30" : "bg-black/0"
-          }`}
-          onClick={closeMenu}
-        >
-          <aside
-            className={`flex h-full w-[80vw] max-w-sm flex-col overflow-y-auto rounded-r-[1.75rem] bg-slate-50 text-slate-950 shadow-[18px_0_36px_rgb(0_0_0/0.24)] transition-transform duration-[250ms] ease-out dark:bg-black dark:text-white ${
-              menuOpen ? "translate-x-0" : "-translate-x-full"
-            }`}
-            onClick={(event) => event.stopPropagation()}
-          >
+      <OverlayDrawer open={menuOpen} onClose={closeMenu} returnFocusRef={menuButtonRef} label="Utilities">
+          <div className="flex h-full flex-col overflow-y-auto">
             <div className="bg-[var(--school-primary)] p-5 text-[var(--school-primary-text)]">
             <button
               type="button"
@@ -333,10 +321,18 @@ export default function AppHeader({
               </div>
             </section>
             </div>
-          </aside>
-        </div>
-      )}
+          </div>
+      </OverlayDrawer>
 
+      <NotificationDrawer
+        open={notificationsOpen}
+        onClose={closeNotifications}
+        bellRef={bellButtonRef}
+        school={school}
+        schoolId={schoolId}
+        timeZone={timeZone}
+        initialAudience={notificationAudience}
+      />
     </>
   );
 }

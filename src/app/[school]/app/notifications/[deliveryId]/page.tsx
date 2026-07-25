@@ -1,4 +1,4 @@
-import NotificationDetail from "@/components/mobile-app/NotificationDetail";
+import NotificationDrawerRoute from "@/components/mobile-app/NotificationDrawerRoute";
 import { requireMobileAppSchool } from "@/lib/mobileAppData";
 
 export default async function NotificationDetailPage({
@@ -8,5 +8,5 @@ export default async function NotificationDetailPage({
 }) {
   const { school, deliveryId } = await params;
   const schoolData = await requireMobileAppSchool(school);
-  return <NotificationDetail deliveryId={deliveryId} school={school} schoolId={schoolData.id} timeZone={schoolData.timezone || "America/Los_Angeles"} />;
+  return <NotificationDrawerRoute deliveryId={deliveryId} school={school} schoolId={schoolData.id} timeZone={schoolData.timezone || "America/Los_Angeles"} />;
 }

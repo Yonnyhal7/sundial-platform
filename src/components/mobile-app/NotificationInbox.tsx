@@ -22,6 +22,8 @@ type Props = {
   schoolId: string;
   timeZone: string;
   initialAudience: NotificationAudience | null;
+  onSelect?: (deliveryId: string) => void;
+  onOpenSettings?: () => void;
 };
 
 function receivedLabel(value: string, timeZone: string) {
@@ -83,7 +85,14 @@ function ConfirmDialog({
   );
 }
 
-export default function NotificationInbox({ school, schoolId, timeZone, initialAudience }: Props) {
+export default function NotificationInbox({
+  school,
+  schoolId,
+  timeZone,
+  initialAudience,
+  onSelect,
+  onOpenSettings,
+}: Props) {
   const [payload, setPayload] = useState<DeviceInboxPayload | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -155,6 +164,15 @@ export default function NotificationInbox({ school, schoolId, timeZone, initialA
           Mark all as read
         </button>
       </div>
+      {onOpenSettings && (
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="mt-3 min-h-11 rounded-2xl border border-slate-300 px-4 text-sm font-black dark:border-slate-600"
+        >
+          Notification settings
+        </button>
+      )}
       <div aria-live="polite" role="status" className="mt-3 min-h-5 text-sm font-semibold text-slate-600 dark:text-slate-300">{status}</div>
       {error && <p role="alert" className="mt-2 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">{error}</p>}
       {hasRead && <button ref={deleteReadButtonRef} type="button" onClick={() => setConfirmDeleteRead(true)} className="mt-3 min-h-11 rounded-2xl border border-slate-300 px-4 text-sm font-black dark:border-slate-600">Delete all read</button>}
@@ -164,30 +182,36 @@ export default function NotificationInbox({ school, schoolId, timeZone, initialA
             <p className="font-black">You&apos;re all caught up.</p>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">New notifications for this device will appear here.</p>
           </div>
-        ) : notifications.map((item) => <NotificationCard key={item.id} item={item} school={school} timeZone={timeZone} />)}
+        ) : notifications.map((item) => <NotificationCard key={item.id} item={item} school={school} timeZone={timeZone} onSelect={onSelect} />)}
       </div>
       {confirmDeleteRead && <ConfirmDialog title="Delete all read notifications?" body="This removes read notifications from this device only. Unread notifications will remain." confirmLabel="Delete" onCancel={() => { setConfirmDeleteRead(false); deleteReadButtonRef.current?.focus(); }} onConfirm={deleteRead} returnFocus={deleteReadButtonRef} />}
     </main>
   );
 }
 
-function NotificationCard({ item, school, timeZone }: { item: DeviceInboxNotification; school: string; timeZone: string }) {
+function NotificationCard({ item, school, timeZone, onSelect }: { item: DeviceInboxNotification; school: string; timeZone: string; onSelect?: (deliveryId: string) => void }) {
   const unread = !item.read_at;
   const campaign = item.notification_campaigns;
-  return (
-    <Link href={`/${school}/app/notifications/${item.id}`} aria-label={`${unread ? "Unread notification" : "Read notification"}: ${campaign.title}`} className={`block min-h-11 rounded-3xl border p-4 transition motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] ${unread ? "border-[var(--school-primary)] bg-[color-mix(in_srgb,var(--school-primary)_7%,white)] dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,#242424)]" : "border-slate-200 bg-white dark:border-[#3a3a3a] dark:bg-[#242424]"}`}>
-      <div className="flex items-start gap-3">
-        <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${unread ? "bg-[var(--school-primary)]" : "border border-slate-400"}`} aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <h2 className={`text-base ${unread ? "font-black" : "font-semibold"}`}>{campaign.title}</h2>
-            {campaign.destination_url && <span className="shrink-0 text-xs font-bold text-slate-500" aria-label="Has a destination">Open ›</span>}
-          </div>
-          <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{campaign.body}</p>
-          <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">{getNotificationCategoryLabel(campaign.category)} · {receivedLabel(item.delivered_at || item.created_at, timeZone)}</p>
-          <span className="sr-only">{unread ? "Unread" : "Read"}</span>
+  const content = (
+    <div className="flex items-start gap-3">
+      <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${unread ? "bg-[var(--school-primary)]" : "border border-slate-400"}`} aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <h2 className={`text-base ${unread ? "font-black" : "font-semibold"}`}>{campaign.title}</h2>
+          {campaign.destination_url && <span className="shrink-0 text-xs font-bold text-slate-500" aria-label="Has a destination">Open ›</span>}
         </div>
+        <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{campaign.body}</p>
+        <p className="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">{getNotificationCategoryLabel(campaign.category)} · {receivedLabel(item.delivered_at || item.created_at, timeZone)}</p>
+        <span className="sr-only">{unread ? "Unread" : "Read"}</span>
       </div>
-    </Link>
+    </div>
+  );
+  const className = `block w-full min-h-11 rounded-3xl border p-4 text-left transition motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] ${unread ? "border-[var(--school-primary)] bg-[color-mix(in_srgb,var(--school-primary)_7%,white)] dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,#242424)]" : "border-slate-200 bg-white dark:border-[#3a3a3a] dark:bg-[#242424]"}`;
+  const label = `${unread ? "Unread notification" : "Read notification"}: ${campaign.title}`;
+  if (onSelect) {
+    return <button type="button" onClick={() => onSelect(item.id)} aria-label={label} className={className}>{content}</button>;
+  }
+  return (
+    <Link href={`/${school}/app/notifications/${item.id}`} aria-label={label} className={className}>{content}</Link>
   );
 }

@@ -18,6 +18,8 @@ type Props = {
   school: string;
   schoolId: string;
   timeZone: string;
+  onBack?: () => void;
+  onDeleted?: () => void;
 };
 
 function destinationLabel(type: string | null) {
@@ -27,7 +29,7 @@ function destinationLabel(type: string | null) {
   return "Open destination";
 }
 
-export default function NotificationDetail({ deliveryId, school, schoolId, timeZone }: Props) {
+export default function NotificationDetail({ deliveryId, school, schoolId, timeZone, onBack, onDeleted }: Props) {
   const router = useRouter();
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
@@ -105,7 +107,8 @@ export default function NotificationDetail({ deliveryId, school, schoolId, timeZ
           notifications: payload.notifications.filter((row) => row.id !== deliveryId),
         };
       });
-      router.replace(`/${school}/app/notifications?deleted=1`);
+      if (onDeleted) onDeleted();
+      else router.replace(`/${school}/app/notifications?deleted=1`);
     } catch (reason) {
       setConfirmDelete(false);
       deleteButtonRef.current?.focus();
@@ -116,7 +119,7 @@ export default function NotificationDetail({ deliveryId, school, schoolId, timeZ
   if (loading) return <p role="status" className="py-12 text-center font-semibold">Loading notification…</p>;
   if (!item) return (
     <main>
-      <Link href={`/${school}/app/notifications`} className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black">← Back to Notifications</Link>
+      {onBack ? <button type="button" onClick={onBack} className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black">← Back to Notifications</button> : <Link href={`/${school}/app/notifications`} className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black">← Back to Notifications</Link>}
       <h1 className="mt-6 text-2xl font-black">Notification unavailable</h1>
       <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{error || "It may have been deleted from this device."}</p>
     </main>
@@ -131,7 +134,7 @@ export default function NotificationDetail({ deliveryId, school, schoolId, timeZ
 
   return (
     <main>
-      <Link href={`/${school}/app/notifications`} aria-label="Back to Notifications" className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black focus:ring-2 focus:ring-[var(--school-primary)]">← Back to Notifications</Link>
+      {onBack ? <button type="button" onClick={onBack} aria-label="Back to Notifications" className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black focus:ring-2 focus:ring-[var(--school-primary)]">← Back to Notifications</button> : <Link href={`/${school}/app/notifications`} aria-label="Back to Notifications" className="inline-flex min-h-11 items-center rounded-2xl px-3 font-black focus:ring-2 focus:ring-[var(--school-primary)]">← Back to Notifications</Link>}
       <article className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#3a3a3a] dark:bg-[#242424]">
         <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">{getNotificationCategoryLabel(campaign.category)}</p>
         <h1 className="mt-3 text-3xl font-black tracking-tight">{campaign.title}</h1>

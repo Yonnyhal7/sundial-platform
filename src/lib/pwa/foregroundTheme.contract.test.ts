@@ -35,13 +35,15 @@ describe("PWA foreground theme stability contract", () => {
 
   it("retains light and dark notification overlay surfaces", () => {
     const appHeader = read("src/components/mobile-app/AppHeader.tsx");
+    const overlayDrawer = read("src/components/mobile-app/OverlayDrawer.tsx");
+    const surfaces = `${appHeader}\n${overlayDrawer}`;
 
-    expect(appHeader).toContain(
+    expect(surfaces).toContain(
       "bg-slate-50 text-slate-950"
     );
-    expect(appHeader).toContain("dark:bg-black dark:text-white");
-    expect(appHeader).toContain("bg-white");
-    expect(appHeader).toContain("dark:bg-[#242424]");
+    expect(surfaces).toContain("dark:bg-black dark:text-white");
+    expect(surfaces).toContain("bg-white");
+    expect(surfaces).toContain("dark:bg-[#242424]");
   });
 
   it("does not add a splash or motion-based masking transition", () => {

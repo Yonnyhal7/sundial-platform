@@ -74,10 +74,11 @@ describe("School App PWA integration contract", () => {
       "src/components/offline/ServiceWorkerRegister.tsx"
     );
     const appHeader = source("src/components/mobile-app/AppHeader.tsx");
+    const overlayDrawer = source("src/components/mobile-app/OverlayDrawer.tsx");
 
     expect(register).toContain('fetch("/api/pwa-version"');
     expect(register).toContain('cache: "no-store"');
     expect(register).toContain("z-[100]");
-    expect(appHeader).toContain("z-[80]");
+    expect(`${appHeader}\n${overlayDrawer}`).toContain("z-[80]");
   });
 });
