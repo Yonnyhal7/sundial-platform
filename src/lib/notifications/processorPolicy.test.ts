@@ -60,13 +60,13 @@ describe("notification processor policy", () => {
   });
 
   it.each([
-    [[], 0, "sent", 0, 0],
+    [[], 0, "no_eligible_devices", 0, 0],
     [["sent", "sent"], 2, "sent", 2, 0],
     [["sent", "failed"], 2, "partially_failed", 2, 1],
     [["failed", "failed"], 2, "failed", 2, 2],
-    [["pending", "pending"], 2, "failed", 0, 0],
-    [["sent", "pending"], 2, "partially_failed", 1, 0],
-    [["sending"], 1, "failed", 0, 0],
+    [["pending", "pending"], 2, "sending", 0, 0],
+    [["sent", "pending"], 2, "sending", 1, 0],
+    [["sending"], 1, "sending", 0, 0],
   ] as const)("summarizes %j", (statuses, eligible, status, attempted, failed) => {
     expect(summarizeCampaignDeliveries([...statuses], eligible)).toMatchObject({
       status, attempted, failed,

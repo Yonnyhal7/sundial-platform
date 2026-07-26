@@ -57,13 +57,21 @@ export function summarizeCampaignDeliveries(
   ).length;
   const attempted = sent + failed;
   const status =
-    eligible === 0 || (failed === 0 && pendingOrAmbiguous === 0)
+    eligible === 0
+      ? "no_eligible_devices"
+      : failed === 0 && sent > 0 && pendingOrAmbiguous === 0
       ? "sent"
       : sent + inboxOnly > 0
-        ? "partially_failed"
-        : "failed";
+        ? failed > 0
+          ? "partially_failed"
+          : "sending"
+        : failed > 0
+          ? "failed"
+          : "sending";
   return {
-    status: status as "sent" | "partially_failed" | "failed",
+    status: status as
+      | "sending" | "sent" | "partially_failed" | "failed"
+      | "no_eligible_devices",
     eligible, attempted, sent, failed, inboxOnly, disabled, pendingOrAmbiguous,
   };
 }

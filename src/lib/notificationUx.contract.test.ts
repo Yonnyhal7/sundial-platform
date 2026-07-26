@@ -61,4 +61,18 @@ describe("notification UX integration contracts", () => {
     );
     expect(service).toContain("continue;");
   });
+
+  it("uses aggregate-derived status and delivery copy on every campaign surface", () => {
+    for (const page of [
+      "src/app/[school]/admin/notifications/page.tsx",
+      "src/app/[school]/admin/notifications/[campaignId]/page.tsx",
+    ]) {
+      const source = read(page);
+      expect(source).toContain("getCampaignDisplayStatus(campaign)");
+      expect(source).toContain("getCampaignStatusLabel(displayStatus)");
+      expect(source).toContain("getCampaignDeliverySummary(campaign)");
+      expect(source).not.toContain('campaign.status.replace("_"," ")');
+      expect(source).not.toContain("successful_count} sent");
+    }
+  });
 });

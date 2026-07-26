@@ -8,6 +8,11 @@ import {
   getNotificationCategoryLabel,
 } from "@/lib/notifications";
 import { formatTimestampInTimeZone } from "@/lib/timezones";
+import {
+  getCampaignDeliverySummary,
+  getCampaignDisplayStatus,
+  getCampaignStatusLabel,
+} from "@/lib/notifications/campaignStatus";
 
 export default async function NotificationDetails({ params }: { params: Promise<{ school: string; campaignId: string }> }) {
   const { school, campaignId } = await params;
@@ -26,14 +31,13 @@ export default async function NotificationDetails({ params }: { params: Promise<
   const timeZone = schoolData.timezone || "America/Los_Angeles";
   const audienceValues = audiences?.map((row) => row.audience) || [];
   const audienceLabel = getNotificationAudienceListLabel(audienceValues);
-  const zeroRecipient =
-    campaign.eligible_count === 0 &&
-    ["sent", "partially_failed", "failed"].includes(campaign.status);
+  const displayStatus = getCampaignDisplayStatus(campaign);
+  const deliverySummary = getCampaignDeliverySummary(campaign);
 
   return <main className="mx-auto max-w-4xl px-6 py-8 text-slate-950 dark:text-white">
     <NotificationBackButton fallbackHref={notificationsHref} />
     <p className="text-sm text-slate-500">{schoolData.name} notification</p>
-    <div className="flex items-start justify-between gap-4"><h1 className="text-3xl font-bold">{campaign.title}</h1><span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold capitalize dark:bg-[#333]">{campaign.status.replace("_"," ")}</span></div>
+    <div className="flex items-start justify-between gap-4"><h1 className="text-3xl font-bold">{campaign.title}</h1><span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold dark:bg-[#333]">{getCampaignStatusLabel(displayStatus)}</span></div>
     <section className="mt-6 rounded-2xl border bg-white p-6 dark:border-[#3a3a3a] dark:bg-[#242424]">
       <p>{campaign.body}</p>
       <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
@@ -48,7 +52,7 @@ export default async function NotificationDetails({ params }: { params: Promise<
         {campaign.claimed_at && <div><dt className="text-slate-500">Delivery started</dt><dd className="font-bold">{formatTimestampInTimeZone(campaign.claimed_at, timeZone)}</dd></div>}
         {campaign.sent_at && <div><dt className="text-slate-500">Completed</dt><dd className="font-bold">{formatTimestampInTimeZone(campaign.sent_at, timeZone)}</dd></div>}
       </dl>
-      {zeroRecipient && <p role="status" className="mt-5 rounded-xl bg-slate-100 p-4 text-sm font-bold dark:bg-[#333]">No eligible devices matched this audience.</p>}
+      {deliverySummary && <p role="status" className="mt-5 whitespace-pre-line rounded-xl bg-slate-100 p-4 text-sm font-bold dark:bg-[#333]">{deliverySummary}</p>}
       {["draft","scheduled"].includes(campaign.status) && <form action={reschedule} className="mt-6 flex flex-wrap items-end gap-3">
         <label className="text-sm font-bold">Schedule in {schoolData.timezone || "America/Los_Angeles"}<input required type="datetime-local" name="scheduled_for" className="mt-2 block rounded-lg border p-2 dark:bg-black" /></label>
         <button className="rounded-lg border px-4 py-2 font-bold">Save schedule</button>
