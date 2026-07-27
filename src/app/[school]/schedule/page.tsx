@@ -15,7 +15,7 @@ export default async function SchoolSchedulePage({ params }: { params: Promise<{
       title="School Calendar"
       description="View bell schedules, special days, and school closures."
     />
-    <PublicContainer className="py-10 sm:py-14">
+    <PublicContainer className="max-w-[1180px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
       {calendar.academicYear && <p className="mb-4 text-sm font-bold text-slate-500 dark:text-slate-400">Academic year {calendar.academicYear.label}</p>}
       <PublicCalendarPage calendar={calendar} />
     </PublicContainer>
