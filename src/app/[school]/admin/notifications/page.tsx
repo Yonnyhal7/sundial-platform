@@ -11,15 +11,22 @@ export default async function NotificationsPage({ params, searchParams }: { para
   if (!schoolData) notFound();
   const { supabase } = await requireAdminSectionAccess(schoolData.id, "notifications", school);
   const requestedView = (await searchParams).view || "overview";
-  const view = ["overview","scheduled","sent","drafts","archived"].includes(requestedView)
+  const view = ["overview","action-required","scheduled","sent","drafts","archived"].includes(requestedView)
     ? requestedView
     : "overview";
-  const statusMap: Record<string,string[]> = { scheduled: ["scheduled","queued","sending"], sent: ["sent","partially_failed","failed","no_eligible_devices"], drafts: ["draft"] };
-  let query = supabase.from("notification_campaigns").select("id,title,body,category,status,scheduled_for,sent_at,created_at,eligible_count,successful_count,failed_count,archived_at,version").eq("school_id", schoolData.id).order("created_at", { ascending: false }).limit(100);
+  const statusMap: Record<string,string[]> = { scheduled: ["scheduled","queued","sending"], sent: ["sent","partially_failed","failed","no_eligible_devices","partially_sent","cancelled"], drafts: ["draft"] };
+  let query = supabase.from("notification_campaigns").select("id,title,body,category,status,scheduled_for,sent_at,created_at,eligible_count,successful_count,failed_count,pending_count,cancelled_count,claim_token,claimed_at,delivery_resolution_required,archived_at,version").eq("school_id", schoolData.id).order("created_at", { ascending: false }).limit(100);
   query = view === "archived"
     ? query.not("archived_at", "is", null)
     : query.is("archived_at", null);
   if (statusMap[view]) query = query.in("status", statusMap[view]);
+  if (view === "scheduled") query = query.eq("delivery_resolution_required", false);
+  if (view === "action-required") {
+    query = query.eq("delivery_resolution_required", true)
+      .gt("pending_count", 0)
+      .is("claim_token", null)
+      .is("claimed_at", null);
+  }
   const [{ data: campaigns }, { count: recentCampaigns }] = await Promise.all([
     query,
     supabase.from("notification_campaigns").select("id", { count: "exact", head: true })

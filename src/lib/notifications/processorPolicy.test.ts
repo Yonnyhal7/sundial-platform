@@ -57,6 +57,7 @@ describe("notification processor policy", () => {
     expect(isProvenUnattempted("pending")).toBe(true);
     for (const status of [
       "sending", "sent", "inbox_only", "failed", "disabled_subscription",
+      "cancelled",
     ] as const) expect(isProvenUnattempted(status)).toBe(false);
   });
 
@@ -76,6 +77,8 @@ describe("notification processor policy", () => {
     [["pending", "pending"], 2, "sending", 0, 0],
     [["sent", "pending"], 2, "sending", 1, 0],
     [["sending"], 1, "sending", 0, 0],
+    [["sent", "cancelled"], 2, "partially_sent", 1, 0],
+    [["cancelled", "cancelled"], 2, "cancelled", 0, 0],
   ] as const)("summarizes %j", (statuses, eligible, status, attempted, failed) => {
     expect(summarizeCampaignDeliveries([...statuses], eligible)).toMatchObject({
       status, attempted, failed,

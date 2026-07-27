@@ -58,7 +58,10 @@ describe("notification foundation security", () => {
   it("does not resend terminal deliveries and preserves aggregate retry results", () => {
     expect(service).toContain("isProvenUnattempted");
     expect(service).toContain("const pendingEligible = eligible.filter");
-    expect(service).toContain("const missingDeliveries = findMissingDeliveryDevices");
+    expect(service).toContain(
+      "const missingDeliveries = campaign.delivery_recovery_requested_at"
+    );
+    expect(service).toContain("findMissingDeliveryDevices(");
     expect(service).toContain("read_prior_deliveries");
     expect(service).toContain("if (missingDeliveries.length)");
     expect(processorPolicy).toContain('return status === "pending"');

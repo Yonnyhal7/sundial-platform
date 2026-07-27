@@ -37,6 +37,42 @@ describe("notification campaign state", () => {
   ])("derives completed state from persisted aggregates", (campaign, expected) => {
     expect(getCampaignDisplayStatus(campaign)).toBe(expected);
   });
+
+  it("distinguishes quarantined campaigns from actively claimed processing", () => {
+    const quarantined = {
+      ...completed,
+      status: "sending",
+      eligible_count: 8,
+      successful_count: 4,
+      pending_count: 4,
+      delivery_resolution_required: true,
+      claim_token: null,
+      claimed_at: null,
+    };
+    expect(getCampaignDisplayStatus(quarantined)).toBe("action_required");
+    expect(getCampaignDisplayStatus({
+      ...quarantined,
+      claim_token: "7db7a427-f663-4a32-a45c-738840b1b1fe",
+      claimed_at: "2026-07-27T20:00:00.000Z",
+    })).toBe("sending");
+  });
+
+  it("presents truthful cancellation terminal states", () => {
+    expect(getCampaignDisplayStatus({
+      ...completed,
+      status: "partially_sent",
+      successful_count: 4,
+      pending_count: 0,
+      cancelled_count: 4,
+    })).toBe("partially_sent");
+    expect(getCampaignDisplayStatus({
+      ...completed,
+      status: "cancelled",
+      successful_count: 0,
+      pending_count: 0,
+      cancelled_count: 8,
+    })).toBe("cancelled");
+  });
 });
 
 describe("notification aggregate presentation", () => {
@@ -62,6 +98,16 @@ describe("notification aggregate presentation", () => {
       ...completed,
       archived_at: "2026-07-27T12:00:00.000Z",
     })).toBe("Delivered to 3 devices");
+  });
+
+  it("summarizes delivered and cancelled outcomes", () => {
+    expect(getCampaignDeliverySummary({
+      ...completed,
+      status: "partially_sent",
+      successful_count: 4,
+      pending_count: 0,
+      cancelled_count: 4,
+    })).toBe("4 delivered\n4 cancelled");
   });
 });
 

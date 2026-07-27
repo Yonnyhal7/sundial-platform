@@ -76,6 +76,50 @@ export async function archiveNotificationCampaignAction(
   return result;
 }
 
+export async function retryNotificationCampaignPendingAction(
+  school: string,
+  campaignId: string,
+  version: number
+) {
+  const { schoolData, admin } = await authorized(school);
+  const { data } = await admin.supabase.rpc(
+    "retry_notification_campaign_pending",
+    {
+      p_campaign_id: campaignId,
+      p_school_id: schoolData.id,
+      p_expected_version: version,
+    }
+  );
+  const result = mutationResult(data);
+  if (!result.ok) return result;
+  const base = await getSchoolAdminPath(school);
+  revalidatePath(`${base}/notifications`);
+  revalidatePath(`${base}/notifications/${campaignId}`);
+  return result;
+}
+
+export async function cancelNotificationCampaignPendingAction(
+  school: string,
+  campaignId: string,
+  version: number
+) {
+  const { schoolData, admin } = await authorized(school);
+  const { data } = await admin.supabase.rpc(
+    "cancel_notification_campaign_pending",
+    {
+      p_campaign_id: campaignId,
+      p_school_id: schoolData.id,
+      p_expected_version: version,
+    }
+  );
+  const result = mutationResult(data);
+  if (!result.ok) return result;
+  const base = await getSchoolAdminPath(school);
+  revalidatePath(`${base}/notifications`);
+  revalidatePath(`${base}/notifications/${campaignId}`);
+  return result;
+}
+
 export async function restoreNotificationCampaignAction(
   school: string,
   campaignId: string,

@@ -14,6 +14,11 @@ type Campaign = {
   eligible_count: number;
   successful_count: number;
   failed_count: number;
+  pending_count: number;
+  cancelled_count: number;
+  claim_token: string | null;
+  claimed_at: string | null;
+  delivery_resolution_required: boolean;
   archived_at: string | null;
   version: number;
 };
@@ -59,7 +64,7 @@ export default function NotificationCampaignDashboard({
         </div>
       </section>
       <nav className="mt-6 flex flex-wrap gap-2">
-        {["overview", "scheduled", "sent", "drafts", "archived"].map((item) => (
+        {["overview", "action-required", "scheduled", "sent", "drafts", "archived"].map((item) => (
           <Link
             key={item}
             href={item === "overview" ? base : `${base}?view=${item}`}
@@ -69,7 +74,7 @@ export default function NotificationCampaignDashboard({
                 : "border"
             }`}
           >
-            {item}
+            {item === "action-required" ? "Action Required" : item}
           </Link>
         ))}
       </nav>

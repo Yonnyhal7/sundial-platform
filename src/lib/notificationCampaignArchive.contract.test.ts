@@ -20,7 +20,9 @@ const processor = read("src/lib/notifications/service.server.ts");
 
 describe("notification campaign archive lifecycle", () => {
   it("separates archived campaigns from active list views", () => {
-    expect(dashboard).toContain('"overview", "scheduled", "sent", "drafts", "archived"');
+    expect(dashboard).toContain(
+      '"overview", "action-required", "scheduled", "sent", "drafts", "archived"'
+    );
     expect(listPage).toContain('view === "archived"');
     expect(listPage).toContain('.not("archived_at", "is", null)');
     expect(listPage).toContain('.is("archived_at", null)');

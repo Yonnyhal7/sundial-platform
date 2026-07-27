@@ -43,6 +43,11 @@ type Campaign = {
   eligible_count: number;
   successful_count: number;
   failed_count: number;
+  pending_count: number;
+  cancelled_count: number;
+  claim_token: string | null;
+  claimed_at: string | null;
+  delivery_resolution_required: boolean;
   archived_at: string | null;
   version: number;
 };
@@ -94,6 +99,9 @@ export default function NotificationCampaignList({
   const deleteCampaign = visibleCampaigns.find(
     (campaign) => campaign.id === confirmDeleteCampaignId
   ) || null;
+  const openCampaignDisplayStatus = openCampaign
+    ? getCampaignDisplayStatus(openCampaign)
+    : null;
 
   const closeMenu = useCallback((restoreFocus: boolean) => {
     const campaignId = openCampaignMenuId;
@@ -231,6 +239,7 @@ export default function NotificationCampaignList({
     if (pendingArchiveIdsRef.current.has(campaignId)) return;
     const removal = removeCampaignAtId(visibleCampaigns, campaignId);
     if (!removal) return;
+    if (getCampaignDisplayStatus(removal.campaign) === "action_required") return;
 
     closeMenu(false);
     setError("");
@@ -325,7 +334,16 @@ export default function NotificationCampaignList({
               <p className="mt-2 text-xs text-slate-500">{formatTimestampInTimeZone(campaign.created_at, timeZone)}</p>
             </Link>
             <div className="shrink-0 text-right">
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold dark:bg-[#333]">{getCampaignStatusLabel(displayStatus)}</span>
+              <span
+                aria-label={`Status: ${getCampaignStatusLabel(displayStatus)}`}
+                className={`rounded-full px-3 py-1 text-xs font-bold ${
+                  displayStatus === "action_required"
+                    ? "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                    : "bg-slate-100 dark:bg-[#333]"
+                }`}
+              >
+                {getCampaignStatusLabel(displayStatus)}
+              </span>
               {summary && <p className="mt-2 whitespace-pre-line text-xs text-slate-500">{summary}</p>}
             </div>
             <button
@@ -406,16 +424,26 @@ export default function NotificationCampaignList({
               >
                 Duplicate
               </button>
-              <button
-                role="menuitem"
-                aria-disabled={pendingArchiveIds.has(openCampaign.id)}
-                disabled={pendingArchiveIds.has(openCampaign.id)}
-                type="button"
-                onClick={() => selectArchive(openCampaign.id)}
-                className="block min-h-11 w-full rounded-lg px-3 py-3 text-left text-sm font-bold hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] disabled:opacity-60 dark:hover:bg-[#3a3a3a]"
-              >
-                Archive
-              </button>
+              {openCampaignDisplayStatus === "action_required" ? (
+                <div
+                  role="menuitem"
+                  aria-disabled="true"
+                  className="min-h-11 rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-800 dark:text-amber-200"
+                >
+                  Resolve pending deliveries before archiving.
+                </div>
+              ) : (
+                <button
+                  role="menuitem"
+                  aria-disabled={pendingArchiveIds.has(openCampaign.id)}
+                  disabled={pendingArchiveIds.has(openCampaign.id)}
+                  type="button"
+                  onClick={() => selectArchive(openCampaign.id)}
+                  className="block min-h-11 w-full rounded-lg px-3 py-3 text-left text-sm font-bold hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] disabled:opacity-60 dark:hover:bg-[#3a3a3a]"
+                >
+                  Archive
+                </button>
+              )}
             </>
           )}
         </div>,

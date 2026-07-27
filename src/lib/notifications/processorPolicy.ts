@@ -5,7 +5,7 @@ export const WEB_PUSH_HARD_TIMEOUT_MS = 16_000;
 
 export type DeliveryStatus =
   | "pending" | "sending" | "sent" | "inbox_only"
-  | "failed" | "disabled_subscription";
+  | "failed" | "disabled_subscription" | "cancelled";
 
 export class WebPushTimeoutError extends Error {
   constructor() {
@@ -59,13 +59,18 @@ export function summarizeCampaignDeliveries(
   const sent = statuses.filter((status) => status === "sent").length;
   const inboxOnly = statuses.filter((status) => status === "inbox_only").length;
   const disabled = statuses.filter((status) => status === "disabled_subscription").length;
+  const cancelled = statuses.filter((status) => status === "cancelled").length;
   const failed = statuses.filter((status) => status === "failed").length + disabled;
   const pendingOrAmbiguous = statuses.filter(
     (status) => status === "pending" || status === "sending"
   ).length;
   const attempted = sent + failed;
   const status =
-    eligible === 0
+    pendingOrAmbiguous === 0 && cancelled > 0 && sent > 0
+      ? "partially_sent"
+      : pendingOrAmbiguous === 0 && cancelled > 0 && sent === 0
+      ? "cancelled"
+      : eligible === 0
       ? "no_eligible_devices"
       : failed === 0 && sent > 0 && pendingOrAmbiguous === 0
       ? "sent"
@@ -79,7 +84,8 @@ export function summarizeCampaignDeliveries(
   return {
     status: status as
       | "sending" | "sent" | "partially_failed" | "failed"
-      | "no_eligible_devices",
-    eligible, attempted, sent, failed, inboxOnly, disabled, pendingOrAmbiguous,
+      | "no_eligible_devices" | "partially_sent" | "cancelled",
+    eligible, attempted, sent, failed, inboxOnly, disabled, cancelled,
+    pendingOrAmbiguous,
   };
 }

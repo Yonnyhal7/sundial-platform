@@ -19,6 +19,8 @@ type Campaign = {
   id: string; school_id: string; title: string; body: string; category: string;
   destination_url: string | null; claim_token: string | null;
   related_entity_type: string | null; send_attempt_count: number;
+  eligible_count: number; delivery_recovery_requested_at: string | null;
+  delivery_recovery_requested_by: string | null;
 };
 type Device = { id: string; audience: string };
 type Subscription = {
@@ -119,6 +121,13 @@ async function finalizeCampaign(
         failed_count: totals.failed,
         disabled_subscription_count: totals.disabled,
         pending_count: totals.pendingOrAmbiguous,
+        cancelled_count: totals.cancelled,
+        delivery_recovery_requested_at: deferred
+          ? campaign.delivery_recovery_requested_at
+          : null,
+        delivery_recovery_requested_by: deferred
+          ? campaign.delivery_recovery_requested_by
+          : null,
         updated_at: completedAt,
       }).eq("id", campaign.id).eq("school_id", campaign.school_id)
         .eq("claim_token", campaign.claim_token).select("id")
@@ -157,6 +166,25 @@ async function finalizeCampaign(
             : "success",
       })
     );
+    if (campaign.delivery_recovery_requested_at && !deferred && !finalizationFailed) {
+      await checked(
+        "insert_campaign_recovery_completion_audit",
+        db.from("notification_audit").insert({
+          school_id: campaign.school_id,
+          campaign_id: campaign.id,
+          actor_id: campaign.delivery_recovery_requested_by,
+          action: "campaign_pending_retry_completed",
+          summary: `Retry processing completed with status ${totals.status}.`,
+          new_values: {
+            status: totals.status,
+            pending_count: totals.pendingOrAmbiguous,
+            sent_count: totals.sent,
+            failed_count: totals.failed,
+          },
+          result_status: totals.status === "failed" ? "failed" : "success",
+        })
+      );
+    }
   } catch {
     finalizationFailed = true;
   }
@@ -209,25 +237,48 @@ export async function processNotificationQueue(campaignId?: string) {
           .eq("school_id", campaign.school_id).eq("campaign_id", campaign.id)
       );
       const audiences = (audienceRows || []).map((row) => row.audience);
+      const recoveryPendingRows = campaign.delivery_recovery_requested_at
+        ? await checked(
+          "read_recovery_pending_deliveries",
+          db.from("notification_deliveries").select("device_id")
+            .eq("school_id", campaign.school_id).eq("campaign_id", campaign.id)
+            .eq("delivery_status", "pending")
+        )
+        : [];
+      const recoveryDeviceIds = (recoveryPendingRows || []).map((row) => row.device_id);
       const devices = await checked(
-        "read_audience_devices",
-        db.from("notification_devices").select("id,audience")
-          .eq("school_id", campaign.school_id).in("audience", audiences)
-          .is("revoked_at", null)
+        campaign.delivery_recovery_requested_at
+          ? "read_recovery_devices"
+          : "read_audience_devices",
+        campaign.delivery_recovery_requested_at
+          ? db.from("notification_devices").select("id,audience")
+            .eq("school_id", campaign.school_id).in(
+              "id",
+              recoveryDeviceIds.length ? recoveryDeviceIds : [campaign.id]
+            ).is("revoked_at", null)
+          : db.from("notification_devices").select("id,audience")
+            .eq("school_id", campaign.school_id).in("audience", audiences)
+            .is("revoked_at", null)
       );
       const deviceRows = (devices || []) as Device[];
       const deviceIds = deviceRows.map((device) => device.id);
-      const prefs = deviceIds.length ? await checked(
-        "read_device_preferences",
-        db.from("notification_device_preferences").select("device_id,enabled")
-          .eq("school_id", campaign.school_id).eq("category", campaign.category)
-          .in("device_id", deviceIds)
-      ) : [];
+      const prefs = !campaign.delivery_recovery_requested_at && deviceIds.length
+        ? await checked(
+          "read_device_preferences",
+          db.from("notification_device_preferences").select("device_id,enabled")
+            .eq("school_id", campaign.school_id).eq("category", campaign.category)
+            .in("device_id", deviceIds)
+        )
+        : [];
       const enabled = new Set(
         (prefs || []).filter((pref) => pref.enabled).map((pref) => pref.device_id)
       );
-      const eligible = deviceRows.filter((device) => enabled.has(device.id));
-      eligibleCount = eligible.length;
+      const eligible = campaign.delivery_recovery_requested_at
+        ? deviceRows
+        : deviceRows.filter((device) => enabled.has(device.id));
+      eligibleCount = campaign.delivery_recovery_requested_at
+        ? campaign.eligible_count
+        : eligible.length;
 
       const priorDeliveries = eligible.length ? await checked(
         "read_prior_deliveries",
@@ -235,10 +286,12 @@ export async function processNotificationQueue(campaignId?: string) {
           .eq("school_id", campaign.school_id).eq("campaign_id", campaign.id)
           .in("device_id", eligible.map((device) => device.id))
       ) : [];
-      const missingDeliveries = findMissingDeliveryDevices(
-        eligible,
-        ((priorDeliveries || []) as Delivery[]).map((delivery) => delivery.device_id)
-      );
+      const missingDeliveries = campaign.delivery_recovery_requested_at
+        ? []
+        : findMissingDeliveryDevices(
+          eligible,
+          ((priorDeliveries || []) as Delivery[]).map((delivery) => delivery.device_id)
+        );
       if (missingDeliveries.length) await checked(
         "create_delivery_rows",
         db.from("notification_deliveries").upsert(

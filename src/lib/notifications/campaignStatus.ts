@@ -7,6 +7,7 @@ export type PersistedCampaignStatus =
   | "partially_failed"
   | "failed"
   | "no_eligible_devices"
+  | "partially_sent"
   | "cancelled";
 
 export type CampaignAggregateState = {
@@ -15,6 +16,11 @@ export type CampaignAggregateState = {
   eligible_count: number;
   successful_count: number;
   failed_count: number;
+  pending_count?: number;
+  cancelled_count?: number;
+  claim_token?: string | null;
+  claimed_at?: string | null;
+  delivery_resolution_required?: boolean;
   archived_at?: string | null;
 };
 
@@ -26,6 +32,8 @@ export type CampaignDisplayStatus =
   | "partially_failed"
   | "failed"
   | "no_eligible_devices"
+  | "action_required"
+  | "partially_sent"
   | "archived"
   | "cancelled";
 
@@ -34,6 +42,21 @@ export function getCampaignDisplayStatus(
   now = new Date()
 ): CampaignDisplayStatus {
   if (campaign.archived_at) return "archived";
+  if (
+    campaign.delivery_resolution_required &&
+    (campaign.pending_count || 0) > 0 &&
+    !campaign.claim_token &&
+    !campaign.claimed_at
+  ) {
+    return "action_required";
+  }
+  if (
+    (campaign.pending_count || 0) === 0 &&
+    (campaign.cancelled_count || 0) > 0
+  ) {
+    return campaign.successful_count > 0 ? "partially_sent" : "cancelled";
+  }
+  if (campaign.status === "partially_sent") return "partially_sent";
   if (campaign.status === "cancelled") return "cancelled";
   if (campaign.status === "draft") return "draft";
   if (
@@ -67,6 +90,8 @@ const STATUS_LABELS: Record<CampaignDisplayStatus, string> = {
   partially_failed: "Partially Failed",
   failed: "Failed",
   no_eligible_devices: "No Eligible Devices",
+  action_required: "Action Required",
+  partially_sent: "Partially Sent",
   archived: "Archived",
   cancelled: "Cancelled",
 };
@@ -82,6 +107,12 @@ export function getCampaignDeliverySummary(campaign: CampaignAggregateState) {
     return `${campaign.successful_count} delivered\n${campaign.failed_count} failed`;
   }
   if (status === "failed") return `${campaign.failed_count} failed`;
+  if (status === "partially_sent") {
+    return `${campaign.successful_count} delivered\n${campaign.cancelled_count || 0} cancelled`;
+  }
+  if (status === "cancelled" && (campaign.cancelled_count || 0) > 0) {
+    return `${campaign.cancelled_count} cancelled`;
+  }
   if (status === "sent") {
     return campaign.successful_count === campaign.eligible_count
       ? `Delivered to ${campaign.successful_count} devices`
