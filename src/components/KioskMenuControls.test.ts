@@ -60,4 +60,13 @@ describe("kiosk utility controls", () => {
     expect(kioskColorSource).toContain("var(--school-primary");
     expect(kioskColorSource).toContain("var(--school-accent-visible");
   });
+
+  it("uses neutral kiosk text on the school-color bottom banner", () => {
+    expect(kioskSource).toContain(
+      'bg-[var(--school-primary)] text-[clamp(1rem,1.35vw,1.55rem)] font-extrabold text-[var(--kiosk-text)]'
+    );
+    expect(kioskSource).not.toContain(
+      'font-extrabold text-[var(--school-primary-text)]'
+    );
+  });
 });

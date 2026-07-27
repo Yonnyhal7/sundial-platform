@@ -667,7 +667,7 @@ export default function KioskDisplay({
           </div>
         </section>
 
-        <footer className="-mx-[1.25vw] -mb-[1dvh] flex h-[5.25dvh] shrink-0 items-center justify-center bg-[var(--school-primary)] text-[clamp(1rem,1.35vw,1.55rem)] font-extrabold text-[var(--school-primary-text)]">
+        <footer className="-mx-[1.25vw] -mb-[1dvh] flex h-[5.25dvh] shrink-0 items-center justify-center bg-[var(--school-primary)] text-[clamp(1rem,1.35vw,1.55rem)] font-extrabold text-[var(--kiosk-text)]">
           {cheerText}
         </footer>
       </div>
