@@ -13,6 +13,10 @@ const page = readFileSync(
   "src/app/[school]/admin/notifications/page.tsx",
   "utf8"
 );
+const dashboard = readFileSync(
+  "src/components/admin/NotificationCampaignDashboard.tsx",
+  "utf8"
+);
 
 describe("notification campaign menu controller", () => {
   it("owns exactly one open campaign id and toggles the same trigger closed", () => {
@@ -22,7 +26,7 @@ describe("notification campaign menu controller", () => {
     expect(list).toContain(
       "current === campaignId ? null : campaignId"
     );
-    expect(page).toContain("<NotificationCampaignList");
+    expect(dashboard).toContain("<NotificationCampaignList");
     expect(page).not.toContain("<NotificationCampaignMenu");
   });
 
@@ -40,7 +44,7 @@ describe("notification campaign menu controller", () => {
     expect(list).toContain('role="menu"');
     expect(list.match(/role="menu"/g)).toHaveLength(1);
     expect(list).toContain('className="fixed z-[120]');
-    expect(page).toContain("overflow-hidden rounded-2xl");
+    expect(list).toContain("overflow-hidden rounded-2xl");
   });
 
   it("closes before every navigation or mutation action", () => {

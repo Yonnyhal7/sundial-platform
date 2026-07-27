@@ -28,6 +28,10 @@ import {
   getCampaignMenuPosition,
   getNextCampaignMenuItemIndex,
 } from "@/lib/notifications/campaignMenu";
+import {
+  removeCampaignAtId,
+  restoreCampaignAtIndex,
+} from "@/lib/notifications/campaignArchiveOptimism";
 
 type Campaign = {
   id: string;
@@ -57,25 +61,37 @@ export default function NotificationCampaignList({
   school,
   base,
   timeZone,
+  onActiveCountChange,
 }: {
   campaigns: Campaign[];
   school: string;
   base: string;
   timeZone: string;
+  onActiveCountChange: (delta: number) => void;
 }) {
+  const [visibleCampaigns, setVisibleCampaigns] = useState(campaigns);
   const [openCampaignMenuId, setOpenCampaignMenuId] = useState<string | null>(null);
   const [confirmDeleteCampaignId, setConfirmDeleteCampaignId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState({ left: VIEWPORT_MARGIN, top: VIEWPORT_MARGIN });
   const [error, setError] = useState("");
+  const [toast, setToast] = useState<{
+    kind: "success" | "error";
+    message: string;
+    exiting: boolean;
+  } | null>(null);
+  const [pendingArchiveIds, setPendingArchiveIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [pending, startTransition] = useTransition();
+  const pendingArchiveIdsRef = useRef(new Set<string>());
   const triggerRefs = useRef(new Map<string, HTMLButtonElement>());
   const menuRef = useRef<HTMLDivElement>(null);
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
 
-  const openCampaign = campaigns.find(
+  const openCampaign = visibleCampaigns.find(
     (campaign) => campaign.id === openCampaignMenuId
   ) || null;
-  const deleteCampaign = campaigns.find(
+  const deleteCampaign = visibleCampaigns.find(
     (campaign) => campaign.id === confirmDeleteCampaignId
   ) || null;
 
@@ -151,6 +167,20 @@ export default function NotificationCampaignList({
     if (confirmDeleteCampaignId) cancelButtonRef.current?.focus();
   }, [confirmDeleteCampaignId]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => {
+      if (toast.exiting) {
+        setToast(null);
+        return;
+      }
+      setToast((current) =>
+        current ? { ...current, exiting: true } : current
+      );
+    }, toast.exiting ? 200 : toast.kind === "success" ? 2300 : 5800);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
+
   function toggleMenu(campaignId: string) {
     setError("");
     setOpenCampaignMenuId((current) => current === campaignId ? null : campaignId);
@@ -197,6 +227,59 @@ export default function NotificationCampaignList({
     runMutation(action);
   }
 
+  async function selectArchive(campaignId: string) {
+    if (pendingArchiveIdsRef.current.has(campaignId)) return;
+    const removal = removeCampaignAtId(visibleCampaigns, campaignId);
+    if (!removal) return;
+
+    closeMenu(false);
+    setError("");
+    pendingArchiveIdsRef.current.add(campaignId);
+    setPendingArchiveIds(new Set(pendingArchiveIdsRef.current));
+    setVisibleCampaigns(removal.campaigns);
+    onActiveCountChange(-1);
+    setToast({
+      kind: "success",
+      message: "✓ Notification archived",
+      exiting: false,
+    });
+
+    window.requestAnimationFrame(() => {
+      const nextCampaign =
+        removal.campaigns[removal.index] ||
+        removal.campaigns[removal.index - 1];
+      if (nextCampaign) {
+        triggerRefs.current.get(nextCampaign.id)?.focus({ preventScroll: true });
+      }
+    });
+
+    try {
+      const result = await archiveNotificationCampaignAction(
+        school,
+        removal.campaign.id,
+        removal.campaign.version
+      );
+      if (result && !result.ok) throw new Error(result.error);
+    } catch {
+      setVisibleCampaigns((current) =>
+        restoreCampaignAtIndex(
+          current,
+          removal.campaign,
+          removal.index
+        )
+      );
+      onActiveCountChange(1);
+      setToast({
+        kind: "error",
+        message: "Could not archive notification. Try again.",
+        exiting: false,
+      });
+    } finally {
+      pendingArchiveIdsRef.current.delete(campaignId);
+      setPendingArchiveIds(new Set(pendingArchiveIdsRef.current));
+    }
+  }
+
   function selectDuplicate(campaignId: string) {
     closeMenu(false);
     setError("");
@@ -223,12 +306,13 @@ export default function NotificationCampaignList({
 
   return (
     <>
+      <section className="mt-5 overflow-hidden rounded-2xl border bg-white dark:border-[#3a3a3a] dark:bg-[#242424]">
       {error && !confirmDeleteCampaignId && (
         <p role="alert" className="border-b bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 dark:border-[#3a3a3a] dark:bg-red-950/30 dark:text-red-200">
           {error}
         </p>
       )}
-      {campaigns.map((campaign) => {
+      {visibleCampaigns.length ? visibleCampaigns.map((campaign) => {
         const displayStatus = getCampaignDisplayStatus(campaign);
         const summary = getCampaignDeliverySummary(campaign);
         const detailsHref = `${base}/${campaign.id}`;
@@ -260,7 +344,10 @@ export default function NotificationCampaignList({
             </button>
           </article>
         );
-      })}
+      }) : (
+        <p className="p-8 text-center text-slate-500">No notifications in this view.</p>
+      )}
+      </section>
       {openCampaign && typeof document !== "undefined" && createPortal(
         <div
           ref={menuRef}
@@ -321,16 +408,10 @@ export default function NotificationCampaignList({
               </button>
               <button
                 role="menuitem"
-                aria-disabled={pending}
-                disabled={pending}
+                aria-disabled={pendingArchiveIds.has(openCampaign.id)}
+                disabled={pendingArchiveIds.has(openCampaign.id)}
                 type="button"
-                onClick={() => selectMutation(
-                  () => archiveNotificationCampaignAction(
-                    school,
-                    openCampaign.id,
-                    openCampaign.version
-                  )
-                )}
+                onClick={() => selectArchive(openCampaign.id)}
                 className="block min-h-11 w-full rounded-lg px-3 py-3 text-left text-sm font-bold hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] disabled:opacity-60 dark:hover:bg-[#3a3a3a]"
               >
                 Archive
@@ -386,6 +467,25 @@ export default function NotificationCampaignList({
                 {pending ? "Deleting…" : "Delete Permanently"}
               </button>
             </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {toast && typeof document !== "undefined" && createPortal(
+        <div
+          className="pointer-events-none fixed inset-x-4 bottom-5 z-[140] flex justify-center"
+        >
+          <div
+            role={toast.kind === "error" ? "alert" : "status"}
+            aria-live={toast.kind === "error" ? "assertive" : "polite"}
+            data-state={toast.exiting ? "exiting" : "visible"}
+            className={`notification-toast pointer-events-none max-w-full rounded-xl px-4 py-3 text-sm font-bold shadow-xl ${
+              toast.kind === "error"
+                ? "bg-red-700 text-white"
+                : "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+            }`}
+          >
+            {toast.message}
           </div>
         </div>,
         document.body

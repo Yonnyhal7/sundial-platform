@@ -6,6 +6,9 @@ const migration = read(
   "supabase/migrations/20260727120000_notification_campaign_archive.sql"
 );
 const listPage = read("src/app/[school]/admin/notifications/page.tsx");
+const dashboard = read(
+  "src/components/admin/NotificationCampaignDashboard.tsx"
+);
 const campaignList = read("src/components/admin/NotificationCampaignList.tsx");
 const detailPage = read(
   "src/app/[school]/admin/notifications/[campaignId]/page.tsx"
@@ -17,7 +20,7 @@ const processor = read("src/lib/notifications/service.server.ts");
 
 describe("notification campaign archive lifecycle", () => {
   it("separates archived campaigns from active list views", () => {
-    expect(listPage).toContain('"overview","scheduled","sent","drafts","archived"');
+    expect(dashboard).toContain('"overview", "scheduled", "sent", "drafts", "archived"');
     expect(listPage).toContain('view === "archived"');
     expect(listPage).toContain('.not("archived_at", "is", null)');
     expect(listPage).toContain('.is("archived_at", null)');
