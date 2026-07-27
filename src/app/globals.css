@@ -280,11 +280,11 @@ body {
 }
 
 .kiosk-theme {
-  --kiosk-bg: #f7f8fb;
-  --kiosk-text: #07152f;
+  --kiosk-bg: #fafafa;
+  --kiosk-text: #171717;
   --kiosk-surface: #ffffff;
-  --kiosk-muted: #64748b;
-  --kiosk-border: #e2e8f0;
+  --kiosk-muted: #525252;
+  --kiosk-border: #e5e5e5;
   --school-accent-visible: var(--school-accent-visible-light);
   --school-accent-visible-card: var(--school-accent-visible-card-light);
   background: var(--kiosk-bg);
@@ -313,19 +313,19 @@ body {
   --school-accent-visible-primary: var(--school-accent-visible-primary-dark);
 }
 
-.kiosk-theme [class~="bg-[#f7f8fb]"],
-.kiosk-theme[class~="bg-[#f7f8fb]"] {
+.kiosk-theme [class~="bg-[var(--kiosk-bg)]"],
+.kiosk-theme[class~="bg-[var(--kiosk-bg)]"] {
   background: var(--kiosk-bg);
 }
 
 .dark .kiosk-theme,
-.dark .kiosk-theme [class~="bg-[#f7f8fb]"],
-.dark .kiosk-theme[class~="bg-[#f7f8fb]"] {
+.dark .kiosk-theme [class~="bg-[var(--kiosk-bg)]"],
+.dark .kiosk-theme[class~="bg-[var(--kiosk-bg)]"] {
   background: #000000;
 }
 
-.kiosk-theme [class~="text-[#07152f]"],
-.kiosk-theme[class~="text-[#07152f]"] {
+.kiosk-theme [class~="text-[var(--kiosk-text)]"],
+.kiosk-theme[class~="text-[var(--kiosk-text)]"] {
   color: var(--kiosk-text);
 }
 

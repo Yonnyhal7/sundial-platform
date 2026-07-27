@@ -6,6 +6,7 @@ import {
   getSchoolAppUrl,
   getSchoolAdminPath,
   getSchoolKioskUrl,
+  getCanonicalSchoolWebsiteUrl,
   getSchoolLoginDestination,
   getSchoolSetupPath,
   getSchoolSetupStepPath,
@@ -347,5 +348,28 @@ describe("admin route path helpers", () => {
     expect(
       getSchoolWebsiteUrl("north", "/north/admin", "admin.sundialk12.com")
     ).toBe("https://north.sundialk12.com");
+  });
+
+  it("builds the canonical tenant website URL in production", () => {
+    expect(
+      getCanonicalSchoolWebsiteUrl(
+        "deloro",
+        "/kiosk",
+        "deloro.sundialk12.com"
+      )
+    ).toBe("https://deloro.sundialk12.com");
+    expect(
+      getCanonicalSchoolWebsiteUrl(
+        "north",
+        "/north/kiosk",
+        "sundial-preview.vercel.app"
+      )
+    ).toBe("https://north.sundialk12.com");
+  });
+
+  it("keeps the canonical tenant website school-first on localhost", () => {
+    expect(
+      getCanonicalSchoolWebsiteUrl("test", "/test/kiosk", "localhost")
+    ).toBe("/test");
   });
 });

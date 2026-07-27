@@ -131,7 +131,7 @@ function OfflineKioskDisplay({ snapshot }: { snapshot: SchoolOfflineSnapshot }) 
 
 function FirstLoadKioskOfflineState() {
   return (
-    <main className="kiosk-theme grid h-[99dvh] w-screen place-items-center bg-[#f7f8fb] p-6 text-center text-[#07152f] dark:bg-black dark:text-white">
+    <main className="kiosk-theme grid h-[99dvh] w-screen place-items-center bg-[var(--kiosk-bg)] p-6 text-center text-[var(--kiosk-text)] dark:bg-black dark:text-white">
       <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
         <p className="text-2xl font-black">
           Connect to the internet once to download this school&apos;s Sundial data.

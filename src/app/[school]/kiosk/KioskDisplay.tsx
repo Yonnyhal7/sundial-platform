@@ -333,7 +333,7 @@ export default function KioskDisplay({
   if (isNoSchool) {
     return (
       <main
-        className="kiosk-theme flex h-[99dvh] w-screen items-center justify-center bg-[#f7f8fb] p-6 text-[#07152f]"
+        className="kiosk-theme flex h-[99dvh] w-screen items-center justify-center bg-[var(--kiosk-bg)] p-6 text-[var(--kiosk-text)]"
         style={kioskStyle}
       >
         <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
@@ -351,7 +351,7 @@ export default function KioskDisplay({
 
   return (
     <main
-      className="kiosk-theme h-[99dvh] w-screen overflow-hidden bg-[#f7f8fb] text-[#07152f]"
+      className="kiosk-theme h-[99dvh] w-screen overflow-hidden bg-[var(--kiosk-bg)] text-[var(--kiosk-text)]"
       style={kioskStyle}
     >
       <div className="flex h-full w-full flex-col px-[1.25vw] py-[1dvh]">
@@ -523,7 +523,7 @@ export default function KioskDisplay({
                       className={[
                         "grid min-h-0 grid-cols-[minmax(5.6rem,0.8fr)_minmax(7.5rem,1fr)_2rem] items-center gap-[0.6vw] rounded-lg px-[0.9vw] py-[0.35dvh] text-[clamp(0.72rem,0.92vw,1.08rem)] leading-tight",
                         isCurrent
-                          ? "bg-[color-mix(in_srgb,var(--school-primary)_16%,white)] text-[#07152f]"
+                          ? "bg-[color-mix(in_srgb,var(--school-primary)_16%,white)] text-[var(--kiosk-text)]"
                           : "border-b border-slate-200",
                       ].join(" ")}
                     >

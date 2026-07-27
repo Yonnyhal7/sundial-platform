@@ -141,6 +141,18 @@ export function getSchoolWebsiteUrl(
   return getPublicSchoolExperienceBase(school, pathname, hostname) || "/";
 }
 
+export function getCanonicalSchoolWebsiteUrl(
+  school: string,
+  pathname: string,
+  hostname: string
+) {
+  if (isLocalhost(hostname)) {
+    return getSchoolWebsiteUrl(school, pathname, hostname);
+  }
+
+  return `https://${school}.${getRootDomain()}`;
+}
+
 export function getSchoolAdminBasePath(
   school: string,
   pathname: string,
