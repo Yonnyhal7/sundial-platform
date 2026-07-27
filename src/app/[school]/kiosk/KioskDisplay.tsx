@@ -391,9 +391,9 @@ export default function KioskDisplay({
 
         <section className="grid min-h-0 flex-1 grid-cols-1 gap-[1vw] pb-[1dvh] lg:grid-cols-[1.22fr_1fr]">
           <div className="relative min-h-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_25%_45%,color-mix(in_srgb,var(--school-accent-visible-card)_14%,transparent),transparent_35%)]" />
+            <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_25%_45%,color-mix(in_srgb,var(--school-accent-visible-card)_14%,transparent),transparent_35%)]" />
 
-            <div className="relative flex h-full flex-col items-center px-[1.75vw] py-[1.8dvh]">
+            <div className="relative z-10 flex h-full flex-col items-center px-[1.75vw] py-[1.8dvh]">
               <p className="text-[clamp(0.95rem,1.35vw,1.55rem)] font-bold uppercase tracking-wide text-[var(--school-accent-visible-card)]">
                 Current Period
               </p>
@@ -415,7 +415,7 @@ export default function KioskDisplay({
                   </p>
                 </div>
               ) : (
-              <div className="relative mt-[2dvh] h-[min(45dvh,450px)] w-[min(45dvh,450px)]">
+              <div className="relative isolate z-10 mt-[2dvh] h-[min(45dvh,450px)] w-[min(45dvh,450px)]">
                 <svg
                   className="h-full w-full -rotate-90"
                   viewBox="0 0 410 410"
@@ -425,7 +425,7 @@ export default function KioskDisplay({
                     cy="205"
                     r={radius}
                     fill="none"
-                    stroke="#e5e7eb"
+                    stroke="var(--kiosk-countdown-ring)"
                     strokeWidth="24"
                   />
                   <circle

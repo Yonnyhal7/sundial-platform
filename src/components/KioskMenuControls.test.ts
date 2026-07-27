@@ -69,4 +69,24 @@ describe("kiosk utility controls", () => {
       'font-extrabold text-[var(--school-primary-text)]'
     );
   });
+
+  it("keeps the countdown ring opaque and above the decorative brush", () => {
+    expect(kioskSource).toContain(
+      "pointer-events-none absolute inset-0 z-0 bg-[radial-gradient"
+    );
+    expect(kioskSource).toContain(
+      "relative isolate z-10 mt-[2dvh] h-[min(45dvh,450px)]"
+    );
+    expect(kioskSource).toContain(
+      'stroke="var(--kiosk-countdown-ring)"'
+    );
+    expect(kioskSource).not.toContain('stroke="#e5e7eb"');
+    expect(kioskColorSource).toContain(
+      "--kiosk-countdown-ring: var(--kiosk-border)"
+    );
+    expect(kioskColorSource).toContain(
+      "--kiosk-countdown-ring: #e5e7eb"
+    );
+    expect(kioskSource).not.toMatch(/mix-blend|opacity-\d|mask-|blur-/);
+  });
 });

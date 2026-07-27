@@ -285,6 +285,7 @@ body {
   --kiosk-surface: #ffffff;
   --kiosk-muted: #525252;
   --kiosk-border: #e5e5e5;
+  --kiosk-countdown-ring: var(--kiosk-border);
   --school-accent-visible: var(--school-accent-visible-light);
   --school-accent-visible-card: var(--school-accent-visible-card-light);
   background: var(--kiosk-bg);
@@ -297,6 +298,7 @@ body {
   --kiosk-surface: #242424;
   --kiosk-muted: #bdbdbd;
   --kiosk-border: #3a3a3a;
+  --kiosk-countdown-ring: #e5e7eb;
   --school-accent-visible: var(--school-accent-visible-dark);
   --school-accent-visible-card: var(--school-accent-visible-card-dark);
 }
