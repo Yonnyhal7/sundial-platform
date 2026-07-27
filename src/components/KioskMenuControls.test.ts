@@ -82,11 +82,16 @@ describe("kiosk utility controls", () => {
     );
     expect(kioskSource).not.toContain('stroke="#e5e7eb"');
     expect(kioskColorSource).toContain(
-      "--kiosk-countdown-ring: var(--kiosk-border)"
+      "--kiosk-countdown-ring: #d1d5db"
     );
     expect(kioskColorSource).toContain(
       "--kiosk-countdown-ring: #e5e7eb"
     );
-    expect(kioskSource).not.toMatch(/mix-blend|opacity-\d|mask-|blur-/);
+    expect(kioskSource).not.toMatch(
+      /mix-blend|opacity-\d|mask-|blur-|strokeOpacity|stroke-opacity|fillOpacity|fill-opacity/
+    );
+    expect(kioskColorSource).not.toMatch(
+      /--kiosk-countdown-ring:\s*(?:rgba|hsla)\(|--kiosk-countdown-ring:\s*#[0-9a-f]{8}\b/i
+    );
   });
 });

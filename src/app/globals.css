@@ -285,7 +285,7 @@ body {
   --kiosk-surface: #ffffff;
   --kiosk-muted: #525252;
   --kiosk-border: #e5e5e5;
-  --kiosk-countdown-ring: var(--kiosk-border);
+  --kiosk-countdown-ring: #d1d5db;
   --school-accent-visible: var(--school-accent-visible-light);
   --school-accent-visible-card: var(--school-accent-visible-card-light);
   background: var(--kiosk-bg);
