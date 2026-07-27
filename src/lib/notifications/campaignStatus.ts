@@ -15,6 +15,7 @@ export type CampaignAggregateState = {
   eligible_count: number;
   successful_count: number;
   failed_count: number;
+  archived_at?: string | null;
 };
 
 export type CampaignDisplayStatus =
@@ -25,12 +26,14 @@ export type CampaignDisplayStatus =
   | "partially_failed"
   | "failed"
   | "no_eligible_devices"
+  | "archived"
   | "cancelled";
 
 export function getCampaignDisplayStatus(
   campaign: CampaignAggregateState,
   now = new Date()
 ): CampaignDisplayStatus {
+  if (campaign.archived_at) return "archived";
   if (campaign.status === "cancelled") return "cancelled";
   if (campaign.status === "draft") return "draft";
   if (
@@ -64,6 +67,7 @@ const STATUS_LABELS: Record<CampaignDisplayStatus, string> = {
   partially_failed: "Partially Failed",
   failed: "Failed",
   no_eligible_devices: "No Eligible Devices",
+  archived: "Archived",
   cancelled: "Cancelled",
 };
 
@@ -72,7 +76,7 @@ export function getCampaignStatusLabel(status: CampaignDisplayStatus) {
 }
 
 export function getCampaignDeliverySummary(campaign: CampaignAggregateState) {
-  const status = getCampaignDisplayStatus(campaign);
+  const status = getCampaignDisplayStatus({ ...campaign, archived_at: null });
   if (status === "no_eligible_devices") return "No eligible devices";
   if (status === "partially_failed") {
     return `${campaign.successful_count} delivered\n${campaign.failed_count} failed`;

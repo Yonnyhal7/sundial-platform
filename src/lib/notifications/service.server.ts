@@ -17,7 +17,7 @@ import {
 type Campaign = {
   id: string; school_id: string; title: string; body: string; category: string;
   destination_url: string | null; claim_token: string | null;
-  send_attempt_count: number;
+  related_entity_type: string | null; send_attempt_count: number;
 };
 type Device = { id: string; audience: string };
 type Subscription = {
@@ -224,6 +224,11 @@ export async function processNotificationQueue(campaignId?: string) {
           eligible.map((device) => ({
             school_id: campaign.school_id, campaign_id: campaign.id,
             device_id: device.id, audience: device.audience,
+            campaign_title: campaign.title,
+            campaign_body: campaign.body,
+            campaign_category: campaign.category,
+            campaign_destination_url: campaign.destination_url,
+            campaign_related_entity_type: campaign.related_entity_type,
           })),
           { onConflict: "campaign_id,device_id", ignoreDuplicates: true }
         )

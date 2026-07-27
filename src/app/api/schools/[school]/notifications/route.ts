@@ -6,6 +6,26 @@ import { categoryAvailableForAudience, getRecommendedPreferences, isNotification
 
 export const dynamic = "force-dynamic";
 
+const DEVICE_INBOX_SELECT =
+  "id,read_at,opened_at,delivered_at,created_at,campaign_title,campaign_body,campaign_category,campaign_destination_url,campaign_related_entity_type";
+
+function deviceInboxItem(row: Record<string, unknown>) {
+  return {
+    id: row.id,
+    read_at: row.read_at,
+    opened_at: row.opened_at,
+    delivered_at: row.delivered_at,
+    created_at: row.created_at,
+    notification_campaigns: {
+      title: row.campaign_title,
+      body: row.campaign_body,
+      category: row.campaign_category,
+      destination_url: row.campaign_destination_url,
+      related_entity_type: row.campaign_related_entity_type,
+    },
+  };
+}
+
 function tokenHash(token: string) {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
@@ -53,18 +73,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ scho
   const deliveryId = url.searchParams.get("id");
   if (deliveryId) {
     const { data } = await ctx.db.from("notification_deliveries")
-      .select("id,read_at,opened_at,delivered_at,created_at,notification_campaigns!inner(title,body,category,destination_url,status,related_entity_type)")
+      .select(DEVICE_INBOX_SELECT)
       .eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).eq("id", deliveryId)
       .in("delivery_status", ["sent", "inbox_only"]).is("deleted_at", null).maybeSingle();
     return data
-      ? NextResponse.json({ audience: ctx.device.audience, notification: data })
+      ? NextResponse.json({
+          audience: ctx.device.audience,
+          notification: deviceInboxItem(data),
+        })
       : NextResponse.json({ error: "Notification unavailable" }, { status: 404 });
   }
-  const { data } = await ctx.db.from("notification_deliveries").select("id,read_at,opened_at,delivered_at,created_at,notification_campaigns!inner(title,body,category,destination_url,status,related_entity_type)").eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).in("delivery_status", ["sent", "inbox_only"]).is("deleted_at", null).order("created_at", { ascending: false }).limit(100);
+  const { data } = await ctx.db.from("notification_deliveries").select(DEVICE_INBOX_SELECT).eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).in("delivery_status", ["sent", "inbox_only"]).is("deleted_at", null).order("created_at", { ascending: false }).limit(100);
   const { count: unreadCount } = await ctx.db.from("notification_deliveries").select("id", { count: "exact", head: true }).eq("school_id", ctx.school.id).eq("device_id", ctx.device.id).in("delivery_status", ["sent", "inbox_only"]).is("deleted_at", null).is("read_at", null);
   return NextResponse.json({
     audience: ctx.device.audience,
-    notifications: data || [],
+    notifications: (data || []).map(deviceInboxItem),
     unreadCount: unreadCount || 0,
   });
 }

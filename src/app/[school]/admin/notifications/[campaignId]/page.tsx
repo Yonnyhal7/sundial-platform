@@ -51,13 +51,14 @@ export default async function NotificationDetails({ params }: { params: Promise<
         <div><dt className="text-slate-500">Created</dt><dd className="font-bold">{formatTimestampInTimeZone(campaign.created_at, timeZone)}</dd></div>
         {campaign.claimed_at && <div><dt className="text-slate-500">Delivery started</dt><dd className="font-bold">{formatTimestampInTimeZone(campaign.claimed_at, timeZone)}</dd></div>}
         {campaign.sent_at && <div><dt className="text-slate-500">Completed</dt><dd className="font-bold">{formatTimestampInTimeZone(campaign.sent_at, timeZone)}</dd></div>}
+        {campaign.archived_at && <div><dt className="text-slate-500">Archived</dt><dd className="font-bold">{formatTimestampInTimeZone(campaign.archived_at, timeZone)}</dd></div>}
       </dl>
       {deliverySummary && <p role="status" className="mt-5 whitespace-pre-line rounded-xl bg-slate-100 p-4 text-sm font-bold dark:bg-[#333]">{deliverySummary}</p>}
-      {["draft","scheduled"].includes(campaign.status) && <form action={reschedule} className="mt-6 flex flex-wrap items-end gap-3">
+      {!campaign.archived_at && ["draft","scheduled"].includes(campaign.status) && <form action={reschedule} className="mt-6 flex flex-wrap items-end gap-3">
         <label className="text-sm font-bold">Schedule in {schoolData.timezone || "America/Los_Angeles"}<input required type="datetime-local" name="scheduled_for" className="mt-2 block rounded-lg border p-2 dark:bg-black" /></label>
         <button className="rounded-lg border px-4 py-2 font-bold">Save schedule</button>
       </form>}
-      {["draft","scheduled","queued"].includes(campaign.status) && <form action={cancel} className="mt-6"><button className="rounded-lg border border-red-300 px-4 py-2 font-bold text-red-700">Cancel notification</button></form>}
+      {!campaign.archived_at && ["draft","scheduled","queued"].includes(campaign.status) && <form action={cancel} className="mt-6"><button className="rounded-lg border border-red-300 px-4 py-2 font-bold text-red-700">Cancel notification</button></form>}
     </section>
     <h2 className="mt-8 text-xl font-bold">Audit history</h2>
     <div className="mt-3 rounded-2xl border bg-white dark:border-[#3a3a3a] dark:bg-[#242424]">{audit?.map((row) => <div key={row.id} className="border-b p-4 last:border-0 dark:border-[#3a3a3a]"><p className="font-bold">{row.summary}</p><p className="text-xs text-slate-500">{formatTimestampInTimeZone(row.created_at, timeZone)} · {row.result_status}</p></div>)}</div>

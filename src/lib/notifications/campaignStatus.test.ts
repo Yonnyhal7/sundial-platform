@@ -16,6 +16,10 @@ const completed = {
 
 describe("notification campaign state", () => {
   it("uses lifecycle state before aggregate state", () => {
+    expect(getCampaignDisplayStatus({
+      ...completed,
+      archived_at: "2026-07-27T12:00:00.000Z",
+    })).toBe("archived");
     expect(getCampaignDisplayStatus({ ...completed, status: "draft" })).toBe("draft");
     expect(getCampaignDisplayStatus({
       ...completed,
@@ -51,6 +55,13 @@ describe("notification aggregate presentation", () => {
       eligible_count: 0,
       successful_count: 0,
     })).toBe("No eligible devices");
+  });
+
+  it("keeps delivery statistics visible for archived campaigns", () => {
+    expect(getCampaignDeliverySummary({
+      ...completed,
+      archived_at: "2026-07-27T12:00:00.000Z",
+    })).toBe("Delivered to 3 devices");
   });
 });
 

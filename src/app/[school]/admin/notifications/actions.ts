@@ -16,6 +16,16 @@ async function authorized(school: string) {
   return { schoolData, admin };
 }
 
+function mutationResult(data: unknown) {
+  const status = (data as { status?: string } | null)?.status;
+  return status === "success"
+    ? { ok: true as const }
+    : {
+        ok: false as const,
+        error: `Notification campaign update failed (${status || "server_error"})`,
+      };
+}
+
 export async function createNotificationCampaignAction(school: string, formData: FormData) {
   const { schoolData, admin } = await authorized(school);
   const schoolTimeZone = schoolData.timezone || "America/Los_Angeles";
@@ -51,6 +61,100 @@ export async function cancelNotificationCampaignAction(school: string, campaignI
   const { schoolData, admin } = await authorized(school);
   await admin.supabase.rpc("cancel_notification_campaign", { p_campaign_id: campaignId, p_school_id: schoolData.id, p_expected_version: version });
   revalidatePath(`/${school}/admin/notifications/${campaignId}`);
+}
+
+export async function archiveNotificationCampaignAction(
+  school: string,
+  campaignId: string,
+  version: number
+) {
+  const { schoolData, admin } = await authorized(school);
+  const { data } = await admin.supabase.rpc("archive_notification_campaign", {
+    p_campaign_id: campaignId,
+    p_school_id: schoolData.id,
+    p_expected_version: version,
+  });
+  const result = mutationResult(data);
+  if (!result.ok) return result;
+  revalidatePath(`${await getSchoolAdminPath(school)}/notifications`);
+  return result;
+}
+
+export async function restoreNotificationCampaignAction(
+  school: string,
+  campaignId: string,
+  version: number
+) {
+  const { schoolData, admin } = await authorized(school);
+  const { data } = await admin.supabase.rpc("restore_notification_campaign", {
+    p_campaign_id: campaignId,
+    p_school_id: schoolData.id,
+    p_expected_version: version,
+  });
+  const result = mutationResult(data);
+  if (!result.ok) return result;
+  revalidatePath(`${await getSchoolAdminPath(school)}/notifications`);
+  return result;
+}
+
+export async function permanentlyDeleteNotificationCampaignAction(
+  school: string,
+  campaignId: string,
+  version: number
+) {
+  const { schoolData, admin } = await authorized(school);
+  const { data } = await admin.supabase.rpc(
+    "permanently_delete_notification_campaign",
+    {
+      p_campaign_id: campaignId,
+      p_school_id: schoolData.id,
+      p_expected_version: version,
+    }
+  );
+  const result = mutationResult(data);
+  if (!result.ok) return result;
+  revalidatePath(`${await getSchoolAdminPath(school)}/notifications`);
+  return result;
+}
+
+export async function duplicateNotificationCampaignAction(
+  school: string,
+  campaignId: string
+) {
+  const { schoolData, admin } = await authorized(school);
+  const [{ data: campaign }, { data: audiences }] = await Promise.all([
+    admin.supabase.from("notification_campaigns")
+      .select("title,body,category,urgency,destination_url,related_entity_type,related_entity_id,target_type,followed_entity_type,followed_entity_id")
+      .eq("id", campaignId).eq("school_id", schoolData.id).is("archived_at", null)
+      .maybeSingle(),
+    admin.supabase.from("notification_campaign_audiences")
+      .select("audience").eq("campaign_id", campaignId).eq("school_id", schoolData.id),
+  ]);
+  if (!campaign || !audiences?.length) {
+    throw new Error("Notification campaign is unavailable");
+  }
+  const { data } = await admin.supabase.rpc("create_notification_campaign", {
+    p_school_id: schoolData.id,
+    p_title: campaign.title,
+    p_body: campaign.body,
+    p_category: campaign.category,
+    p_audiences: audiences.map((row) => row.audience),
+    p_status: "draft",
+    p_scheduled_for: null,
+    p_origin_timezone: schoolData.timezone || "America/Los_Angeles",
+    p_urgency: campaign.urgency,
+    p_destination_url: campaign.destination_url,
+    p_related_entity_type: campaign.related_entity_type,
+    p_related_entity_id: campaign.related_entity_id,
+    p_target_type: campaign.target_type,
+    p_followed_entity_type: campaign.followed_entity_type,
+    p_followed_entity_id: campaign.followed_entity_id,
+    p_idempotency_key: randomUUID(),
+  }) as { data: { status?: string; campaign_id?: string } | null };
+  if (!data?.campaign_id || data.status !== "success") {
+    throw new Error(`Notification duplicate failed (${data?.status || "server_error"})`);
+  }
+  redirect(`${await getSchoolAdminPath(school)}/notifications/${data.campaign_id}`);
 }
 
 export async function rescheduleNotificationCampaignAction(school: string, campaignId: string, version: number, formData: FormData) {
