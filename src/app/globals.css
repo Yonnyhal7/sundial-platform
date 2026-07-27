@@ -281,7 +281,7 @@ body {
 
 .kiosk-theme {
   --kiosk-bg: #fafafa;
-  --kiosk-text: #171717;
+  --kiosk-text: #000000;
   --kiosk-surface: #ffffff;
   --kiosk-muted: #525252;
   --kiosk-border: #e5e5e5;
