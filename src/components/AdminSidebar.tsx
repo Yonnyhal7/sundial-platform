@@ -8,6 +8,7 @@ import {
   ADMIN_TAB_ICONS,
   CalendarIcon,
   DashboardIcon,
+  GlobeIcon,
 } from "@/components/admin/AdminNavIcons";
 import AdminLogoutButton from "@/components/admin/AdminLogoutButton";
 import SchoolLogo from "@/components/SchoolLogo";
@@ -25,6 +26,7 @@ import {
   getSchoolKioskUrl,
   getSchoolSetupPath,
   getSchoolSetupStepPath,
+  getSchoolWebsiteUrl,
 } from "@/lib/routing/paths";
 import { setupAccent } from "@/lib/ui/setupStyles";
 
@@ -150,6 +152,7 @@ export default function AdminSidebar({
   const SettingsIcon = SettingsGearIcon;
   const AppIcon = PhoneDeviceIcon;
   const KioskIcon = KioskDisplayIcon;
+  const WebsiteIcon = GlobeIcon;
 
   const canAccess = (permissionKey: AdminPermissionKey) =>
     allowedPermissionKeys.includes(permissionKey);
@@ -268,6 +271,11 @@ export default function AdminSidebar({
           label: "View Kiosk",
           href: getSchoolKioskUrl(school, pathname, requestHostname),
           icon: <KioskIcon className={iconClass} />,
+        },
+        {
+          label: "View Website",
+          href: getSchoolWebsiteUrl(school, pathname, requestHostname),
+          icon: <WebsiteIcon className={iconClass} />,
         },
       ];
 

@@ -63,6 +63,24 @@ export function MegaphoneIcon(props: IconProps) {
   );
 }
 
+export function ClockIcon(props: IconProps) {
+  return (
+    <IconShell {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5l3 2" />
+    </IconShell>
+  );
+}
+
+export function GlobeIcon(props: IconProps) {
+  return (
+    <IconShell {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h18M12 3a14.8 14.8 0 0 1 0 18M12 3a14.8 14.8 0 0 0 0 18" />
+    </IconShell>
+  );
+}
+
 export function TrophyIcon(props: IconProps) {
   return (
     <IconShell {...props}>
@@ -102,7 +120,7 @@ export function BillingIcon(props: IconProps) {
 
 export const ADMIN_TAB_ICONS: Record<AdminPermissionKey, ComponentType<IconProps>> = {
   announcements: MegaphoneIcon,
-  notifications: MegaphoneIcon,
+  notifications: ClockIcon,
   events: EventIcon,
   athletics: TrophyIcon,
   schedules: ScheduleIcon,

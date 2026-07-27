@@ -9,6 +9,7 @@ import {
   getSchoolLoginDestination,
   getSchoolSetupPath,
   getSchoolSetupStepPath,
+  getSchoolWebsiteUrl,
 } from "./paths";
 
 describe("admin route path helpers", () => {
@@ -259,6 +260,9 @@ describe("admin route path helpers", () => {
     expect(
       getSchoolKioskUrl("deloro", "/deloro/dashboard", "admin.sundialk12.com")
     ).toBe("https://deloro.sundialk12.com/kiosk");
+    expect(
+      getSchoolWebsiteUrl("deloro", "/deloro/dashboard", "admin.sundialk12.com")
+    ).toBe("https://deloro.sundialk12.com");
   });
 
   it("keeps App and Kiosk shortcuts path-based on localhost", () => {
@@ -267,6 +271,9 @@ describe("admin route path helpers", () => {
     );
     expect(getSchoolKioskUrl("test", "/test/admin", "localhost:3000")).toBe(
       "/test/kiosk"
+    );
+    expect(getSchoolWebsiteUrl("test", "/test/admin", "localhost:3000")).toBe(
+      "/test"
     );
   });
 
@@ -337,5 +344,8 @@ describe("admin route path helpers", () => {
     expect(getSchoolAppUrl("north", "/north/admin", "admin.sundialk12.com")).not.toContain(
       "deloro"
     );
+    expect(
+      getSchoolWebsiteUrl("north", "/north/admin", "admin.sundialk12.com")
+    ).toBe("https://north.sundialk12.com");
   });
 });

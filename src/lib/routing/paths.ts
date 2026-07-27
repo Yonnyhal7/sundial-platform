@@ -133,6 +133,14 @@ export function getSchoolKioskUrl(
   return `${getPublicSchoolExperienceBase(school, pathname, hostname)}/kiosk`;
 }
 
+export function getSchoolWebsiteUrl(
+  school: string,
+  pathname: string,
+  hostname: string
+) {
+  return getPublicSchoolExperienceBase(school, pathname, hostname) || "/";
+}
+
 export function getSchoolAdminBasePath(
   school: string,
   pathname: string,
