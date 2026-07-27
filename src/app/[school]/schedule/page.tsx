@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PublicCalendarPage from "@/components/public-site/calendar/PublicCalendarPage";
 import { PublicContainer, PublicPageHeader } from "@/components/public-site/PublicSite";
+import { publicDensity } from "@/components/public-site/publicDensity";
 import { loadPublicCalendar } from "@/lib/publicCalendar.server";
 
 export const metadata: Metadata = { title: "Calendar" };
@@ -15,7 +16,7 @@ export default async function SchoolSchedulePage({ params }: { params: Promise<{
       title="School Calendar"
       description="View bell schedules, special days, and school closures."
     />
-    <PublicContainer className="max-w-[1180px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+    <PublicContainer className={publicDensity.pageSection}>
       {calendar.academicYear && <p className="mb-4 text-sm font-bold text-slate-500 dark:text-slate-400">Academic year {calendar.academicYear.label}</p>}
       <PublicCalendarPage calendar={calendar} />
     </PublicContainer>

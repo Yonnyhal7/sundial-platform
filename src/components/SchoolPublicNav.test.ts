@@ -17,7 +17,7 @@ describe("public mobile navigation accessibility", () => {
 
   it("keeps mobile targets large and desktop navigation breakpoint-scoped", () => {
     expect(source).toContain("h-11 w-11");
-    expect(source).toContain("min-h-12");
+    expect(source).toContain("min-h-11");
     expect(source).toContain("xl:hidden");
     expect(source).toContain("hidden items-center gap-1 xl:flex");
   });
@@ -32,7 +32,7 @@ describe("public mobile navigation accessibility", () => {
   });
 
   it("renders a fixed overlay with backdrop dismissal and focus management", () => {
-    expect(source).toContain("fixed inset-x-0 bottom-0 top-20");
+    expect(source).toContain("fixed inset-x-0 bottom-0 top-16");
     expect(source).toContain("createPortal(");
     expect(source).toContain("document.body)");
     expect(source).toContain('aria-modal="true"');
@@ -46,6 +46,6 @@ describe("public mobile navigation accessibility", () => {
     expect(source).toContain("MegaphoneIcon");
     expect(source).toContain("ResourcesIcon");
     expect(source).toContain("Powered by Sundial");
-    expect(source).toContain('className="h-14 w-14 p-1"');
+    expect(source).toContain('className="h-11 w-11 p-1"');
   });
 });

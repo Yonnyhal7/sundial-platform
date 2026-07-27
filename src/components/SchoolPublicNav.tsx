@@ -9,6 +9,7 @@ import KioskMenuControls from "@/components/KioskMenuControls";
 import SchoolAppInstallLink from "@/components/pwa/SchoolAppInstallLink";
 import { DashboardIcon, EventIcon, MegaphoneIcon, ResourcesIcon, UserIcon } from "@/components/admin/AdminNavIcons";
 import { CalendarIcon, HomeIcon, MenuIcon } from "@/components/mobile-app/AppIcons";
+import { publicDensity } from "@/components/public-site/publicDensity";
 import { applyTheme, getPreferredAppearance, resolveAppearanceTheme, setStoredAppearancePreference, type AppearancePreference } from "@/lib/themeScope";
 
 type Props = { school: string; schoolName: string; logoUrl: string | null; base: string; schoolDefaultAppearance?: AppearancePreference };
@@ -124,10 +125,10 @@ export default function SchoolPublicNav({ school, schoolName, logoUrl, base, sch
   if (pathname === `${base}/kiosk` || pathname.startsWith(`${base}/kiosk/`)) return <nav className="school-menu-bar border-b border-slate-200 bg-white px-6 py-3 dark:border-neutral-800 dark:bg-black"><div className="flex justify-end"><KioskMenuControls school={school} schoolDefaultAppearance={schoolDefaultAppearance} /></div></nav>;
 
   return <><header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 text-slate-950 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-[#141618]/90 dark:text-white">
-    <div className="mx-auto flex min-h-20 max-w-[1360px] items-center gap-5 px-5 sm:px-8 lg:px-12">
-      <Link href={homeHref} className="flex min-w-0 items-center gap-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)]"><SchoolLogo schoolName={schoolName} logoUrl={logoUrl} variant="websiteHeader" allowArtworkOverflow className="h-[3.15rem] w-[3.15rem] p-1" /><span className="max-w-[13rem] truncate text-sm font-black sm:max-w-[17rem]">{schoolName}</span></Link>
+    <div className={`${publicDensity.container} flex min-h-16 items-center gap-4`}>
+      <Link href={homeHref} className={`${publicDensity.touchTarget} flex min-w-0 items-center gap-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)]`}><SchoolLogo schoolName={schoolName} logoUrl={logoUrl} variant="websiteHeader" allowArtworkOverflow className="h-11 w-11 p-1" /><span className="max-w-[13rem] truncate text-sm font-black sm:max-w-[17rem]">{schoolName}</span></Link>
       <nav aria-label="Primary" className="ml-auto hidden items-center gap-1 xl:flex">{items.map(({ label, desktopLabel, href, installSurface }) => {
-        const className = `rounded-full px-3 py-2 text-sm font-bold transition ${active(href) ? "bg-[color-mix(in_srgb,var(--school-primary)_14%,transparent)] text-[var(--school-primary)]" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"}`;
+        const className = `${publicDensity.touchTarget} inline-flex items-center rounded-full px-3 text-sm font-bold transition ${active(href) ? "bg-[color-mix(in_srgb,var(--school-primary)_14%,transparent)] text-[var(--school-primary)]" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"}`;
         return installSurface
           ? <SchoolAppInstallLink key={href} href={href} aria-current={active(href) ? "page" : undefined} className={className}>{desktopLabel || label}</SchoolAppInstallLink>
           : <Link key={href} href={href} aria-current={active(href) ? "page" : undefined} className={className}>{desktopLabel || label}</Link>;
@@ -137,19 +138,19 @@ export default function SchoolPublicNav({ school, schoolName, logoUrl, base, sch
 
   </header>
 
-    {open && createPortal(<div className="fixed inset-x-0 bottom-0 top-20 z-40 text-slate-950 xl:hidden dark:text-white" role="dialog" aria-modal="true" aria-label="Site navigation">
+    {open && createPortal(<div className="fixed inset-x-0 bottom-0 top-16 z-40 text-slate-950 xl:hidden dark:text-white" role="dialog" aria-modal="true" aria-label="Site navigation">
       <button type="button" aria-label="Close navigation" className="public-mobile-menu-backdrop absolute inset-0 cursor-default bg-slate-950/25 backdrop-blur-[2px] dark:bg-black/45" onClick={closeMenu} />
       <div ref={menuPanelRef} id="public-mobile-menu" className="public-mobile-menu-panel relative max-h-full overflow-y-auto border-b border-slate-200 bg-white/95 px-5 pb-5 pt-4 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#17191b]/95">
-        <div className="mx-auto max-w-[1360px]">
-          <div className="mb-3 flex items-center gap-3 px-2"><SchoolLogo schoolName={schoolName} logoUrl={logoUrl} variant="websiteHeader" allowArtworkOverflow className="h-14 w-14 p-1" /><span className="min-w-0 truncate text-sm font-black">{schoolName}</span></div>
+        <div className="mx-auto max-w-[1180px]">
+          <div className="mb-2 flex items-center gap-2.5 px-2"><SchoolLogo schoolName={schoolName} logoUrl={logoUrl} variant="websiteHeader" allowArtworkOverflow className="h-11 w-11 p-1" /><span className="min-w-0 truncate text-sm font-black">{schoolName}</span></div>
           <nav aria-label="Mobile" className="grid gap-1">{items.map(({ label, href, icon: Icon, installSurface }) => {
-            const className = `flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] ${active(href) ? "bg-[color-mix(in_srgb,var(--school-primary)_14%,transparent)] text-[var(--school-primary)]" : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"}`;
+            const className = `flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] ${active(href) ? "bg-[color-mix(in_srgb,var(--school-primary)_14%,transparent)] text-[var(--school-primary)]" : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"}`;
             const content = <><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-200"><Icon className="h-5 w-5" /></span>{label}</>;
             return installSurface
               ? <SchoolAppInstallLink key={href} href={href} onClick={closeMenu} aria-current={active(href) ? "page" : undefined} className={className}>{content}</SchoolAppInstallLink>
               : <Link key={href} href={href} onClick={closeMenu} aria-current={active(href) ? "page" : undefined} className={className}>{content}</Link>;
           })}</nav>
-          <div className="mt-3 border-t border-slate-200 pt-3 dark:border-white/10"><button ref={appearanceButtonRef} type="button" aria-haspopup="dialog" aria-expanded={appearanceOpen} onClick={showAppearance} className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-3 text-left text-sm font-bold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] dark:text-slate-200 dark:hover:bg-white/10"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-200"><AppearanceIcon className="h-5 w-5" /></span><span className="flex-1">Appearance</span><span aria-hidden="true" className="text-lg text-slate-400">›</span></button></div>
+          <div className="mt-2 border-t border-slate-200 pt-2 dark:border-white/10"><button ref={appearanceButtonRef} type="button" aria-haspopup="dialog" aria-expanded={appearanceOpen} onClick={showAppearance} className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-left text-sm font-bold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] dark:text-slate-200 dark:hover:bg-white/10"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-200"><AppearanceIcon className="h-5 w-5" /></span><span className="flex-1">Appearance</span><span aria-hidden="true" className="text-lg text-slate-400">›</span></button></div>
           <p className="mt-3 border-t border-slate-200 pt-4 text-center text-xs font-semibold text-slate-400 dark:border-white/10 dark:text-slate-500">Powered by Sundial</p>
         </div>
       </div>
@@ -158,8 +159,8 @@ export default function SchoolPublicNav({ school, schoolName, logoUrl, base, sch
         <button type="button" aria-label="Close appearance settings" className="absolute inset-0 cursor-default bg-slate-950/35 backdrop-blur-[2px]" onClick={closeAppearance} />
         <div ref={appearanceSheetRef} role="dialog" aria-modal="true" aria-labelledby="appearance-title" className="public-appearance-sheet relative w-full rounded-t-[2rem] bg-white px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-5 shadow-2xl dark:bg-[#202224]">
           <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-slate-300 dark:bg-white/20" /><h2 id="appearance-title" className="text-lg font-black">Appearance</h2>
-          <div className="mt-4 grid gap-1" role="radiogroup" aria-label="Website appearance">{appearanceOptions.map((option) => <button key={option.value} type="button" role="radio" aria-checked={appearance === option.value} onClick={() => chooseAppearance(option.value)} className="flex min-h-12 w-full items-center gap-3 rounded-2xl px-3 text-left text-sm font-bold hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] dark:hover:bg-white/10"><span aria-hidden="true" className={`grid h-5 w-5 place-items-center rounded-full border-2 ${appearance === option.value ? "border-[var(--school-primary)]" : "border-slate-300 dark:border-white/30"}`}>{appearance === option.value && <span className="h-2.5 w-2.5 rounded-full bg-[var(--school-primary)]" />}</span>{option.label}</button>)}</div>
-          <button type="button" onClick={closeAppearance} className="mt-3 min-h-12 w-full rounded-2xl bg-slate-100 text-sm font-black hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] dark:bg-white/10 dark:hover:bg-white/15">Done</button>
+          <div className="mt-3 grid gap-1" role="radiogroup" aria-label="Website appearance">{appearanceOptions.map((option) => <button key={option.value} type="button" role="radio" aria-checked={appearance === option.value} onClick={() => chooseAppearance(option.value)} className="flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-left text-sm font-bold hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] dark:hover:bg-white/10"><span aria-hidden="true" className={`grid h-5 w-5 place-items-center rounded-full border-2 ${appearance === option.value ? "border-[var(--school-primary)]" : "border-slate-300 dark:border-white/30"}`}>{appearance === option.value && <span className="h-2.5 w-2.5 rounded-full bg-[var(--school-primary)]" />}</span>{option.label}</button>)}</div>
+          <button type="button" onClick={closeAppearance} className="mt-2 min-h-11 w-full rounded-2xl bg-slate-100 text-sm font-black hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] dark:bg-white/10 dark:hover:bg-white/15">Done</button>
         </div>
       </div>}
     </div>, document.body)}

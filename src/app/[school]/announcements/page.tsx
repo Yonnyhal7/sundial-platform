@@ -1,4 +1,5 @@
 import { PublicContainer, PublicEmptyState, PublicPageHeader } from "@/components/public-site/PublicSite";
+import { publicDensity } from "@/components/public-site/publicDensity";
 import { requirePublicSchool } from "@/lib/publicSite";
 import { formatTimestampDateInTimeZone } from "@/lib/timezones";
 
@@ -17,15 +18,15 @@ export default async function AnnouncementsPage({ params }: { params: Promise<{ 
   return (
     <main>
       <PublicPageHeader eyebrow={school.name} title="Announcements" description="News, reminders, and important updates from our school community." />
-      <PublicContainer className="py-12 sm:py-16">
+      <PublicContainer className={publicDensity.pageSection}>
         {data?.length ? (
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className={`grid lg:grid-cols-2 ${publicDensity.grid}`}>
             {data.map((item) => (
-              <article key={item.id} className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-[#1b1e21] dark:ring-white/10">
+              <article key={item.id} className={`rounded-3xl bg-white shadow-sm ring-1 ring-slate-200 dark:bg-[#1b1e21] dark:ring-white/10 ${publicDensity.card}`}>
                 <p className="text-xs font-bold uppercase tracking-wider text-[var(--school-primary)]">{item.priority ? "Featured announcement" : "School news"}</p>
-                <h2 className="mt-3 text-2xl font-black">{item.title}</h2>
-                <p className="mt-4 whitespace-pre-line leading-7 text-slate-600 dark:text-slate-300">{item.body}</p>
-                <time className="mt-5 block text-sm text-slate-500">
+                <h2 className="mt-2 text-xl font-black">{item.title}</h2>
+                <p className="mt-3 whitespace-pre-line leading-6 text-slate-600 dark:text-slate-300">{item.body}</p>
+                <time className="mt-4 block text-sm text-slate-500">
                   {formatTimestampDateInTimeZone(new Date(item.publish_at), school.timezone || "America/Los_Angeles")}
                 </time>
               </article>

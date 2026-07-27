@@ -17,16 +17,16 @@ const navigation = readFileSync(
 
 describe("public homepage mobile contracts", () => {
   it("keeps the hero compact on mobile and restores its desktop height", () => {
-    expect(homepage).toContain("py-10 sm:py-14 lg:min-h-[34rem]");
+    expect(homepage).toContain("py-9 sm:py-11 lg:min-h-[29rem]");
     expect(homepage).toContain("mt-3 break-words");
-    expect(homepage).toContain("min-h-12");
+    expect(homepage).toContain("min-h-11");
     expect(homepage).toContain('className="h-6 sm:hidden"');
   });
 
   it("uses real resources in a responsive two-column quick-link grid", () => {
     expect(homepage).toContain("data.resources.length > 0");
     expect(homepage).toContain("data.resources.slice(0, 8)");
-    expect(homepage).toContain("grid grid-cols-2 gap-3 max-[340px]:grid-cols-1");
+    expect(homepage).toContain("grid grid-cols-2 max-[340px]:grid-cols-1");
     expect(homepage).toContain("safePublicUrl(resource.url)");
   });
 
@@ -42,8 +42,15 @@ describe("public homepage mobile contracts", () => {
       '<SchoolAppInstallLink href={`/${slug}/app`}'
     );
     expect(footer).toContain(
-      '<SchoolAppInstallLink href={`${base}/app`}>'
+      'href={`${base}/app`}>School App</SchoolAppInstallLink>'
     );
     expect(navigation).toContain("installSurface: true");
+  });
+
+  it("uses shared public-only density tokens", () => {
+    expect(homepage).toContain("publicDensity.sectionStack");
+    expect(homepage).toContain("publicDensity.card");
+    expect(footer).toContain("publicDensity.container");
+    expect(navigation).toContain("publicDensity.touchTarget");
   });
 });
