@@ -44,6 +44,14 @@ export function isProvenUnattempted(status: DeliveryStatus) {
   return status === "pending";
 }
 
+export function findMissingDeliveryDevices<T extends { id: string }>(
+  eligibleDevices: T[],
+  existingDeviceIds: Iterable<string>
+) {
+  const existing = new Set(existingDeviceIds);
+  return eligibleDevices.filter((device) => !existing.has(device.id));
+}
+
 export function summarizeCampaignDeliveries(
   statuses: DeliveryStatus[],
   eligible: number

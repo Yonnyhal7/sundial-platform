@@ -4,6 +4,7 @@ import {
   WEB_PUSH_HARD_TIMEOUT_MS,
   WebPushTimeoutError,
   canStartProviderAttempt,
+  findMissingDeliveryDevices,
   isProvenUnattempted,
   summarizeCampaignDeliveries,
   withWebPushDeadline,
@@ -57,6 +58,14 @@ describe("notification processor policy", () => {
     for (const status of [
       "sending", "sent", "inbox_only", "failed", "disabled_subscription",
     ] as const) expect(isProvenUnattempted(status)).toBe(false);
+  });
+
+  it("does not recreate delivery rows during stale recovery", () => {
+    const eligible = [{ id: "device-1" }, { id: "device-2" }];
+    expect(findMissingDeliveryDevices(eligible, ["device-1", "device-2"])).toEqual([]);
+    expect(findMissingDeliveryDevices(eligible, ["device-1"])).toEqual([
+      { id: "device-2" },
+    ]);
   });
 
   it.each([

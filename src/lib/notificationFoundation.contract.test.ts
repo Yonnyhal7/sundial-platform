@@ -7,11 +7,13 @@ const api = readFileSync(new URL("../app/api/schools/[school]/notifications/rout
 const service = readFileSync(new URL("./notifications/service.server.ts", import.meta.url), "utf8");
 const processorPolicy = readFileSync(new URL("./notifications/processorPolicy.ts", import.meta.url), "utf8");
 const processorClaimMigration = readFileSync(new URL("../../supabase/migrations/20260725123000_notification_processor_single_claim.sql", import.meta.url), "utf8");
+const pendingInvariantMigration = readFileSync(new URL("../../supabase/migrations/20260727133000_notification_pending_delivery_invariant.sql", import.meta.url), "utf8");
 const header = readFileSync(new URL("../components/mobile-app/AppHeader.tsx", import.meta.url), "utf8");
 const startup = readFileSync(new URL("../components/pwa/PwaStartupBoundary.tsx", import.meta.url), "utf8");
 const audienceSummary = readFileSync(new URL("../components/mobile-app/NotificationAudienceSummary.tsx", import.meta.url), "utf8");
 const newAnnouncement = readFileSync(new URL("../app/[school]/admin/announcements/new/page.tsx", import.meta.url), "utf8");
 const editAnnouncement = readFileSync(new URL("../app/[school]/admin/announcements/[announcementId]/edit/page.tsx", import.meta.url), "utf8");
+const notificationActions = readFileSync(new URL("../app/[school]/admin/notifications/actions.ts", import.meta.url), "utf8");
 const cron = readFileSync(new URL("../app/api/cron/notifications/route.ts", import.meta.url), "utf8");
 
 describe("notification foundation security", () => {
@@ -56,6 +58,9 @@ describe("notification foundation security", () => {
   it("does not resend terminal deliveries and preserves aggregate retry results", () => {
     expect(service).toContain("isProvenUnattempted");
     expect(service).toContain("const pendingEligible = eligible.filter");
+    expect(service).toContain("const missingDeliveries = findMissingDeliveryDevices");
+    expect(service).toContain("read_prior_deliveries");
+    expect(service).toContain("if (missingDeliveries.length)");
     expect(processorPolicy).toContain('return status === "pending"');
     expect(processorPolicy).toContain('status === "sent"');
     expect(processorPolicy).toContain('status === "inbox_only"');
@@ -121,6 +126,32 @@ describe("notification foundation security", () => {
     expect(editAnnouncement).toContain("queueAnnouncementNotification");
     expect(cron).toContain("requireCronAuthorization");
     expect(cron).toContain("Notification processing unavailable");
+  });
+  it("leaves queued campaign processing to the durable cron invocation", () => {
+    expect(notificationActions).not.toContain("processNotificationQueue");
+    expect(notificationActions).not.toContain('from "next/server"');
+    expect(cron).toContain("await processNotificationQueue()");
+  });
+  it("records nonterminal processing as deferred instead of completed", () => {
+    expect(service).toContain('"campaign_delivery_deferred"');
+    expect(service).toContain("cron recovery required.");
+    expect(service).toContain('? "blocked"');
+    expect(service).toContain('sent_at: deferred ? null : completedAt');
+    expect(service).toContain("pending_count: totals.pendingOrAmbiguous");
+  });
+  it("quarantines legacy pending deliveries without automatically retrying them", () => {
+    expect(pendingInvariantMigration).toContain(
+      "delivery_status in ('pending','sending')"
+    );
+    expect(pendingInvariantMigration).toContain("claimed_at=null");
+    expect(pendingInvariantMigration).toContain("claim_token=null");
+    expect(pendingInvariantMigration).toContain("'automatic_retry',false");
+    expect(pendingInvariantMigration).toContain(
+      "notification_campaigns_terminal_pending_check"
+    );
+    expect(pendingInvariantMigration).not.toContain(
+      "update public.notification_deliveries"
+    );
   });
   it("extends the existing worker with tenant-safe push routing", () => {
     expect(worker).toContain('addEventListener("push"');

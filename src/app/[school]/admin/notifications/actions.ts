@@ -6,7 +6,6 @@ import { revalidatePath } from "next/cache";
 import { getSchoolAdminPath, requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { getSchoolForSetup } from "@/lib/schools";
 import { isNotificationCategory, resolveNotificationAudiences, sanitizeNotificationDestination, sanitizeNotificationText, schoolLocalDateTimeToUtc } from "@/lib/notifications";
-import { processNotificationQueue } from "@/lib/notifications/service.server";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 
 async function authorized(school: string) {
@@ -50,9 +49,6 @@ export async function createNotificationCampaignAction(school: string, formData:
   }) as { data: { status?: string; campaign_id?: string } | null };
   if (!data?.campaign_id || !["success", "duplicate"].includes(data.status || "")) {
     redirect(`${await getSchoolAdminPath(school)}/notifications/new?error=${encodeURIComponent(data?.status || "server_error")}`);
-  }
-  if (status === "queued" && data.status === "success") {
-    processNotificationQueue(data.campaign_id).catch(() => undefined);
   }
   redirect(`${await getSchoolAdminPath(school)}/notifications/${data.campaign_id}`);
 }
@@ -185,7 +181,6 @@ export async function queueAnnouncementNotification(school: string, announcement
     p_target_type: "audience", p_followed_entity_type: null, p_followed_entity_id: null,
     p_idempotency_key: randomUUID(),
   }) as { data: { status?: string; campaign_id?: string } | null };
-  if (data?.status === "success" && data.campaign_id) processNotificationQueue(data.campaign_id).catch(() => undefined);
   return { status: data?.status || "server_error" };
 }
 

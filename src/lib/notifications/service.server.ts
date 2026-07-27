@@ -8,6 +8,7 @@ import {
   WEB_PUSH_SOCKET_TIMEOUT_MS,
   WebPushTimeoutError,
   canStartProviderAttempt,
+  findMissingDeliveryDevices,
   isProvenUnattempted,
   summarizeCampaignDeliveries,
   withWebPushDeadline,
@@ -104,18 +105,20 @@ async function finalizeCampaign(
     : requestedOutcome === "completed" && totals.status === "failed" ? "failed"
     : requestedOutcome;
   const completedAt = new Date().toISOString();
+  const deferred = totals.status === "sending";
 
   try {
     await checkedRows(
       "finalize_campaign",
       db.from("notification_campaigns").update({
         status: totals.status,
-        sent_at: completedAt,
+        sent_at: deferred ? null : completedAt,
         eligible_count: eligible,
         attempted_count: totals.attempted,
         successful_count: totals.sent,
         failed_count: totals.failed,
         disabled_subscription_count: totals.disabled,
+        pending_count: totals.pendingOrAmbiguous,
         updated_at: completedAt,
       }).eq("id", campaign.id).eq("school_id", campaign.school_id)
         .eq("claim_token", campaign.claim_token).select("id")
@@ -131,10 +134,15 @@ async function finalizeCampaign(
         school_id: campaign.school_id,
         campaign_id: campaign.id,
         action: finalizationFailed
-          ? "campaign_delivery_finalization_failed" : "campaign_delivery_completed",
+          ? "campaign_delivery_finalization_failed"
+          : deferred
+            ? "campaign_delivery_deferred"
+            : "campaign_delivery_completed",
         summary: finalizationFailed
           ? "Notification delivery finalization could not be fully persisted."
-          : `Delivery processing finished with status ${totals.status}.`,
+          : deferred
+            ? `Notification delivery processing paused with ${totals.pendingOrAmbiguous} pending or ambiguous deliveries; cron recovery required.`
+            : `Delivery processing finished with status ${totals.status}.`,
         new_values: {
           outcome, eligible,
           attempted: totals.attempted, sent: totals.sent, failed: totals.failed,
@@ -143,7 +151,10 @@ async function finalizeCampaign(
           duplicate_protection: "automatic_retry_suppressed_after_attempt",
         },
         result_status: finalizationFailed || totals.status === "failed"
-          ? "failed" : "success",
+          ? "failed"
+          : deferred
+            ? "blocked"
+            : "success",
       })
     );
   } catch {
@@ -153,7 +164,7 @@ async function finalizeCampaign(
     diagnostic("campaign_finalization_failed", { outcome }, true);
     throw new NotificationDatabaseError("campaign_finalization");
   }
-  diagnostic("campaign_finalized", {
+  diagnostic(deferred ? "campaign_processing_deferred" : "campaign_finalized", {
     status: totals.status, outcome, eligible, attempted: totals.attempted,
   });
 }
@@ -218,10 +229,20 @@ export async function processNotificationQueue(campaignId?: string) {
       const eligible = deviceRows.filter((device) => enabled.has(device.id));
       eligibleCount = eligible.length;
 
-      if (eligible.length) await checked(
+      const priorDeliveries = eligible.length ? await checked(
+        "read_prior_deliveries",
+        db.from("notification_deliveries").select("device_id,delivery_status")
+          .eq("school_id", campaign.school_id).eq("campaign_id", campaign.id)
+          .in("device_id", eligible.map((device) => device.id))
+      ) : [];
+      const missingDeliveries = findMissingDeliveryDevices(
+        eligible,
+        ((priorDeliveries || []) as Delivery[]).map((delivery) => delivery.device_id)
+      );
+      if (missingDeliveries.length) await checked(
         "create_delivery_rows",
         db.from("notification_deliveries").upsert(
-          eligible.map((device) => ({
+          missingDeliveries.map((device) => ({
             school_id: campaign.school_id, campaign_id: campaign.id,
             device_id: device.id, audience: device.audience,
             campaign_title: campaign.title,
