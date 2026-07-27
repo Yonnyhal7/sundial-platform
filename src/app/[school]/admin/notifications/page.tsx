@@ -3,19 +3,7 @@ import { notFound } from "next/navigation";
 import { getSchoolAdminPath, requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { getSchoolForSetup } from "@/lib/schools";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
-import { formatTimestampInTimeZone } from "@/lib/timezones";
-import NotificationCampaignMenu from "@/components/admin/NotificationCampaignMenu";
-import {
-  getCampaignDeliverySummary,
-  getCampaignDisplayStatus,
-  getCampaignStatusLabel,
-} from "@/lib/notifications/campaignStatus";
-import {
-  archiveNotificationCampaignAction,
-  duplicateNotificationCampaignAction,
-  permanentlyDeleteNotificationCampaignAction,
-  restoreNotificationCampaignAction,
-} from "./actions";
+import NotificationCampaignList from "@/components/admin/NotificationCampaignList";
 
 export default async function NotificationsPage({ params, searchParams }: { params: Promise<{ school: string }>; searchParams: Promise<{ view?: string }> }) {
   const { school } = await params;
@@ -48,22 +36,6 @@ export default async function NotificationsPage({ params, searchParams }: { para
     <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm text-slate-500">{schoolData.name} Admin</p><h1 className="text-3xl font-bold">Notifications</h1></div><div className="flex gap-2"><Link href={`${base}/settings`} className="rounded-lg border px-4 py-2 font-bold">Settings</Link><Link href={`${base}/new`} className="rounded-lg bg-[var(--school-primary)] px-4 py-2 font-bold text-[var(--school-primary-text)]">Create notification</Link></div></header>
     <section className="mt-6 grid gap-4 sm:grid-cols-3"><div className="rounded-2xl border bg-white p-5 dark:border-[#3a3a3a] dark:bg-[#242424]"><p className="text-sm text-slate-500">Registered devices</p><p className="mt-1 text-3xl font-black">{devices || 0}</p></div><div className="rounded-2xl border bg-white p-5 dark:border-[#3a3a3a] dark:bg-[#242424]"><p className="text-sm text-slate-500">Active push subscriptions</p><p className="mt-1 text-3xl font-black">{subscriptions || 0}</p></div><div className="rounded-2xl border bg-white p-5 dark:border-[#3a3a3a] dark:bg-[#242424]"><p className="text-sm text-slate-500">Recent campaigns</p><p className="mt-1 text-3xl font-black">{recentCampaigns || 0}</p></div></section>
     <nav className="mt-6 flex flex-wrap gap-2">{["overview","scheduled","sent","drafts","archived"].map((item) => <Link key={item} href={item === "overview" ? base : `${base}?view=${item}`} className={`rounded-full px-4 py-2 text-sm font-bold capitalize ${view === item ? "bg-slate-950 text-white dark:bg-white dark:text-black" : "border"}`}>{item}</Link>)}</nav>
-    <section className="mt-5 overflow-hidden rounded-2xl border bg-white dark:border-[#3a3a3a] dark:bg-[#242424]">{campaigns?.length ? campaigns.map((campaign) => {
-      const displayStatus = getCampaignDisplayStatus(campaign);
-      const summary = getCampaignDeliverySummary(campaign);
-      const detailsHref = `${base}/${campaign.id}`;
-      return <article key={campaign.id} className="flex items-center gap-3 border-b p-5 last:border-0 dark:border-[#3a3a3a]">
-        <Link href={detailsHref} className="min-w-0 flex-1 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)]"><h2 className="font-bold">{campaign.title}</h2><p className="mt-1 line-clamp-1 text-sm text-slate-500">{campaign.body}</p><p className="mt-2 text-xs text-slate-500">{formatTimestampInTimeZone(campaign.created_at, timeZone)}</p></Link>
-        <div className="shrink-0 text-right"><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold dark:bg-[#333]">{getCampaignStatusLabel(displayStatus)}</span>{summary && <p className="mt-2 whitespace-pre-line text-xs text-slate-500">{summary}</p>}</div>
-        <NotificationCampaignMenu
-          detailsHref={detailsHref}
-          archived={Boolean(campaign.archived_at)}
-          duplicateAction={duplicateNotificationCampaignAction.bind(null, school, campaign.id)}
-          archiveAction={archiveNotificationCampaignAction.bind(null, school, campaign.id, campaign.version)}
-          restoreAction={restoreNotificationCampaignAction.bind(null, school, campaign.id, campaign.version)}
-          deleteAction={permanentlyDeleteNotificationCampaignAction.bind(null, school, campaign.id, campaign.version)}
-        />
-      </article>;
-    }) : <p className="p-8 text-center text-slate-500">No notifications in this view.</p>}</section>
+    <section className="mt-5 overflow-hidden rounded-2xl border bg-white dark:border-[#3a3a3a] dark:bg-[#242424]">{campaigns?.length ? <NotificationCampaignList campaigns={campaigns} school={school} base={base} timeZone={timeZone} /> : <p className="p-8 text-center text-slate-500">No notifications in this view.</p>}</section>
   </main>;
 }

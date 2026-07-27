@@ -64,7 +64,7 @@ describe("notification UX integration contracts", () => {
 
   it("uses aggregate-derived status and delivery copy on every campaign surface", () => {
     for (const page of [
-      "src/app/[school]/admin/notifications/page.tsx",
+      "src/components/admin/NotificationCampaignList.tsx",
       "src/app/[school]/admin/notifications/[campaignId]/page.tsx",
     ]) {
       const source = read(page);

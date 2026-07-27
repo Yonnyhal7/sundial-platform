@@ -6,11 +6,12 @@ const migration = read(
   "supabase/migrations/20260727120000_notification_campaign_archive.sql"
 );
 const listPage = read("src/app/[school]/admin/notifications/page.tsx");
+const campaignList = read("src/components/admin/NotificationCampaignList.tsx");
 const detailPage = read(
   "src/app/[school]/admin/notifications/[campaignId]/page.tsx"
 );
 const actions = read("src/app/[school]/admin/notifications/actions.ts");
-const menu = read("src/components/admin/NotificationCampaignMenu.tsx");
+const menu = read("src/components/admin/NotificationCampaignList.tsx");
 const inboxApi = read("src/app/api/schools/[school]/notifications/route.ts");
 const processor = read("src/lib/notifications/service.server.ts");
 
@@ -20,7 +21,7 @@ describe("notification campaign archive lifecycle", () => {
     expect(listPage).toContain('view === "archived"');
     expect(listPage).toContain('.not("archived_at", "is", null)');
     expect(listPage).toContain('.is("archived_at", null)');
-    expect(listPage).toContain("getCampaignDeliverySummary(campaign)");
+    expect(campaignList).toContain("getCampaignDeliverySummary(campaign)");
   });
 
   it("provides the required card and archived actions", () => {
