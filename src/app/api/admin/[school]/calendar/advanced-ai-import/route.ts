@@ -37,7 +37,12 @@ export async function POST(request: Request, context: { params: Promise<{ school
     return response;
   } catch (error) {
     sessionId = sessionId || (error as { importSessionId?: string }).importSessionId;
-    advancedImportLogger.error("Workspace preparation failed", { sessionId, message: error instanceof Error ? error.message : "Unknown error" });
-    return Response.json({ status: "analysis_failed", message: "Sundial could not prepare the document workspace. Please retry.", retryable: true, reasonCode: "workspace_preparation_failed", importSessionId: sessionId }, { status: 500, headers: sessionId ? { "x-sundial-advanced-import-session-id": sessionId } : undefined });
+    const diagnostic = (error as { importDiagnostic?: { failingStep?: string; pageNumber?: number | null } }).importDiagnostic;
+    const exception = error instanceof Error ? error.message : "Unknown rendering error";
+    const location = diagnostic?.failingStep
+      ? `${diagnostic.failingStep}${diagnostic.pageNumber ? ` on page ${diagnostic.pageNumber}` : ""}`
+      : "workspace preparation";
+    advancedImportLogger.error("Workspace preparation failed", { sessionId, currentStage: "rendering_pages", rendererImplementation: "pdf-parse/PDFParse.getScreenshot + @napi-rs/canvas", pageNumber: diagnostic?.pageNumber ?? null, failingStep: diagnostic?.failingStep || null, elapsedMs: null, importDiagnostic: diagnostic, message: exception });
+    return Response.json({ status: "analysis_failed", message: `Advanced Import rendering failed during ${location}: ${exception}`, retryable: true, reasonCode: "workspace_preparation_failed", importSessionId: sessionId, diagnostic }, { status: 500, headers: sessionId ? { "x-sundial-advanced-import-session-id": sessionId } : undefined });
   }
 }

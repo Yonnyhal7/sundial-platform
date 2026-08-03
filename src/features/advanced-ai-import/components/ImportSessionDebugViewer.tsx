@@ -21,6 +21,7 @@ export function ImportSessionDebugViewer({ schoolSlug, sessionId }: { schoolSlug
       <p>{data.sourcePdfUrl ? <a className="font-bold underline" href={data.sourcePdfUrl} target="_blank" rel="noreferrer">Open uploaded PDF</a> : "Uploaded PDF unavailable"}</p>
       <div><h3 className="font-bold">Rendered Pages & Metadata</h3><div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{data.pages.map((page) => <figure key={String(page.page_number)} className="rounded-lg border border-purple-200 p-2 dark:border-purple-900">{page.signedUrl && <Image unoptimized src={page.signedUrl} width={Number(page.width) || 1} height={Number(page.height) || 1} alt={`Rendered PDF page ${page.page_number}`} className="h-auto w-full" />}<figcaption className="mt-2"><pre className="overflow-auto">{JSON.stringify(page, null, 2)}</pre></figcaption></figure>)}</div></div>
       <DebugSection title="Artifact Registry" value={data.artifacts} />
+      <DebugSection title="Rendering Failure" value={data.diagnostics.filter((item) => item.category === "rendering_failure" || String(item.name).endsWith("_error"))} />
       <DebugSection title="Diagnostics" value={data.diagnostics} />
     </div>}
   </aside>;

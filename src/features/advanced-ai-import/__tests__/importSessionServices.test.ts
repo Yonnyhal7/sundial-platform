@@ -36,9 +36,15 @@ describe("Advanced Import Session foundation", () => {
     const pdf = await PDFDocument.create();
     pdf.addPage([144, 144]);
     pdf.addPage([144, 144]);
-    const pages = await new DocumentRendererService().render(await pdf.save());
+    const events: string[] = [];
+    const pages = await new DocumentRendererService().render(await pdf.save(), (event) => { events.push(`${event.step}:${event.phase}:${event.pageNumber ?? "document"}`); });
     expect(pages).toHaveLength(2);
     expect(pages[0].metadata).toMatchObject({ page: 1, width: 600, height: 600, dpi: 300, rotation: 0 });
     expect(Array.from(pages[0].png.slice(1, 4))).toEqual([80, 78, 71]);
+    expect(events).toContain("renderer_import:before:document");
+    expect(events).toContain("document_info:after:document");
+    expect(events).toContain("page_render:before:1");
+    expect(events).toContain("page_render:after:2");
+    expect(events).toContain("renderer_cleanup:after:document");
   }, 20_000);
 });

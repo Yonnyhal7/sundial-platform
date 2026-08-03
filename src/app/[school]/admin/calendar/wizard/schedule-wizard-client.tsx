@@ -2940,7 +2940,7 @@ function AiCalendarImportCard({
         }
         setStatus(result.status === "validation_error" ? "failed" : "failed");
         setMessage(result.message);
-        onAiImportEvent?.("failed", { status: result.status });
+        onAiImportEvent?.("failed", { status: result.status, importSessionId });
         clearPendingAiImport();
         return;
       }

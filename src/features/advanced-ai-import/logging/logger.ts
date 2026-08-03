@@ -7,4 +7,7 @@ export const advancedImportLogger = {
   error(message: string, metadata: Metadata = {}) {
     console.error(`[Advanced Import] ${message}`, metadata);
   },
+  warn(message: string, metadata: Metadata = {}) {
+    console.warn(`[Advanced Import] ${message}`, metadata);
+  },
 };
