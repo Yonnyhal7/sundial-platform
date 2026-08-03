@@ -2,7 +2,8 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import type { SchoolSetupInvitationView } from "@/lib/invitations/acceptance.server";
-import { acceptInvitationAction, type AcceptInvitationState } from "./actions";
+import { acceptInvitationAction } from "./actions";
+import type { AcceptInvitationState } from "./invitationActionState";
 
 function unavailableMessage(status: SchoolSetupInvitationView["status"]) {
   if (status === "expired") {

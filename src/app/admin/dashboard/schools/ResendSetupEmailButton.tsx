@@ -1,10 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import {
-  resendSchoolSetupInvitationAction,
-  type ResendInvitationState,
-} from "./invitation-actions";
+import { resendSchoolSetupInvitationAction } from "./invitation-actions";
+import type { ResendInvitationState } from "./invitationActionState";
 
 export default function ResendSetupEmailButton({
   inviteId,

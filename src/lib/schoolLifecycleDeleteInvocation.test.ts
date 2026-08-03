@@ -37,9 +37,8 @@ describe("archived school permanent deletion invocation", () => {
     }
     expect(actions).toContain("server_action_entered");
     expect(actions).toContain("deletion_transaction_started");
-    expect(actions).not.toMatch(
-      /console\.(?:info|warn|error)\([^)]*school\.(?:id|name|subdomain)/,
-    );
+    expect(actions).toContain("schoolId: school.id");
+    expect(actions).not.toMatch(/console\.(?:info|warn|error)\([^)]*school\.(?:name|subdomain)/);
   });
 
   it("distinguishes authorization, database, storage, and success results", () => {
@@ -53,6 +52,8 @@ describe("archived school permanent deletion invocation", () => {
     }
     expect(actions).toContain("safeDatabaseFailure");
     expect(actions).toContain("databaseObject");
+    expect(actions).toContain("rpcFunction");
+    for (const field of ["message", "details", "hint", "schema", "table", "column", "constraint", "routine"]) expect(actions).toContain(`${field}:`);
   });
 
   it("deletes invitations and newer restrictive school relationships before the school", () => {
@@ -78,15 +79,13 @@ describe("archived school permanent deletion invocation", () => {
   });
 
   it("retains an unknown-foreign-key guard and sanitized database diagnostics", () => {
-    expect(migration).toContain(
+    const fix = source("supabase/migrations/20260803100000_fix_archived_school_permanent_deletion.sql").toLowerCase();
+    expect(fix).toContain(
       "constraint_row.confrelid = 'public.schools'::regclass",
     );
-    expect(migration).toContain(
-      "deletion blocked by unaudited school foreign keys",
-    );
-    expect(migration).toContain("get stacked diagnostics");
-    expect(migration).toContain("constraint_name");
-    expect(migration).toContain("table_name");
-    expect(migration).not.toContain("sqlerrm");
+    expect(fix).toContain("deletion blocked by remaining school dependencies");
+    expect(fix).toContain("get stacked diagnostics");
+    for(const field of ["message_text","pg_exception_detail","pg_exception_hint","schema_name","table_name","column_name","constraint_name","pg_exception_context"])expect(fix).toContain(field);
+    expect(fix).not.toContain("sqlerrm");
   });
 });

@@ -5,6 +5,7 @@ export type SchoolLifecycleState = {
     | "client_invocation_failure"
     | "authorization_failure"
     | "validation_failure"
+    | "remaining_dependencies"
     | "database_failure"
     | "storage_cleanup_failure"
     | "success";

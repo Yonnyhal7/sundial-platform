@@ -1,7 +1,8 @@
 "use client";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { FEATURE_LABELS, PLATFORM_FEATURE_KEYS, type PlatformFeatureKey, type PlatformSettingsRow } from "@/lib/platformSettings";
-import { INITIAL_SETTINGS_STATE, saveGeneralSettings, saveNewSchoolDefaults } from "./actions";
+import { INITIAL_SETTINGS_STATE } from "./actionState";
+import { saveGeneralSettings, saveNewSchoolDefaults } from "./actions";
 import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
 import TimezoneSelect from "@/components/TimezoneSelect";
 

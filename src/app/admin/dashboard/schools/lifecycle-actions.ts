@@ -39,25 +39,68 @@ type RpcResult = {
   constraint?: string;
   table?: string;
   databaseObject?: string;
+  details?: string;
+  hint?: string;
+  schema?: string;
+  column?: string;
+  routine?: string;
+  stage?: string;
 };
 
 function safeDatabaseFailure(error: unknown) {
   const value =
     error && typeof error === "object"
-      ? (error as { code?: unknown; message?: unknown; details?: unknown })
+      ? (error as Record<string, unknown>)
       : {};
   const text = [value.message, value.details]
     .filter((item): item is string => typeof item === "string")
     .join(" ");
-  const identifier = text.match(
-    /\b(?:constraint|table|relation)\s+"?([a-z_][a-z0-9_$.]{0,127})"?/i,
-  )?.[1];
+  const identifiers = [...text.matchAll(
+    /\b(?:constraint|table|relation|object)(?:\s+|=)"?([a-z_][a-z0-9_$.]{0,499})"?/gi,
+  )].map((match)=>match[1]).filter((value)=>value.toLowerCase()!=="unknown");
   return {
     code:
       typeof value.code === "string" && /^[A-Z0-9_]{3,20}$/i.test(value.code)
         ? value.code
         : "unknown",
-    databaseObject: identifier || "unknown",
+    databaseObject: identifiers.at(-1) || "unknown",
+    message:
+      typeof value.message === "string" ? value.message.slice(0, 1000) : "unknown",
+    details:
+      typeof value.details === "string" ? value.details.slice(0, 1000) : "unknown",
+    hint: typeof value.hint === "string" ? value.hint.slice(0, 1000) : "unknown",
+    schema:
+      typeof value.schema === "string" ? value.schema.slice(0, 128) : "unknown",
+    table: typeof value.table === "string" ? value.table.slice(0, 128) : "unknown",
+    column:
+      typeof value.column === "string" ? value.column.slice(0, 128) : "unknown",
+    constraint:
+      typeof value.constraint === "string"
+        ? value.constraint.slice(0, 128)
+        : "unknown",
+    routine:
+      typeof value.routine === "string"
+        ? value.routine.slice(0, 128)
+        : "permanently_delete_archived_school",
+  };
+}
+
+function resultDatabaseFailure(result: RpcResult) {
+  const safe = (value: unknown, max = 1000) =>
+    typeof value === "string" ? value.slice(0, max) : "unknown";
+  const code = safe(result.code, 20);
+  return {
+    code: /^[A-Z0-9_]{3,20}$/i.test(code) ? code : "unknown",
+    message: safe(result.message),
+    details: safe(result.details),
+    hint: safe(result.hint),
+    schema: safe(result.schema, 128),
+    table: safe(result.table, 128),
+    column: safe(result.column, 128),
+    constraint: safe(result.constraint, 128),
+    routine: safe(result.routine, 128),
+    databaseObject: safe(result.databaseObject, 500),
+    databaseStage: safe(result.stage, 80),
   };
 }
 
@@ -532,7 +575,10 @@ export async function permanentlyDeleteSchoolAction(
     };
   }
 
-  logDeletionStage("deletion_transaction_started");
+  logDeletionStage("deletion_transaction_started", {
+    schoolId: school.id,
+    rpcFunction: "permanently_delete_archived_school",
+  });
   const { data, error } = await supabase.rpc(
     "permanently_delete_archived_school",
     {
@@ -551,22 +597,12 @@ export async function permanentlyDeleteSchoolAction(
       .maybeSingle<{ last_error: string | null }>();
     const resultFailure =
       !error && result
-        ? {
-            code:
-              typeof result.code === "string" &&
-              /^[A-Z0-9_]{3,20}$/i.test(result.code)
-                ? result.code
-                : "unknown",
-            databaseObject:
-              [result.constraint, result.table, result.databaseObject].find(
-                (value) =>
-                  typeof value === "string" &&
-                  /^[a-z_][a-z0-9_$.,]{0,499}$/i.test(value),
-              ) || "unknown",
-          }
+        ? resultDatabaseFailure(result)
         : safeDatabaseFailure(error || { message: failedJob?.last_error });
     console.error("[School deletion]", {
       stage: "database_deletion_failed",
+      schoolId: school.id,
+      rpcFunction: "permanently_delete_archived_school",
       reason: result?.status || "rpc_error",
       ...resultFailure,
     });
@@ -575,10 +611,18 @@ export async function permanentlyDeleteSchoolAction(
       reason:
         result?.status === "permission_error"
           ? "authorization_failure"
+          : result?.status === "school_not_archived"
+            ? "validation_failure"
+          : result?.status === "remaining_dependencies"
+            ? "remaining_dependencies"
           : "database_failure",
       message:
         result?.status === "permission_error"
           ? "Only an authenticated SuperAdmin can permanently delete a school."
+          : result?.status === "school_not_archived"
+            ? "Archive this school before deleting it."
+          : result?.status === "remaining_dependencies"
+            ? "Deletion is blocked by remaining school records. Update the deletion support and retry; no school data was removed."
           : "The database deletion failed. No school data was removed.",
     };
   }

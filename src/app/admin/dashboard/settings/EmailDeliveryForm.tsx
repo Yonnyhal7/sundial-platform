@@ -2,7 +2,8 @@
 import {useActionState,useState} from "react";
 import type {PlatformSettingsRow,SchoolSetupEmailProvider} from "@/lib/platformSettings";
 import type {ProviderConfiguration} from "@/lib/email/schoolSetupProviders.server";
-import {INITIAL_SETTINGS_STATE,INITIAL_TEST_EMAIL_STATE,saveEmailDeliverySettings,sendTestSchoolSetupEmail} from "./actions";
+import {INITIAL_SETTINGS_STATE,INITIAL_TEST_EMAIL_STATE} from "./actionState";
+import {saveEmailDeliverySettings,sendTestSchoolSetupEmail} from "./actions";
 import {sundialPrimaryButtonClass} from "@/lib/ui/buttonStyles";
 const labels={google_workspace:"Google Workspace",resend:"Resend"} as const;
 const descriptions={google_workspace:"Sends through the established mrhcodes.com Google Workspace account as Sundial School Setup <sundialk12@mrhcodes.com>",resend:"Sends through Resend as Sundial School Setup <setup@sundialk12.com>"} as const;

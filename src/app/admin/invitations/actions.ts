@@ -8,8 +8,7 @@ import {
 } from "@/lib/invitations/acceptance.server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { SCHOOL_SETUP_ACCEPTANCE_COOKIE } from "@/lib/invitations/constants";
-
-export type AcceptInvitationState = { error?: string };
+import type { AcceptInvitationState } from "./invitationActionState";
 
 export async function acceptInvitationAction(
   _previousState: AcceptInvitationState,

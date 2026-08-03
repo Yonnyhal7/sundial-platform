@@ -18,17 +18,19 @@ function SubmitButton({
   enabled,
   mode,
   pending,
+  retry,
 }: {
   enabled: boolean;
   mode: LifecycleMode;
   pending: boolean;
+  retry: boolean;
 }) {
   const label =
     mode === "archive"
       ? "Archive School"
       : mode === "restore"
         ? "Restore School"
-        : "Permanently Delete";
+        : retry ? "Retry Permanent Deletion" : "Permanently Delete";
   return (
     <button
       type="submit"
@@ -285,7 +287,12 @@ export default function SchoolLifecycleDialog({
             >
               Cancel
             </button>
-            <SubmitButton enabled={enabled} mode={mode} pending={pending} />
+            <SubmitButton
+              enabled={enabled}
+              mode={mode}
+              pending={pending}
+              retry={mode === "delete" && state.status === "error"}
+            />
           </div>
         </form>
       </dialog>
