@@ -289,9 +289,6 @@ export type AiImportDraftMetadata = {
   appliedAt?: string;
   banner?: string;
   pdfHash?: string;
-  cacheHit?: boolean;
-  cacheAnalyzedAt?: string;
-  cacheStrategy?: "text-gpt5-mini" | "pdf-gpt5";
   analysisVersion?: string;
   issueSchemaVersion?: number;
   analysisAttemptId?: string;
@@ -333,12 +330,6 @@ export type AnalyzeCalendarPdfResult =
       importResult: AiCalendarImportResult;
       outcome?: "successful" | "repaired" | "reviewable";
       analysisStrategy?: "text-gpt5-mini" | "pdf-gpt5";
-      cache?: {
-        hit: boolean;
-        analyzedAt?: string;
-        strategy?: "text-gpt5-mini" | "pdf-gpt5";
-        version?: string;
-      };
     }
   | {
       status:

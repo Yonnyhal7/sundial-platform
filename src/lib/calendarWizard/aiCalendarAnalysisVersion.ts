@@ -1,4 +1,4 @@
-export const AI_CALENDAR_ANALYSIS_VERSION = "calendar-v13-page-selection-v1";
+export const AI_CALENDAR_ANALYSIS_VERSION = "calendar-v14-gpt56-sol-prompt-v1";
 export const AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION = 3;
 export const AI_CALENDAR_ISSUE_NORMALIZATION_VERSION = "issue-normalization-v2";
 export const AI_CALENDAR_CACHE_SCHEMA_VERSION = "cache-schema-v2";

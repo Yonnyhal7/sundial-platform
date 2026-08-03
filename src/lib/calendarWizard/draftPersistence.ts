@@ -254,15 +254,6 @@ function normalizeAiImport(aiImport: unknown): AiImportDraftMetadata | null {
       typeof stripped.pdfHash === "string" && /^[0-9a-f]{64}$/i.test(stripped.pdfHash)
         ? stripped.pdfHash
         : undefined,
-    cacheHit: stripped.cacheHit === true,
-    cacheAnalyzedAt:
-      typeof stripped.cacheAnalyzedAt === "string"
-        ? stripped.cacheAnalyzedAt
-        : undefined,
-    cacheStrategy:
-      stripped.cacheStrategy === "text-gpt5-mini" || stripped.cacheStrategy === "pdf-gpt5"
-        ? stripped.cacheStrategy
-        : undefined,
     analysisVersion:
       typeof stripped.analysisVersion === "string"
         ? stripped.analysisVersion

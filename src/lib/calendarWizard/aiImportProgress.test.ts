@@ -18,7 +18,7 @@ describe("AI import progress stages", () => {
   });
 
   it("reports concrete progress only for bounded server stages", () => {
-    expect(getAiImportStageDetails("checking_cache").progress).toBe(22);
+    expect(getAiImportStageDetails("checking_attempt").progress).toBe(22);
     expect(getAiImportStageDetails("falling_back_to_pdf").progress).toBe(75);
     expect(getAiImportStageDetails("saving_result").progress).toBe(99);
     expect(getAiImportStageDetails("ready").progress).toBe(100);

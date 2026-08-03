@@ -63,8 +63,6 @@ describe("AI Calendar Debug safe snapshot", () => {
         state: "review",
         result: importResult,
         resolutions: [],
-        cacheHit: true,
-        cacheStrategy: "pdf-gpt5",
         analysisVersion: "calendar-v12",
         analysisAttemptId: "attempt-1",
       },
@@ -89,7 +87,6 @@ describe("AI Calendar Debug safe snapshot", () => {
       status: "automatically_resolved",
       sourceLabels: ["Admission Day (In Lieu)", "Christmas Recess"],
       currentClassification: "No school; no schedule assigned; rotation paused",
-      cacheState: "cache_hit",
       rotationBehavior: "pause",
       analysisAttemptId: "attempt-1",
     });

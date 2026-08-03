@@ -1168,7 +1168,7 @@ export async function getAiCalendarDebugSnapshotAction(
     },
     warningResolutions: metadata.warningResolutions || [],
     restore: {
-      restoredFromCache: metadata.cacheHit === true,
+      restoredFromCache: false,
       restoredFromWizardDraft: true,
       cachedResultVersion: metadata.analysisVersion,
       draftVersion: draft.wizard_data.version,

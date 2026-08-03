@@ -7,11 +7,9 @@ const mocks = vi.hoisted(() => ({
   getSchoolForSetup: vi.fn(),
   canAccessAdminSection: vi.fn(),
   analyzeCalendarPdf: vi.fn(),
-  readCalendarAnalysisCache: vi.fn(),
-  readCalendarAnalysisCacheEntry: vi.fn(),
+  readCalendarAnalysisAttemptResult: vi.fn(),
   readCalendarAnalysisStage: vi.fn(),
-  writeCalendarAnalysisCache: vi.fn(),
-  invalidateCalendarAnalysisCache: vi.fn(),
+  writeCalendarAnalysisAttemptResult: vi.fn(),
   hasPendingCalendarAnalysis: vi.fn(),
   getCalendarAnalysisFailure: vi.fn(),
   getCalendarAnalysisStage: vi.fn(),
@@ -43,11 +41,9 @@ vi.mock("@/lib/calendarWizard/aiCalendarAnalysisCache.server", () => ({
   AI_CALENDAR_PDF_STRATEGY: "pdf-gpt5",
   AI_CALENDAR_TEXT_STRATEGY: "text-gpt5-mini",
   AI_CALENDAR_STALE_DEADLINE_GRACE_MS: 15_000,
-  readCalendarAnalysisCache: mocks.readCalendarAnalysisCache,
-  readCalendarAnalysisCacheEntry: mocks.readCalendarAnalysisCacheEntry,
+  readCalendarAnalysisAttemptResult: mocks.readCalendarAnalysisAttemptResult,
   readCalendarAnalysisStage: mocks.readCalendarAnalysisStage,
-  writeCalendarAnalysisCache: mocks.writeCalendarAnalysisCache,
-  invalidateCalendarAnalysisCache: mocks.invalidateCalendarAnalysisCache,
+  writeCalendarAnalysisAttemptResult: mocks.writeCalendarAnalysisAttemptResult,
   hasPendingCalendarAnalysis: mocks.hasPendingCalendarAnalysis,
   getCalendarAnalysisFailure: mocks.getCalendarAnalysisFailure,
   getCalendarAnalysisStage: mocks.getCalendarAnalysisStage,
@@ -59,7 +55,6 @@ vi.mock("@/lib/calendarWizard/aiCalendarAnalysisCache.server", () => ({
 }));
 
 import { POST, maxDuration } from "@/app/api/admin/[school]/calendar/ai-import/route";
-import { POST as POST_INVALIDATE } from "@/app/api/admin/[school]/calendar/ai-import/invalidate/route";
 import { GET as GET_RESULT } from "@/app/api/admin/[school]/calendar/ai-import/result/route";
 import { GET as GET_STATUS } from "@/app/api/admin/[school]/calendar/ai-import/status/route";
 
@@ -70,17 +65,6 @@ function pdfFile(bytes = "%PDF-1.7\ncalendar") {
 function requestWithFile(file: File | Blob | string) {
   const formData = new FormData();
   formData.set("calendarPdf", file);
-  return new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import", {
-    method: "POST",
-    body: formData,
-  });
-}
-
-function requestWithFileAndOptions(file: File | Blob | string, options: { analyzeAgain?: boolean }) {
-  const formData = new FormData();
-  formData.set("calendarPdf", file);
-  if (options.analyzeAgain) formData.set("analyzeAgain", "true");
-
   return new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import", {
     method: "POST",
     body: formData,
@@ -107,8 +91,7 @@ describe("AI import API route", () => {
     vi.clearAllMocks();
     mocks.getSchoolForSetup.mockResolvedValue({ id: "school-1", subdomain: "test" });
     mocks.canAccessAdminSection.mockResolvedValue(true);
-    mocks.readCalendarAnalysisCache.mockResolvedValue(null);
-    mocks.readCalendarAnalysisCacheEntry.mockResolvedValue(null);
+    mocks.readCalendarAnalysisAttemptResult.mockResolvedValue(null);
     mocks.readCalendarAnalysisStage.mockResolvedValue(null);
     mocks.hasPendingCalendarAnalysis.mockReturnValue(false);
     mocks.getCalendarAnalysisFailure.mockReturnValue(null);
@@ -157,69 +140,46 @@ describe("AI import API route", () => {
     );
   });
 
-  it("returns a verified cached result for the same school and PDF", async () => {
-    mocks.readCalendarAnalysisCacheEntry.mockResolvedValue({
+  it("recovers an exact completed attempt on a transport retry without another analysis", async () => {
+    const attemptId = "11111111-1111-4111-8111-111111111111";
+    mocks.readCalendarAnalysisAttemptResult.mockResolvedValueOnce({
       result: createMockAiCalendarImportResult(),
-      createdAt: "2026-07-16T12:00:00.000Z",
+      createdAt: new Date().toISOString(),
       strategy: "pdf-gpt5",
-      model: "gpt-5",
+      model: "gpt-5.6-sol",
       version: "calendar-v3",
       analyzerVersion: "calendar-v3",
     });
+
+    const response = await POST(requestWithAttempt(pdfFile(), attemptId), {
+      params: Promise.resolve({ school: "test" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.analyzeCalendarPdf).not.toHaveBeenCalled();
+    expect(mocks.claimCalendarAnalysisAttempt).not.toHaveBeenCalled();
+  });
+
+  it("always analyzes the same completed PDF again without a reusable-result read", async () => {
+    await post();
+    await post();
+
+    expect(mocks.analyzeCalendarPdf).toHaveBeenCalledTimes(2);
+    expect(mocks.readCalendarAnalysisAttemptResult).not.toHaveBeenCalled();
+  });
+
+  it("prevents a concurrent duplicate attempt from starting another analysis", async () => {
+    mocks.claimCalendarAnalysisAttempt.mockResolvedValue(false);
+
     const response = await post();
     const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({ status: "success" });
-    expect(body.cache).toMatchObject({ hit: true, strategy: "pdf-gpt5" });
+    expect(response.status).toBe(409);
+    expect(body).toMatchObject({ reasonCode: "analysis_attempt_superseded" });
     expect(mocks.analyzeCalendarPdf).not.toHaveBeenCalled();
-    expect(mocks.readCalendarAnalysisCacheEntry).toHaveBeenCalledOnce();
   });
 
-  it("bypasses a successful cache entry when Analyze Again is requested", async () => {
-    mocks.readCalendarAnalysisCacheEntry.mockResolvedValue({
-      result: createMockAiCalendarImportResult(),
-      createdAt: "2026-07-16T12:00:00.000Z",
-      strategy: "pdf-gpt5",
-      model: "gpt-5",
-      version: "calendar-v3",
-      analyzerVersion: "calendar-v3",
-    });
-
-    const response = await POST(
-      requestWithFileAndOptions(pdfFile(), { analyzeAgain: true }),
-      { params: Promise.resolve({ school: "test" }) }
-    );
-
-    expect(response.status).toBe(200);
-    expect(mocks.readCalendarAnalysisCacheEntry).not.toHaveBeenCalled();
-    expect(mocks.invalidateCalendarAnalysisCache).not.toHaveBeenCalled();
-    expect(mocks.analyzeCalendarPdf).toHaveBeenCalledOnce();
-  });
-
-  it("invalidates then analyzes when requested", async () => {
-    const formData = new FormData();
-    formData.set("calendarPdf", pdfFile());
-    formData.set("cacheMode", "invalidate_and_analyze");
-
-    const response = await POST(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import", {
-        method: "POST",
-        body: formData,
-      }),
-      { params: Promise.resolve({ school: "test" }) }
-    );
-
-    expect(response.status).toBe(200);
-    expect(mocks.invalidateCalendarAnalysisCache).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ schoolId: "school-1" })]),
-      "user_requested_reanalysis"
-    );
-    expect(mocks.readCalendarAnalysisCacheEntry).not.toHaveBeenCalled();
-    expect(mocks.analyzeCalendarPdf).toHaveBeenCalledOnce();
-  });
-
-  it("writes successful fast text results to the text strategy cache", async () => {
+  it("persists successful fast text results only for attempt recovery", async () => {
     mocks.analyzeCalendarPdf.mockResolvedValue({
       status: "success",
       importResult: createMockAiCalendarImportResult(),
@@ -229,7 +189,7 @@ describe("AI import API route", () => {
     const response = await post();
 
     expect(response.status).toBe(200);
-    expect(mocks.writeCalendarAnalysisCache).toHaveBeenCalledWith(
+    expect(mocks.writeCalendarAnalysisAttemptResult).toHaveBeenCalledWith(
       expect.objectContaining({ strategy: "text-gpt5-mini" }),
       expect.any(Object),
       expect.any(String)
@@ -344,8 +304,8 @@ describe("AI import API route", () => {
     expect(mocks.analyzeCalendarPdf).not.toHaveBeenCalled();
   });
 
-  it("reports a cached result as ready during status polling", async () => {
-    mocks.readCalendarAnalysisCacheEntry.mockResolvedValue({
+  it("reports the initiating attempt result as ready during status polling", async () => {
+    mocks.readCalendarAnalysisAttemptResult.mockResolvedValue({
       result: createMockAiCalendarImportResult(),
       createdAt: new Date().toISOString(),
     });
@@ -361,7 +321,6 @@ describe("AI import API route", () => {
       status: "ready",
       resultId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       stage: "ready",
-      cacheHit: true,
     });
   });
 
@@ -467,9 +426,9 @@ describe("AI import API route", () => {
     });
   });
 
-  it("returns a cached result through the tenant-checked result endpoint", async () => {
+  it("returns an attempt-scoped recovery result through the tenant-checked endpoint", async () => {
     const importResult = createMockAiCalendarImportResult();
-    mocks.readCalendarAnalysisCacheEntry.mockResolvedValue({
+    mocks.readCalendarAnalysisAttemptResult.mockResolvedValue({
       result: importResult,
       createdAt: "2026-07-16T12:00:00.000Z",
       strategy: "pdf-gpt5",
@@ -488,13 +447,8 @@ describe("AI import API route", () => {
     expect(body).toMatchObject({
       status: "success",
       importResult,
-      cache: {
-        hit: true,
-        analyzedAt: "2026-07-16T12:00:00.000Z",
-        strategy: "pdf-gpt5",
-        version: "calendar-v3",
-      },
     });
+    expect(body).not.toHaveProperty("cache");
   });
 
   it("enforces tenant permissions for status lookups", async () => {
@@ -513,44 +467,4 @@ describe("AI import API route", () => {
     });
   });
 
-  it("invalidates a tenant-scoped cache result by PDF hash", async () => {
-    const response = await POST_INVALIDATE(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/invalidate", {
-        method: "POST",
-        body: JSON.stringify({
-          pdfHash: "f".repeat(64),
-          reason: "user_rejected_result",
-        }),
-      }),
-      { params: Promise.resolve({ school: "test" }) }
-    );
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body).toEqual({ status: "ok" });
-    expect(mocks.invalidateCalendarAnalysisCache).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ schoolId: "school-1", pdfHash: "f".repeat(64) }),
-      ]),
-      "user_rejected_result"
-    );
-  });
-
-  it("enforces tenant permissions before invalidating cache", async () => {
-    mocks.canAccessAdminSection.mockResolvedValue(false);
-
-    const response = await POST_INVALIDATE(
-      new Request("https://www.sundialk12.com/api/admin/test/calendar/ai-import/invalidate", {
-        method: "POST",
-        body: JSON.stringify({
-          pdfHash: "f".repeat(64),
-          reason: "user_rejected_result",
-        }),
-      }),
-      { params: Promise.resolve({ school: "test" }) }
-    );
-
-    expect(response.status).toBe(403);
-    expect(mocks.invalidateCalendarAnalysisCache).not.toHaveBeenCalled();
-  });
 });

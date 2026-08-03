@@ -6,7 +6,7 @@ import {
   hasPendingCalendarAnalysis,
   markStaleCalendarAnalysisIfNeeded,
   readCalendarAnalysisStage,
-  readCalendarAnalysisCacheEntry,
+  readCalendarAnalysisAttemptResult,
 } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
 import {
   logAiImportStatusDiagnostic,
@@ -65,11 +65,11 @@ export async function GET(request: Request, context: RouteContext) {
 
   let readyKey = null;
   for (const cacheKey of access.cacheKeys) {
-    const cached = await readCalendarAnalysisCacheEntry(cacheKey, {
-      minCreatedAt: access.startedAt || undefined,
+    const recovered = await readCalendarAnalysisAttemptResult(cacheKey, {
+      minCreatedAt: access.startedAt || Date.now(),
       analysisAttemptId: access.analysisAttemptId,
     });
-    if (cached) {
+    if (recovered) {
       readyKey = cacheKey;
       break;
     }
@@ -83,7 +83,7 @@ export async function GET(request: Request, context: RouteContext) {
         analysisAttemptId: access.analysisAttemptId,
       }));
     logAiImportStatusDiagnostic({
-      event: "cached_result_found",
+      event: "attempt_result_recovered",
       school,
       durationMs: Date.now() - startedAt,
     });
@@ -92,7 +92,6 @@ export async function GET(request: Request, context: RouteContext) {
       resultId: readyKey.pdfHash,
       ...statusMetadata(readyStage),
       stage: "ready",
-      cacheHit: true,
     });
   }
 
@@ -180,7 +179,7 @@ export async function GET(request: Request, context: RouteContext) {
     });
     return NextResponse.json({
       status: "pending",
-      stage: activeStage?.stage || "checking_cache",
+      stage: activeStage?.stage || "checking_attempt",
       strategy: activeStage?.strategy,
       ...statusMetadata(activeStage),
     });
@@ -227,5 +226,5 @@ export async function GET(request: Request, context: RouteContext) {
     durationMs: Date.now() - startedAt,
     reasonCode: "cache_not_ready",
   });
-  return NextResponse.json({ status: "pending", stage: "checking_cache" });
+  return NextResponse.json({ status: "pending", stage: "checking_attempt" });
 }

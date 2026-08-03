@@ -1151,14 +1151,14 @@ describe("OpenAI calendar analyzer behavior", () => {
     expect("temperature" in request).toBe(false);
   });
 
-  it("builds a gpt-5 mini text request with low reasoning and strict JSON schema", () => {
+  it("builds a GPT-5.6 Sol text request with low reasoning and strict JSON schema", () => {
     const request = buildCalendarImportTextResponsesRequest(
-      "gpt-5-mini",
+      "gpt-5.6-sol",
       "[PAGE 1]\nAugust 12 Instruction Begins"
     );
 
     expect(request).toMatchObject({
-      model: "gpt-5-mini",
+      model: "gpt-5.6-sol",
       store: false,
       reasoning: { effort: "low" },
       text: {
@@ -1223,7 +1223,6 @@ describe("OpenAI calendar analyzer behavior", () => {
     const config = getOpenAiCalendarConfiguration({
       AI_CALENDAR_IMPORT_MODE: "openai",
       OPENAI_API_KEY: "",
-      OPENAI_CALENDAR_MODEL: "gpt-5",
     });
 
     expect(config).toMatchObject({
@@ -1237,7 +1236,6 @@ describe("OpenAI calendar analyzer behavior", () => {
     const config = getOpenAiCalendarConfiguration({
       AI_CALENDAR_IMPORT_MODE: "disabled",
       OPENAI_API_KEY: "sk-test",
-      OPENAI_CALENDAR_MODEL: "gpt-5",
     });
 
     expect(config).toMatchObject({
@@ -1247,14 +1245,12 @@ describe("OpenAI calendar analyzer behavior", () => {
   });
 
   it("uses separate text and PDF model environment precedence", () => {
-    expect(getOpenAiCalendarTextModel({})).toBe("gpt-5-mini");
+    expect(getOpenAiCalendarTextModel({})).toBe("gpt-5.6-sol");
     expect(getOpenAiCalendarTextModel({ OPENAI_CALENDAR_TEXT_MODEL: "custom-mini" })).toBe("custom-mini");
-    expect(getOpenAiCalendarPdfModel({})).toBe("gpt-5");
-    expect(getOpenAiCalendarPdfModel({ OPENAI_CALENDAR_MODEL: "legacy-pdf" })).toBe("legacy-pdf");
+    expect(getOpenAiCalendarPdfModel({})).toBe("gpt-5.6-sol");
     expect(
       getOpenAiCalendarPdfModel({
-        OPENAI_CALENDAR_MODEL: "legacy-pdf",
-        OPENAI_CALENDAR_PDF_MODEL: "custom-pdf",
+        OPENAI_SCHEDULE_PDF_MODEL: "custom-pdf",
       })
     ).toBe("custom-pdf");
   });

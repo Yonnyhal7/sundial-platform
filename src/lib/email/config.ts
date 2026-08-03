@@ -9,7 +9,7 @@ export type SchoolEmailConfig = {
   overrideTo: string | null;
 };
 
-export const SUNDIAL_SETUP_FROM_EMAIL = "Sundial <setup@sundialk12.com>";
+export const SUNDIAL_SETUP_FROM_EMAIL = "Sundial School Setup <setup@sundialk12.com>";
 
 type EmailEnvironment = Record<string, string | undefined>;
 
@@ -52,16 +52,12 @@ export function resolveSchoolEmailConfig(env: EmailEnvironment): SchoolEmailConf
     };
   }
 
-  const apiKey = required(env, "RESEND_API_KEY");
-  const from = required(env, "SUNDIAL_FROM_EMAIL");
-  const replyTo = required(env, "SUNDIAL_REPLY_TO_EMAIL");
-  if (!validMailbox(from)) throw new Error("SUNDIAL_FROM_EMAIL is not a valid mailbox.");
-  if (from !== SUNDIAL_SETUP_FROM_EMAIL) {
-    throw new Error(`SUNDIAL_FROM_EMAIL must be ${SUNDIAL_SETUP_FROM_EMAIL}.`);
-  }
-  if (!validEmail(replyTo)) {
-    throw new Error("SUNDIAL_REPLY_TO_EMAIL is not a valid email address.");
-  }
+  const apiKey = env.RESEND_API_KEY?.trim() || null;
+  const from = env.SUNDIAL_FROM_EMAIL?.trim() || null;
+  const replyTo = env.SUNDIAL_REPLY_TO_EMAIL?.trim() || null;
+  if (from && !validMailbox(from)) throw new Error("SUNDIAL_FROM_EMAIL is not a valid mailbox.");
+  if (from && from !== SUNDIAL_SETUP_FROM_EMAIL) throw new Error(`SUNDIAL_FROM_EMAIL must be ${SUNDIAL_SETUP_FROM_EMAIL}.`);
+  if (replyTo && !validEmail(replyTo)) throw new Error("SUNDIAL_REPLY_TO_EMAIL is not a valid email address.");
 
   const overrideTo = mode === "override" ? required(env, "SUNDIAL_EMAIL_OVERRIDE_TO") : null;
   if (overrideTo && !validEmail(overrideTo)) {

@@ -4,7 +4,7 @@ export type AiImportServerStage =
   | "upload_received"
   | "validating_pdf"
   | "hashing_pdf"
-  | "checking_cache"
+  | "checking_attempt"
   | "extracting_text"
   | "evaluating_text_quality"
   | "selecting_strategy"
@@ -78,10 +78,10 @@ export const AI_IMPORT_STAGE_DETAILS: Record<AiImportServerStage, AiImportProgre
     end: 18,
     indeterminate: false,
   },
-  checking_cache: {
-    id: "checking_cache",
-    label: "Checking completed analyses",
-    description: "Looking for an existing review for this exact PDF.",
+  checking_attempt: {
+    id: "checking_attempt",
+    label: "Checking analysis progress",
+    description: "Checking the current analysis attempt.",
     progress: 22,
     start: 18,
     end: 22,

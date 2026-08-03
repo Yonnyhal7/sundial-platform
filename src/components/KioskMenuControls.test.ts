@@ -55,7 +55,7 @@ describe("kiosk utility controls", () => {
     expect(kioskColorSource).not.toMatch(
       /\b(?:bg|text|border|ring)-(?:blue|indigo|sky|cyan)-/
     );
-    expect(kioskColorSource).toContain("--kiosk-text: #171717");
+    expect(kioskColorSource).toContain("--kiosk-text: #000000");
     expect(kioskColorSource).toContain("--kiosk-bg: #fafafa");
     expect(kioskColorSource).toContain("var(--school-primary");
     expect(kioskColorSource).toContain("var(--school-accent-visible");

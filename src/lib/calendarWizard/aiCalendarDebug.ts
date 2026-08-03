@@ -36,8 +36,6 @@ export type AiCalendarDebugIssue = {
   persistedOrGenerated: string;
   analysisVersion?: string;
   analysisAttemptId?: string;
-  cacheStrategy?: string;
-  cacheState: "cache_hit" | "fresh_analysis" | "unknown";
   resolutionState: string;
   unresolvedBlocker: boolean;
   disablesCreateCalendar: boolean;
@@ -314,12 +312,6 @@ export function buildAiCalendarDebugSnapshot({
       persistedOrGenerated: issue.persistedOrGenerated,
       analysisVersion: issue.analysisVersion || metadata?.analysisVersion,
       analysisAttemptId: metadata?.analysisAttemptId,
-      cacheStrategy: metadata?.cacheStrategy,
-      cacheState: metadata?.cacheHit === true
-        ? "cache_hit"
-        : metadata?.cacheHit === false
-          ? "fresh_analysis"
-          : "unknown",
       resolutionState: resolution?.status || issue.status,
       unresolvedBlocker,
       disablesCreateCalendar: unresolvedBlocker,

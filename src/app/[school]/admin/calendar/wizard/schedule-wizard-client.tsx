@@ -365,25 +365,6 @@ function formatDateRange(startDate: string, endDate?: string) {
   return `${formatDateForDisplay(startDate)} - ${formatDateForDisplay(endDate)}`;
 }
 
-function formatCacheAnalyzedAt(value?: string) {
-  if (!value) return "previously";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "previously";
-  return parsed.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function cacheStrategyLabel(strategy?: string) {
-  if (strategy === "text-gpt5-mini") return "Fast text analysis";
-  if (strategy === "pdf-gpt5") return "Visual PDF analysis";
-  return "Calendar analysis";
-}
-
 function buildAiPreviewScheduleMap(
   schedules: WizardScheduleSummary[],
   resolutions: DetectedScheduleResolution[]
@@ -849,16 +830,6 @@ export function sanitizeRestoredDraft(value: unknown, schedules: WizardScheduleS
               typeof restoredAiImport.pdfHash === "string" &&
               /^[0-9a-f]{64}$/i.test(restoredAiImport.pdfHash)
                 ? restoredAiImport.pdfHash
-                : undefined,
-            cacheHit: restoredAiImport.cacheHit === true,
-            cacheAnalyzedAt:
-              typeof restoredAiImport.cacheAnalyzedAt === "string"
-                ? restoredAiImport.cacheAnalyzedAt
-                : undefined,
-            cacheStrategy:
-              restoredAiImport.cacheStrategy === "text-gpt5-mini" ||
-              restoredAiImport.cacheStrategy === "pdf-gpt5"
-                ? restoredAiImport.cacheStrategy
                 : undefined,
             analysisVersion: canonicalAiImport?.analysisVersion,
             issueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
@@ -1452,26 +1423,6 @@ export default function ScheduleWizardClient({
     return result;
   }
 
-  async function invalidateAiImportCache(
-    pdfHash: string | undefined,
-    reason: string
-  ) {
-    if (!pdfHash) return;
-
-    try {
-      await fetch(
-        `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/invalidate`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ pdfHash, reason }),
-        }
-      );
-    } catch {
-      // Draft reset should not be blocked by a transient invalidation request.
-    }
-  }
-
   useEffect(() => {
     window.setTimeout(() => {
       // Slug-only keys can outlive a deleted school and leak into a future
@@ -1534,7 +1485,7 @@ export default function ScheduleWizardClient({
       const restoredAiMetadata = restoredStoredData?.draft.aiImport;
       if (aiCalendarDebugEnabled && restoredAiMetadata) {
         setAiDebugRestoreInfo({
-          restoredFromCache: restoredAiMetadata.cacheHit === true,
+          restoredFromCache: false,
           restoredFromWizardDraft: true,
           cachedResultVersion: restoredAiMetadata.analysisVersion,
           draftVersion: restoredStoredData?.version,
@@ -1704,7 +1655,6 @@ export default function ScheduleWizardClient({
     }
 
     setDraftSaveStatus("saving");
-    await invalidateAiImportCache(draft.aiImport?.pdfHash, "administrator_reset");
     const result = await deleteCalendarWizardDraft(schoolSlug, draftType);
     if (result.status !== "success") {
       setDraftSaveStatus("error");
@@ -2029,7 +1979,6 @@ export default function ScheduleWizardClient({
               onIssueResolutionSave={saveAiIssueResolution}
               creationInProgress={isSaving}
               updateDraft={updateDraft}
-              onInvalidateAiCache={invalidateAiImportCache}
               debugEnabled={aiCalendarDebugEnabled}
               debugRestoreInfo={aiDebugRestoreInfo}
               onDebugRestoreInfoChange={setAiDebugRestoreInfo}
@@ -2309,7 +2258,6 @@ function AiCalendarImportCard({
   onIssueResolutionSave,
   creationInProgress,
   updateDraft,
-  onInvalidateAiCache,
   debugEnabled,
   debugRestoreInfo,
   onDebugRestoreInfoChange,
@@ -2325,7 +2273,6 @@ function AiCalendarImportCard({
   ) => Promise<CalendarWizardDraftActionResult>;
   creationInProgress: boolean;
   updateDraft: (updater: (draft: WizardDraft) => WizardDraft) => void;
-  onInvalidateAiCache: (pdfHash: string | undefined, reason: string) => Promise<void>;
   debugEnabled: boolean;
   debugRestoreInfo: AiCalendarDebugRestoreInfo;
   onDebugRestoreInfoChange: (value: AiCalendarDebugRestoreInfo) => void;
@@ -2631,19 +2578,10 @@ function AiCalendarImportCard({
     }
 
     setStatus("review");
-    const cacheHit = result.cache?.hit === true;
-    const cacheAnalyzedAt = result.cache?.analyzedAt;
-    const cacheStrategy = result.cache?.strategy || result.analysisStrategy;
-    const cacheBanner = cacheHit
-      ? `Using a previously completed calendar analysis from ${formatCacheAnalyzedAt(
-          cacheAnalyzedAt
-        )}. Strategy: ${cacheStrategyLabel(cacheStrategy)}.`
-      : null;
     if (debugEnabled) {
       onDebugRestoreInfoChange({
-        restoredFromCache: cacheHit,
+        restoredFromCache: false,
         restoredFromWizardDraft: false,
-        cachedResultVersion: result.cache?.version,
         draftVersion: 1,
         currentAnalysisAttemptId: attemptId,
         draftAnalysisAttemptId: attemptId,
@@ -2665,19 +2603,15 @@ function AiCalendarImportCard({
           warnings: result.importResult.warnings,
           warningResolutions,
           pdfHash,
-          cacheHit,
-          cacheAnalyzedAt,
-          cacheStrategy,
-          analysisVersion: result.cache?.version || AI_CALENDAR_ANALYSIS_VERSION,
+          analysisVersion: AI_CALENDAR_ANALYSIS_VERSION,
           issueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
           analysisAttemptId: attemptId,
           banner:
-            cacheBanner ||
-            (result.outcome === "repaired"
+            result.outcome === "repaired"
               ? "Sundial corrected a formatting issue and completed the analysis."
               : result.outcome === "reviewable"
                 ? "Sundial read the calendar, but one item needs your review."
-                : "Calendar analysis complete."),
+                : "Calendar analysis complete.",
         };
         return {
           ...previousDraft,
@@ -2731,11 +2665,11 @@ function AiCalendarImportCard({
     setStatus("analyzing");
     setActionResult(null);
     setServerStage((currentStage) =>
-      getAiImportStageSequence(currentStage) > getAiImportStageSequence("checking_cache")
+      getAiImportStageSequence(currentStage) > getAiImportStageSequence("checking_attempt")
         ? currentStage
-        : "checking_cache"
+        : "checking_attempt"
     );
-    if (getAiImportStageSequence(currentStageRef.current) < getAiImportStageSequence("checking_cache")) {
+    if (getAiImportStageSequence(currentStageRef.current) < getAiImportStageSequence("checking_attempt")) {
       if (currentStageStartedAtRef.current) {
         recordAiImportStageDuration({
           stage: currentStageRef.current,
@@ -2744,14 +2678,14 @@ function AiCalendarImportCard({
           durationMs: Date.now() - currentStageStartedAtRef.current,
         });
       }
-      currentStageRef.current = "checking_cache";
+      currentStageRef.current = "checking_attempt";
       currentStageStartedAtRef.current = Date.now();
     }
     latestStageSequenceRef.current = Math.max(
       latestStageSequenceRef.current,
-      getAiImportStageSequence("checking_cache")
+      getAiImportStageSequence("checking_attempt")
     );
-    setMonotonicProgress(getAiImportStageDetails("checking_cache").progress || 22);
+    setMonotonicProgress(getAiImportStageDetails("checking_attempt").progress || 22);
     setMessage(
       "Sundial is still finishing the calendar analysis. You can keep this page open or return shortly."
     );
@@ -2774,7 +2708,7 @@ function AiCalendarImportCard({
 
         if (statusResult.status === "ready") {
           console.info("AI calendar import diagnostic", {
-            event: "cached_result_found",
+            event: "attempt_result_recovered",
             school: schoolSlug,
             attemptId: pending.attemptId,
           });
@@ -2912,7 +2846,7 @@ function AiCalendarImportCard({
     clearPendingAiImport();
   }
 
-  async function analyzeSelectedFile(analyzeAgain = false) {
+  async function analyzeSelectedFile() {
     if (!selectedFile || isWorking) return;
 
     const timeoutController = createAiImportClientTimeoutController();
@@ -2941,9 +2875,7 @@ function AiCalendarImportCard({
 
     const formData = new FormData();
     formData.append("calendarPdf", selectedFile);
-    formData.append("cacheMode", analyzeAgain ? "bypass" : "default");
     formData.append("analysisAttemptId", attemptId);
-    if (analyzeAgain) formData.append("analyzeAgain", "true");
 
     try {
       setServerStage("hashing_pdf");
@@ -3273,8 +3205,7 @@ function AiCalendarImportCard({
     });
   }
 
-  async function startAiReviewOver(reason = "administrator_reset") {
-    await onInvalidateAiCache(draft.aiImport?.pdfHash, reason);
+  async function startAiReviewOver() {
     clearPendingAiImport();
     setSelectedFile(null);
     setStatus("idle");
@@ -3304,7 +3235,7 @@ function AiCalendarImportCard({
       return;
     }
 
-    await startAiReviewOver("user_rejected_result");
+    await startAiReviewOver();
   }
 
   function analyzeAgainFromReview() {
@@ -3314,7 +3245,7 @@ function AiCalendarImportCard({
       return;
     }
 
-    void analyzeSelectedFile(true);
+    void analyzeSelectedFile();
   }
 
   function updateImportedResult(nextResult: AiCalendarImportResult) {
@@ -3371,7 +3302,7 @@ function AiCalendarImportCard({
         </label>
         <button
           type="button"
-          onClick={() => analyzeSelectedFile(false)}
+          onClick={() => analyzeSelectedFile()}
           disabled={!selectedFile || isWorking}
           className={sundialPrimaryButtonClass("px-5")}
         >
@@ -3380,7 +3311,7 @@ function AiCalendarImportCard({
         {draft.aiImport?.result && selectedFile && !isWorking && (
           <button
             type="button"
-            onClick={() => analyzeSelectedFile(true)}
+            onClick={() => analyzeSelectedFile()}
             className={secondaryButtonClass}
           >
             Analyze Again
@@ -3406,7 +3337,7 @@ function AiCalendarImportCard({
           indeterminate={progressIsIndeterminate}
           error={failureMessage}
           retryable={failureRetryable}
-          onRetry={() => analyzeSelectedFile(false)}
+          onRetry={() => analyzeSelectedFile()}
           onContinueManually={() => {
             setStatus("idle");
             setActionResult(null);
@@ -3436,9 +3367,6 @@ function AiCalendarImportCard({
           importResult={importResult}
           reviewMode={reviewMode}
           cacheMetadata={{
-            cacheHit: draft.aiImport?.cacheHit,
-            cacheAnalyzedAt: draft.aiImport?.cacheAnalyzedAt,
-            cacheStrategy: draft.aiImport?.cacheStrategy,
             analysisVersion: draft.aiImport?.analysisVersion,
             analysisAttemptId: draft.aiImport?.analysisAttemptId,
             issueSchemaVersion: draft.aiImport?.issueSchemaVersion,
@@ -3507,9 +3435,6 @@ function AiImportReview({
   importResult: AiCalendarImportResult;
   reviewMode: AiReviewMode;
   cacheMetadata?: {
-    cacheHit?: boolean;
-    cacheAnalyzedAt?: string;
-    cacheStrategy?: "text-gpt5-mini" | "pdf-gpt5";
     analysisVersion?: string;
     analysisAttemptId?: string;
     issueSchemaVersion?: number;
@@ -3733,9 +3658,6 @@ function AiImportReview({
           state: "review",
           result: importResult,
           resolutions,
-          cacheHit: cacheMetadata?.cacheHit,
-          cacheAnalyzedAt: cacheMetadata?.cacheAnalyzedAt,
-          cacheStrategy: cacheMetadata?.cacheStrategy,
           analysisVersion: cacheMetadata?.analysisVersion,
           analysisAttemptId: cacheMetadata?.analysisAttemptId,
           issueSchemaVersion: cacheMetadata?.issueSchemaVersion,
@@ -3744,7 +3666,7 @@ function AiImportReview({
         warningResolutions,
         restore: {
           ...debugRestoreInfo,
-          restoredFromCache: cacheMetadata?.cacheHit === true,
+          restoredFromCache: false,
           currentAnalysisAttemptId: cacheMetadata?.analysisAttemptId,
         },
       })
@@ -4115,17 +4037,6 @@ function AiImportReview({
           </button>
         </div>
       </div>
-
-      {cacheMetadata?.cacheHit && (
-        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
-          <p>Using a previously completed calendar analysis.</p>
-          <p className="mt-1 text-xs uppercase tracking-wide">
-            Analyzed {formatCacheAnalyzedAt(cacheMetadata.cacheAnalyzedAt)} ·{" "}
-            {cacheStrategyLabel(cacheMetadata.cacheStrategy)}
-            {cacheMetadata.analysisVersion ? ` · ${cacheMetadata.analysisVersion}` : ""}
-          </p>
-        </div>
-      )}
 
       <section aria-labelledby="ai-import-summary-title" className="mt-5 rounded-2xl border border-slate-200 p-4 dark:border-slate-700">
         <h4 id="ai-import-summary-title" className="text-sm font-bold uppercase tracking-[0.14em] text-slate-500">

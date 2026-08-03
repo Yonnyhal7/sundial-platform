@@ -53,7 +53,7 @@ describe("legacy AI calendar issue migration", () => {
   it("repairs the exact persisted calendar-v12 blocker shape", () => {
     const migrated = migrateLegacyAiImportMetadata(legacyMetadata());
     expect(migrated.changed).toBe(true);
-    expect(migrated.metadata.analysisVersion).toBe("calendar-v13-page-selection-v1");
+    expect(migrated.metadata.analysisVersion).toBe("calendar-v14-gpt56-sol-prompt-v1");
     expect(migrated.metadata.warnings).toEqual([{
       code: "unknown_pattern_schedule_reference",
       severity: "info",
@@ -136,7 +136,7 @@ describe("legacy AI calendar issue migration", () => {
       },
     };
     const hydrated = migrateCalendarWizardStoredData(stored);
-    expect(hydrated?.draft.aiImport?.analysisVersion).toBe("calendar-v13-page-selection-v1");
+    expect(hydrated?.draft.aiImport?.analysisVersion).toBe("calendar-v14-gpt56-sol-prompt-v1");
     expect(classifyCalendarWarnings(hydrated?.draft.aiImport?.warnings).blockingWarnings).toEqual([]);
     const serialized = serializeCalendarWizardDraft(hydrated);
     expect(serialized?.data.draft.aiImport?.warningResolutions).toEqual([]);
@@ -182,7 +182,7 @@ describe("legacy AI calendar issue migration", () => {
   });
 
   it("versions cache policy independently from the analyzer", () => {
-    expect(AI_CALENDAR_CACHE_KEY_VERSION).toContain("calendar-v13-page-selection-v1");
+    expect(AI_CALENDAR_CACHE_KEY_VERSION).toContain("calendar-v14-gpt56-sol-prompt-v1");
     expect(AI_CALENDAR_CACHE_KEY_VERSION).toContain("cache-schema-v2");
     expect(AI_CALENDAR_CACHE_KEY_VERSION).toContain("issue-normalization-v2");
   });

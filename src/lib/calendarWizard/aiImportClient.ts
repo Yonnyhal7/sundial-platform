@@ -32,7 +32,6 @@ export type AiImportStatusMetadata = {
   jobStartedAt?: number;
   updatedAt?: number;
   reasonCode?: string;
-  cacheHit?: boolean;
 };
 
 export type AiImportStatusResponse =
@@ -55,7 +54,6 @@ function withOptionalAiImportStatusMetadata<T extends object>(
   if (metadata.jobStartedAt) next.jobStartedAt = metadata.jobStartedAt;
   if (metadata.updatedAt) next.updatedAt = metadata.updatedAt;
   if (metadata.reasonCode) next.reasonCode = metadata.reasonCode;
-  if (metadata.cacheHit !== undefined) next.cacheHit = metadata.cacheHit;
   return next;
 }
 
@@ -241,7 +239,6 @@ export async function parseAiImportStatusResponse(
         stageStartedAt?: unknown;
         jobStartedAt?: unknown;
         updatedAt?: unknown;
-        cacheHit?: unknown;
       };
       const status = record.status;
       const metadata: AiImportStatusMetadata = {
@@ -267,7 +264,6 @@ export async function parseAiImportStatusResponse(
           typeof record.updatedAt === "number" && Number.isFinite(record.updatedAt)
             ? record.updatedAt
             : undefined,
-        cacheHit: typeof record.cacheHit === "boolean" ? record.cacheHit : undefined,
       };
 
       if (status === "pending") {

@@ -1,9 +1,10 @@
 import "server-only";
-import { Resend } from "resend";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getCanonicalSchoolSetupInvitationUrl } from "@/lib/routing/canonicalUrls";
 import { getSchoolEmailConfig } from "./config.server";
 import { renderSchoolSetupEmail } from "./schoolSetupEmail";
+import { DEFAULT_SCHOOL_SETUP_EMAIL_PROVIDER, isSchoolSetupEmailProvider, type SchoolSetupEmailProvider } from "@/lib/platformSettings";
+import { sendSchoolSetupEmail, SCHOOL_SETUP_SENDER_PROFILES } from "./schoolSetupProviders.server";
 
 type ClaimedDelivery = {
   status: "claimed";
@@ -26,6 +27,10 @@ export type SchoolSetupDeliveryResult = {
   fallbackUrl?: string;
   expiresAt?: string;
   tokenRotated?: boolean;
+  provider?: SchoolSetupEmailProvider;
+  providerMessageId?: string | null;
+  from?: string;
+  errorCode?: string | null;
 };
 
 export type SchoolSetupEmailTransport = {
@@ -59,24 +64,10 @@ function sanitizedFailureReason(errorName: string | null) {
     : "Email provider rejected the request.";
 }
 
-function createResendTransport(apiKey: string): SchoolSetupEmailTransport {
-  const resend = new Resend(apiKey);
-  return {
-    async send(input) {
-      const { data, error } = await resend.emails.send(
-        {
-          from: input.from,
-          to: input.to,
-          replyTo: input.replyTo,
-          subject: input.subject,
-          html: input.html,
-          text: input.text,
-        },
-        { idempotencyKey: input.idempotencyKey }
-      );
-      return { id: data?.id ?? null, errorName: error?.name ?? null };
-    },
-  };
+async function activeProvider(supabase:SupabaseClient):Promise<SchoolSetupEmailProvider>{
+  if(typeof supabase.from!=="function")return DEFAULT_SCHOOL_SETUP_EMAIL_PROVIDER;
+  const {data}=await supabase.from("platform_settings").select("school_setup_email_provider").eq("id",true).maybeSingle<{school_setup_email_provider:string}>();
+  return isSchoolSetupEmailProvider(data?.school_setup_email_provider)?data.school_setup_email_provider:DEFAULT_SCHOOL_SETUP_EMAIL_PROVIDER;
 }
 
 export async function deliverSchoolSetupInvitation({
@@ -137,25 +128,27 @@ export async function deliverSchoolSetupInvitation({
 
   let success = false;
   let providerMessageId: string | null = null;
+  const provider=await activeProvider(supabase);
+  const profile=SCHOOL_SETUP_SENDER_PROFILES[provider];
+  const from=`${profile.fromName} <${profile.fromEmail}>`;
+  let errorCode:string|null="delivery_disabled";
   let failureReason = "Email delivery is disabled in this environment.";
 
   try {
-    if (config && config.mode !== "disabled" && config.apiKey && config.from && config.replyTo) {
+    if (config && config.mode !== "disabled") {
       const content = renderSchoolSetupEmail({
         schoolName: claimed.school_name,
         setupUrl: fallbackUrl,
         expiresAt: new Date(claimed.expires_at),
       });
-      const delivery = await (transport ?? createResendTransport(config.apiKey)).send({
-        from: config.from,
-        to: config.overrideTo ?? claimed.email,
-        replyTo: config.replyTo,
-        ...content,
-        idempotencyKey: `school-setup-${claimed.invite_id}-${claimed.attempt_count}`,
-      });
-      success = Boolean(delivery.id) && !delivery.errorName;
-      providerMessageId = success ? delivery.id : null;
-      failureReason = sanitizedFailureReason(delivery.errorName);
+      const recipient=config.overrideTo??claimed.email;
+      if(transport){
+        const delivery=await transport.send({from,to:recipient,replyTo:profile.replyTo,...content,idempotencyKey:`school-setup-${claimed.invite_id}-${claimed.attempt_count}`});
+        success=Boolean(delivery.id)&&!delivery.errorName;providerMessageId=success?delivery.id:null;errorCode=delivery.errorName;failureReason=sanitizedFailureReason(delivery.errorName);
+      }else{
+        const delivery=await sendSchoolSetupEmail(provider,{recipient,...content,idempotencyKey:`school-setup-${claimed.invite_id}-${claimed.attempt_count}`,metadata:{invitationId:claimed.invite_id,schoolId:claimed.school_id}});
+        success=delivery.success;providerMessageId=delivery.providerMessageId;errorCode=delivery.errorCode;failureReason=delivery.errorMessage||"Email provider rejected the request.";
+      }
     }
   } catch {
     failureReason = "Email delivery configuration or provider request failed.";
@@ -168,6 +161,9 @@ export async function deliverSchoolSetupInvitation({
     p_success: success,
     p_provider_message_id: providerMessageId,
     p_failure_reason: failureReason,
+    p_provider: provider,
+    p_from_address: from,
+    p_error_code: errorCode,
   });
 
   return success
@@ -179,6 +175,7 @@ export async function deliverSchoolSetupInvitation({
         fallbackUrl,
         expiresAt: claimed.expires_at,
         tokenRotated: rotateToken,
+        provider, providerMessageId, from, errorCode:null,
       }
     : {
         status: "failed",
@@ -188,5 +185,6 @@ export async function deliverSchoolSetupInvitation({
         fallbackUrl,
         expiresAt: claimed.expires_at,
         tokenRotated: rotateToken,
+        provider, providerMessageId:null, from, errorCode,
       };
 }

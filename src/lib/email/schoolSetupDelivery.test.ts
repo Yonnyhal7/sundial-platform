@@ -5,8 +5,8 @@ vi.mock("./config.server", () => ({
   getSchoolEmailConfig: () => ({
     mode: "live",
     apiKey: "re_secret_that_must_not_escape",
-    from: "Sundial <setup@sundialk12.com>",
-    replyTo: "support@sundialk12.com",
+    from: "Sundial School Setup <setup@sundialk12.com>",
+    replyTo: "mrh@mrhcodes.com",
     adminUrl: "https://admin.sundialk12.com",
     overrideTo: null,
   }),

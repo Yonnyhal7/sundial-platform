@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   AI_CALENDAR_PDF_STRATEGY,
   AI_CALENDAR_TEXT_STRATEGY,
-  readCalendarAnalysisCacheEntry,
+  readCalendarAnalysisAttemptResult,
 } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
 import {
   logAiImportStatusDiagnostic,
@@ -33,8 +33,8 @@ export async function GET(request: Request, context: RouteContext) {
 
   let result = null;
   for (const cacheKey of access.cacheKeys) {
-    result = await readCalendarAnalysisCacheEntry(cacheKey, {
-      minCreatedAt: access.startedAt || undefined,
+    result = await readCalendarAnalysisAttemptResult(cacheKey, {
+      minCreatedAt: access.startedAt || Date.now(),
       analysisAttemptId: access.analysisAttemptId,
     });
     if (result) break;
@@ -51,7 +51,7 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   logAiImportStatusDiagnostic({
-    event: "cached_result_found",
+    event: "attempt_result_recovered",
     school,
     durationMs: Date.now() - startedAt,
   });
@@ -64,14 +64,5 @@ export async function GET(request: Request, context: RouteContext) {
       result.strategy === AI_CALENDAR_TEXT_STRATEGY
         ? AI_CALENDAR_TEXT_STRATEGY
         : AI_CALENDAR_PDF_STRATEGY,
-    cache: {
-      hit: true,
-      analyzedAt: result.createdAt,
-      strategy:
-        result.strategy === AI_CALENDAR_TEXT_STRATEGY
-          ? AI_CALENDAR_TEXT_STRATEGY
-          : AI_CALENDAR_PDF_STRATEGY,
-      version: result.analyzerVersion,
-    },
   });
 }

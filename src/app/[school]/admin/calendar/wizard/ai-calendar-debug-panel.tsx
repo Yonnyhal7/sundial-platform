@@ -60,8 +60,6 @@ function IssueDetails({ issue, index }: { issue: AiCalendarDebugIssue; index: nu
         <Detail label="Persisted/generated" value={issue.persistedOrGenerated} />
         <Detail label="Analysis version" value={issue.analysisVersion} />
         <Detail label="Analysis attempt" value={issue.analysisAttemptId} />
-        <Detail label="Cache strategy" value={issue.cacheStrategy} />
-        <Detail label="Cache state" value={issue.cacheState} />
         <Detail label="Resolution state" value={issue.resolutionState} />
         <Detail label="Unresolved blocker" value={issue.unresolvedBlocker} />
         <Detail label="Disables Create Calendar" value={issue.disablesCreateCalendar} />

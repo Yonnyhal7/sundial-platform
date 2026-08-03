@@ -58,9 +58,8 @@ export type OpenAiErrorDiagnosticContext = {
 };
 
 const TRANSIENT_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
-export const DEFAULT_OPENAI_CALENDAR_MODEL = "gpt-5";
-export const DEFAULT_OPENAI_CALENDAR_TEXT_MODEL = "gpt-5-mini";
-export const DEFAULT_OPENAI_CALENDAR_PDF_MODEL = DEFAULT_OPENAI_CALENDAR_MODEL;
+export const DEFAULT_OPENAI_CALENDAR_TEXT_MODEL = "gpt-5.6-sol";
+export const DEFAULT_OPENAI_CALENDAR_PDF_MODEL = "gpt-5.6-sol";
 
 export type OpenAiCalendarConfigurationReasonCode =
   | "missing_openai_api_key"
@@ -109,7 +108,6 @@ type OpenAiCalendarConfiguration =
       ok: true;
       mode: "openai";
       apiKey: string;
-      model: string;
       timeoutMs: number;
     }
   | {
@@ -164,13 +162,10 @@ export class AiCalendarImportProcessingError extends Error {
 export function buildOpenAiCalendarEnvironmentDiagnostics() {
   return {
     hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
-    openAiKeyLength: process.env.OPENAI_API_KEY?.length ?? 0,
-    hasModel: Boolean(process.env.OPENAI_CALENDAR_MODEL),
-    model: process.env.OPENAI_CALENDAR_MODEL,
     hasTextModel: Boolean(process.env.OPENAI_CALENDAR_TEXT_MODEL),
     textModel: process.env.OPENAI_CALENDAR_TEXT_MODEL,
-    hasPdfModel: Boolean(process.env.OPENAI_CALENDAR_PDF_MODEL),
-    pdfModel: process.env.OPENAI_CALENDAR_PDF_MODEL,
+    hasPdfModel: Boolean(process.env.OPENAI_SCHEDULE_PDF_MODEL),
+    pdfModel: getOpenAiCalendarPdfModel(),
     hasAnalyzerTimeout: Boolean(process.env.OPENAI_CALENDAR_TIMEOUT_MS),
     analyzerTimeout: process.env.OPENAI_CALENDAR_TIMEOUT_MS,
     hasTextAnalyzerTimeout: Boolean(process.env.OPENAI_CALENDAR_TEXT_TIMEOUT_MS),
@@ -273,20 +268,10 @@ export function getOpenAiCalendarConfiguration(
     };
   }
 
-  const model = env.OPENAI_CALENDAR_MODEL?.trim() || DEFAULT_OPENAI_CALENDAR_MODEL;
-  if (!model.trim()) {
-    return {
-      ok: false,
-      reasonCode: "missing_model",
-      message: "AI calendar import is missing a model configuration.",
-    };
-  }
-
   return {
     ok: true,
     mode: "openai",
     apiKey,
-    model,
     timeoutMs: parseOpenAiCalendarTimeoutMs(env.OPENAI_CALENDAR_TIMEOUT_MS),
   };
 }
@@ -296,11 +281,7 @@ export function getOpenAiCalendarTextModel(env: CalendarImportEnv = process.env)
 }
 
 export function getOpenAiCalendarPdfModel(env: CalendarImportEnv = process.env) {
-  return (
-    env.OPENAI_CALENDAR_PDF_MODEL?.trim() ||
-    env.OPENAI_CALENDAR_MODEL?.trim() ||
-    DEFAULT_OPENAI_CALENDAR_PDF_MODEL
-  );
+  return env.OPENAI_SCHEDULE_PDF_MODEL?.trim() || DEFAULT_OPENAI_CALENDAR_PDF_MODEL;
 }
 
 export function shouldRetryOpenAiError(error: unknown, attempt: number) {

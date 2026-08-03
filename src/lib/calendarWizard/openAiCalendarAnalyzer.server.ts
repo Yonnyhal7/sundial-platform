@@ -29,7 +29,6 @@ import {
 import { createMockAiCalendarImportResult } from "./mockAiCalendarAnalyzer";
 import {
   AiCalendarImportProcessingError,
-  DEFAULT_OPENAI_CALENDAR_MODEL,
   OpenAiCalendarApplicationTimeoutError,
   OpenAiCalendarPdfPreparationError,
   buildAiCalendarProcessingDiagnostics,
@@ -67,7 +66,6 @@ import {
 } from "./pdfPageSelection.server";
 import { extractDeterministicStudentCalendar } from "./deterministicStudentCalendarExtraction";
 
-export { DEFAULT_OPENAI_CALENDAR_MODEL };
 
 type OpenAiResponseUsage = {
   input_tokens?: number;

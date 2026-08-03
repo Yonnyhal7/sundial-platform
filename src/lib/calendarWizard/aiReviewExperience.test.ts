@@ -112,8 +112,8 @@ describe("AI calendar review experience", () => {
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
 
-  it("invalidates older review caches when deterministic page selection changes", () => {
-    expect(AI_CALENDAR_ANALYSIS_VERSION).toBe("calendar-v13-page-selection-v1");
+  it("versions persisted attempts and preserves legacy draft migration", () => {
+    expect(AI_CALENDAR_ANALYSIS_VERSION).toBe("calendar-v14-gpt56-sol-prompt-v1");
     expect(AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION).toBe(3);
     const cacheSource = readFileSync(resolve(process.cwd(), "src/lib/calendarWizard/aiCalendarAnalysisCache.server.ts"), "utf8");
     expect(cacheSource).toContain("AI_CALENDAR_ANALYSIS_VERSION");

@@ -21,7 +21,6 @@ import { normalizeUnknownScheduleReferences } from "./aiLegacyIssueMigration";
 export const AI_CALENDAR_PROMPT_SCHEMA_VERSION = AI_CALENDAR_CACHE_KEY_VERSION;
 export const AI_CALENDAR_TEXT_STRATEGY = "text-gpt5-mini";
 export const AI_CALENDAR_PDF_STRATEGY = "pdf-gpt5";
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 15 * 60 * 1000;
 export const AI_CALENDAR_STALE_HEARTBEAT_MS = 45_000;
 export const AI_CALENDAR_STALE_DEADLINE_GRACE_MS = 15_000;
@@ -92,12 +91,13 @@ export type CalendarAnalysisStageSnapshot = {
   lastHeartbeatAt?: number;
 };
 
-export async function readCalendarAnalysisCacheEntry(
+/** Reads only the result owned by one explicit analysis attempt for refresh recovery. */
+export async function readCalendarAnalysisAttemptResult(
   key: CalendarAnalysisCacheKey,
-  options: { minCreatedAt?: number; analysisAttemptId?: string } = {}
+  options: { minCreatedAt: number; analysisAttemptId: string }
 ): Promise<CalendarAnalysisCacheEntry | null> {
   const supabase = await createSupabaseServerClient();
-  let query = supabase
+  const query = supabase
     .from("ai_calendar_analysis_cache")
     .select("result, created_at, status, analysis_attempt_id")
     .eq("school_id", key.schoolId)
@@ -107,12 +107,8 @@ export async function readCalendarAnalysisCacheEntry(
     .eq("prompt_schema_version", key.version)
     .eq("analysis_version", key.version)
     .is("invalidated_at", null)
-    .gte("created_at", new Date(Date.now() - CACHE_TTL_MS).toISOString());
-
-  if (options.minCreatedAt) {
-    query = query.gte("created_at", new Date(options.minCreatedAt).toISOString());
-  }
-  if (options.analysisAttemptId) query = query.eq("analysis_attempt_id", options.analysisAttemptId);
+    .gte("created_at", new Date(options.minCreatedAt).toISOString())
+    .eq("analysis_attempt_id", options.analysisAttemptId);
 
   const { data, error } = await query.maybeSingle();
 
@@ -150,7 +146,7 @@ export async function readCalendarAnalysisCacheEntry(
         .eq("analysis_version", key.version)
         .eq("analysis_attempt_id", data.analysis_attempt_id);
       console.info("AI calendar cached issue migration", {
-        cacheHit: true,
+        attemptRecovery: true,
         cacheAnalyzerVersion: AI_CALENDAR_ANALYSIS_VERSION,
         cacheIssueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
         migratedCachedIssueCodes: canonical.diagnostics.removedEmptyIssueCodes,
@@ -161,7 +157,7 @@ export async function readCalendarAnalysisCacheEntry(
       return null;
     }
     console.info("AI calendar cached issue migration", {
-      cacheHit: true,
+      attemptRecovery: true,
       cacheAnalyzerVersion: AI_CALENDAR_ANALYSIS_VERSION,
       cacheIssueSchemaVersion: AI_CALENDAR_REVIEW_ISSUE_SCHEMA_VERSION,
       migratedCachedIssueCodes: canonical.diagnostics.removedEmptyIssueCodes,
@@ -181,15 +177,8 @@ export async function readCalendarAnalysisCacheEntry(
       };
 }
 
-export async function readCalendarAnalysisCache(
-  key: CalendarAnalysisCacheKey,
-  options: { minCreatedAt?: number } = {}
-) {
-  const entry = await readCalendarAnalysisCacheEntry(key, options);
-  return entry?.result || null;
-}
-
-export async function writeCalendarAnalysisCache(
+/** Persists one attempt result only so its initiating client can recover after interruption. */
+export async function writeCalendarAnalysisAttemptResult(
   key: CalendarAnalysisCacheKey,
   result: AiCalendarImportResult,
   analysisAttemptId: string
@@ -239,53 +228,6 @@ export async function claimCalendarAnalysisAttempt(
   });
   if (error) throw error;
   return data === true;
-}
-
-export async function invalidateCalendarAnalysisCache(
-  keys: CalendarAnalysisCacheKey[],
-  reason: string
-) {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const invalidatedAt = new Date().toISOString();
-
-  await Promise.all(
-    keys.map(async (key) => {
-      const { error } = await supabase
-        .from("ai_calendar_analysis_cache")
-        .update({
-          invalidated_at: invalidatedAt,
-          invalidated_by: user?.id || null,
-          invalidation_reason: reason,
-          status: "failed",
-          current_stage: "confirmed_failed",
-          reason_code: reason,
-          updated_at: invalidatedAt,
-          finished_at: invalidatedAt,
-        })
-        .eq("school_id", key.schoolId)
-        .eq("pdf_sha256", key.pdfHash)
-        .eq("analysis_strategy", key.strategy)
-        .eq("model", key.model)
-        .eq("prompt_schema_version", key.version)
-        .eq("analysis_version", key.version)
-        .is("invalidated_at", null);
-
-      if (error) {
-        console.warn("AI calendar import diagnostic", {
-          event: "cache_invalidation_failed",
-          strategy: key.strategy,
-          reasonCode: error.code,
-        });
-        return;
-      }
-
-      recentFailures.delete(keyString(key));
-      currentStages.delete(keyString(key));
-    })
-  );
 }
 
 export async function dedupeCalendarAnalysis<T>(key: CalendarAnalysisCacheKey, analyze: () => Promise<T>): Promise<T> {

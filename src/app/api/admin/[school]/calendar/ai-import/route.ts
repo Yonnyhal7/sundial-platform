@@ -9,11 +9,10 @@ import {
   AI_CALENDAR_TEXT_STRATEGY,
   claimCalendarAnalysisAttempt,
   dedupeCalendarAnalysis,
-  invalidateCalendarAnalysisCache,
-  readCalendarAnalysisCacheEntry,
+  readCalendarAnalysisAttemptResult,
   recordCalendarAnalysisFailure,
   setCalendarAnalysisStage,
-  writeCalendarAnalysisCache,
+  writeCalendarAnalysisAttemptResult,
   type CalendarAnalysisCacheKey,
 } from "@/lib/calendarWizard/aiCalendarAnalysisCache.server";
 import type { AiImportServerStage } from "@/lib/calendarWizard/aiImportProgress";
@@ -38,7 +37,6 @@ type RouteContext = {
   params: Promise<{ school: string }>;
 };
 
-type AiImportCacheMode = "default" | "bypass" | "invalidate_and_analyze";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 class AiImportRouteDeadlineError extends Error {
@@ -77,6 +75,10 @@ function logAiImportRouteDiagnostic({
   reasonCode,
   fileSize,
   fileType,
+  strategy,
+  model,
+  pageCount,
+  warningCount,
 }: {
   level?: "info" | "warn";
   event: string;
@@ -88,6 +90,10 @@ function logAiImportRouteDiagnostic({
   reasonCode?: string;
   fileSize?: number;
   fileType?: string;
+  strategy?: "extracted_text" | "direct_pdf";
+  model?: string;
+  pageCount?: number;
+  warningCount?: number;
 }) {
   const payload = {
     event,
@@ -99,6 +105,10 @@ function logAiImportRouteDiagnostic({
     reasonCode,
     fileSize,
     fileType,
+    strategy,
+    model,
+    pageCount,
+    warningCount,
   };
 
   if (level === "warn") {
@@ -138,19 +148,6 @@ function getCacheKeys({
       [AI_CALENDAR_TEXT_STRATEGY]: textKey,
     },
   };
-}
-
-function parseCacheMode(formData: FormData): AiImportCacheMode {
-  const cacheMode = formData.get("cacheMode");
-  if (
-    cacheMode === "default" ||
-    cacheMode === "bypass" ||
-    cacheMode === "invalidate_and_analyze"
-  ) {
-    return cacheMode;
-  }
-
-  return formData.get("analyzeAgain") === "true" ? "bypass" : "default";
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -235,9 +232,10 @@ export async function POST(request: Request, context: RouteContext) {
     }
     const upload = formData.get("calendarPdf");
     const submittedAttemptId = formData.get("analysisAttemptId");
-    const cacheMode = parseCacheMode(formData);
-    if (typeof submittedAttemptId === "string" && UUID_PATTERN.test(submittedAttemptId)) {
-      analysisAttemptId = submittedAttemptId;
+    const hasSubmittedAttemptId =
+      typeof submittedAttemptId === "string" && UUID_PATTERN.test(submittedAttemptId);
+    if (hasSubmittedAttemptId) {
+      analysisAttemptId = submittedAttemptId as string;
     }
 
     if (!(upload instanceof File)) {
@@ -272,27 +270,34 @@ export async function POST(request: Request, context: RouteContext) {
         schoolId: schoolData.id,
         pdfHash: earlyPdfHash,
       });
-      if (cacheMode === "default") {
-        for (const cacheKey of earlyCacheKeys.preferred) {
-          const cached = await readCalendarAnalysisCacheEntry(cacheKey);
-          if (cached) {
+      // A transport retry may repeat the same multipart request and attempt UUID. Recover
+      // only that exact attempt; a later intentional analysis always has a new UUID.
+      if (hasSubmittedAttemptId) {
+        for (const attemptKey of earlyCacheKeys.preferred) {
+          const recovered = await readCalendarAnalysisAttemptResult(attemptKey, {
+            minCreatedAt: startedAt - 15 * 60 * 1000,
+            analysisAttemptId,
+          });
+          if (recovered) {
             logAiImportRouteDiagnostic({
-              event: "verified_cache_hit", requestId, analysisAttemptId, school,
-              durationMs: Date.now() - startedAt, status: "success",
+              event: "duplicate_completed_attempt_recovered",
+              requestId,
+              analysisAttemptId,
+              school,
+              durationMs: Date.now() - startedAt,
             });
             return respond({
               status: "success",
-              importResult: cached.result,
-              analysisStrategy: cached.strategy as "text-gpt5-mini" | "pdf-gpt5",
-              outcome: cached.result.warnings.some((warning) => warning.severity === "review")
+              importResult: recovered.result,
+              analysisStrategy:
+                recovered.strategy === AI_CALENDAR_TEXT_STRATEGY
+                  ? AI_CALENDAR_TEXT_STRATEGY
+                  : AI_CALENDAR_PDF_STRATEGY,
+              outcome: recovered.result.warnings.some(
+                (warning) => warning.severity === "review"
+              )
                 ? "reviewable"
                 : "successful",
-              cache: {
-                hit: true,
-                analyzedAt: cached.createdAt,
-                strategy: cached.strategy as "text-gpt5-mini" | "pdf-gpt5",
-                version: cached.analyzerVersion,
-              },
             });
           }
         }
@@ -325,7 +330,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
     if (attemptClaimRejected) {
       logAiImportRouteDiagnostic({
-        level: "warn", event: "attempt_claim_rejected", requestId,
+        level: "warn", event: "duplicate_in_flight_request_prevented", requestId,
         analysisAttemptId, school, durationMs: Date.now() - startedAt,
         reasonCode: "analysis_attempt_superseded",
       });
@@ -415,24 +420,8 @@ export async function POST(request: Request, context: RouteContext) {
       });
     }
 
-    if (cacheMode === "invalidate_and_analyze") {
-      await invalidateCalendarAnalysisCache(
-        cacheKeys.preferred,
-        "user_requested_reanalysis"
-      );
-      logAiImportRouteDiagnostic({
-        event: "cache_invalidated",
-        requestId,
-        school,
-        durationMs: Date.now() - startedAt,
-        reasonCode: "user_requested_reanalysis",
-      });
-    }
-
-    // Every upload always analyzes fresh: a previously cached result is never served in
-    // place of a new analysis, even for the exact same PDF/strategy/model/version. The
-    // cache table below is still written to and still backs in-flight progress polling and
-    // refresh recovery for *this* attempt — it just never short-circuits a new one.
+    // The legacy cache table now stores only attempt ownership, progress, and short-lived
+    // recovery data. A completed result is never reused by a later intentional request.
 
     logAiImportRouteDiagnostic({
       event: "analysis_started",
@@ -523,7 +512,7 @@ export async function POST(request: Request, context: RouteContext) {
         strategy: resultCacheKey.strategy,
         elapsedMs: Date.now() - startedAt,
       });
-      await writeCalendarAnalysisCache(resultCacheKey, result.importResult, analysisAttemptId);
+      await writeCalendarAnalysisAttemptResult(resultCacheKey, result.importResult, analysisAttemptId);
       await setCalendarAnalysisStage(resultCacheKey, "ready", {
         routeRequestId: requestId,
         analysisAttemptId,
@@ -546,6 +535,20 @@ export async function POST(request: Request, context: RouteContext) {
       reasonCode: result.status === "success" ? undefined : result.reasonCode,
       fileSize: upload.size,
       fileType: upload.type || "unknown",
+      strategy:
+        result.status === "success" && result.analysisStrategy === AI_CALENDAR_TEXT_STRATEGY
+          ? "extracted_text"
+          : "direct_pdf",
+      model:
+        result.status === "success" && result.analysisStrategy === AI_CALENDAR_TEXT_STRATEGY
+          ? getOpenAiCalendarTextModel()
+          : getOpenAiCalendarPdfModel(),
+      pageCount:
+        result.status === "success"
+          ? result.importResult.pageClassifications?.length
+          : undefined,
+      warningCount:
+        result.status === "success" ? result.importResult.warnings.length : undefined,
     });
 
     if (result.status === "success") {

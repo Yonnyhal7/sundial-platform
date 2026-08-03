@@ -49,8 +49,8 @@ describe("school setup email", () => {
         SUNDIAL_EMAIL_MODE: "override",
         SUNDIAL_ADMIN_URL: "https://admin.sundialk12.com",
         RESEND_API_KEY: "test-key",
-        SUNDIAL_FROM_EMAIL: "Sundial <setup@sundialk12.com>",
-        SUNDIAL_REPLY_TO_EMAIL: "support@sundialk12.com",
+        SUNDIAL_FROM_EMAIL: "Sundial School Setup <setup@sundialk12.com>",
+        SUNDIAL_REPLY_TO_EMAIL: "mrh@mrhcodes.com",
         VERCEL_ENV: "preview",
       })
     ).toThrow(/SUNDIAL_EMAIL_OVERRIDE_TO/);

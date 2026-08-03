@@ -2,6 +2,8 @@
 import { revalidatePath } from "next/cache";
 import { requireSuperAdminAccess } from "@/lib/auth/adminPermissions";
 import { isValidTimeZone, PLATFORM_FEATURE_KEYS, validateGeneralSettings } from "@/lib/platformSettings";
+import { isSchoolSetupEmailProvider } from "@/lib/platformSettings";
+import { getSchoolSetupProviderConfiguration, sendSchoolSetupEmail } from "@/lib/email/schoolSetupProviders.server";
 
 export type SettingsActionState={status:"idle"|"success"|"validation_error"|"stale"|"server_error";message?:string;version?:number};
 export const INITIAL_SETTINGS_STATE:SettingsActionState={status:"idle"};
@@ -29,4 +31,24 @@ export async function saveNewSchoolDefaults(_state:SettingsActionState,formData:
  const {data,error}=await supabase.rpc("update_platform_settings",{p_section:"new_school_defaults",p_expected_version:version,p_values:{default_timezone:timezone,default_appearance:appearance,features}}).single<RpcResult>();
  if(error||!data)return{status:"server_error",message:"Sundial could not save new-school defaults."}; if(data.status==="stale")return{status:"stale",message:"These settings changed elsewhere. Reload before saving."}; if(data.status!=="success")return{status:"server_error",message:"Sundial could not save new-school defaults."};
  revalidatePath("/admin/dashboard/settings"); return{status:"success",message:"New-school defaults saved. Existing schools were not changed.",version:data.version};
+}
+
+export async function saveEmailDeliverySettings(_state:SettingsActionState,formData:FormData):Promise<SettingsActionState>{
+ const {supabase}=await requireSuperAdminAccess();
+ const allowed=new Set(["school_setup_email_provider","version"]);if([...formData.keys()].some(key=>!allowed.has(key)))return{status:"validation_error",message:"Unknown setting submitted."};
+ const provider=String(formData.get("school_setup_email_provider")||"");if(!isSchoolSetupEmailProvider(provider))return{status:"validation_error",message:"Choose an approved email provider."};
+ const configuration=getSchoolSetupProviderConfiguration(provider);if(!configuration.configured)return{status:"validation_error",message:`${provider==="resend"?"Resend":"Google Workspace"} is not configured. Missing server configuration: ${configuration.missing.join(", ")}.`};
+ const version=Number(formData.get("version"));if(!Number.isSafeInteger(version)||version<1)return{status:"validation_error",message:"Reload settings and try again."};
+ const {data,error}=await supabase.rpc("update_platform_settings",{p_section:"email_delivery",p_expected_version:version,p_values:{school_setup_email_provider:provider,correlation_id:crypto.randomUUID()}}).single<RpcResult>();
+ if(error||!data)return{status:"server_error",message:"Sundial could not save email delivery settings."};if(data.status==="stale")return{status:"stale",message:"These settings changed elsewhere. Reload before saving."};if(data.status!=="success")return{status:"server_error",message:"Sundial could not save email delivery settings."};
+ revalidatePath("/admin/dashboard/settings");return{status:"success",message:`Future setup invitations will use ${provider==="resend"?"Resend":"Google Workspace"}.`,version:data.version};
+}
+
+export type TestEmailState={status:"idle"|"success"|"validation_error"|"server_error";message?:string;providerMessageId?:string};
+export const INITIAL_TEST_EMAIL_STATE:TestEmailState={status:"idle"};
+export async function sendTestSchoolSetupEmail(_state:TestEmailState,formData:FormData):Promise<TestEmailState>{
+ await requireSuperAdminAccess();const provider=String(formData.get("provider")||""),recipient=String(formData.get("recipient")||"").trim().toLowerCase();
+ if(!isSchoolSetupEmailProvider(provider))return{status:"validation_error",message:"Choose an approved provider."};if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)||recipient.length>254)return{status:"validation_error",message:"Enter a valid test recipient email."};
+ const result=await sendSchoolSetupEmail(provider,{recipient,subject:"Sundial school setup email test",text:`This is a test of the ${provider} school setup email provider.`,html:`<p>This is a test of the <strong>${provider==="resend"?"Resend":"Google Workspace"}</strong> school setup email provider.</p>`,idempotencyKey:`school-setup-test-${crypto.randomUUID()}`,metadata:{kind:"settings_test"}});
+ return result.success?{status:"success",message:`Test email sent through ${provider==="resend"?"Resend":"Google Workspace"}.`,providerMessageId:result.providerMessageId??undefined}:{status:"server_error",message:result.errorMessage||"The test email could not be sent."};
 }
