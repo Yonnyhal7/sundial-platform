@@ -14,7 +14,13 @@ import {
   summarizeCalendarWizardDraft,
   type CalendarWizardDraftRecord,
 } from "@/lib/calendarWizard/draftPersistence";
-import { clearCalendarDayAction } from "./actions";
+import {
+  clearCalendarDayAction,
+  deleteSavedCalendarProgressAction,
+} from "./actions";
+import SavedProgressCards, {
+  type SavedProgressCard,
+} from "./saved-progress-cards";
 
 export default async function AdminCalendarPage({
   params,
@@ -42,7 +48,9 @@ export default async function AdminCalendarPage({
     loadCalendarWizardDraft(school, GUIDED_CALENDAR_WIZARD_DRAFT_TYPE),
   ]);
   const aiDraft =
-    aiDraftResult.status === "success" && aiDraftResult.draft ? aiDraftResult.draft : null;
+    aiDraftResult.status === "success" && aiDraftResult.draft
+      ? aiDraftResult.draft
+      : null;
   const guidedDraft =
     guidedDraftResult.status === "success" && guidedDraftResult.draft
       ? guidedDraftResult.draft
@@ -55,7 +63,6 @@ export default async function AdminCalendarPage({
           href: `${calendarWizardHref}/ai`,
           draft: aiDraft,
           summary: summarizeCalendarWizardDraft(aiDraft.wizard_data),
-          detailLabel: "schedules still need bell times",
         }
       : null,
     guidedDraft
@@ -65,7 +72,6 @@ export default async function AdminCalendarPage({
           href: `${calendarWizardHref}/guided`,
           draft: guidedDraft,
           summary: summarizeCalendarWizardDraft(guidedDraft.wizard_data),
-          detailLabel: "current step",
         }
       : null,
   ].filter(Boolean) as Array<{
@@ -74,8 +80,24 @@ export default async function AdminCalendarPage({
     href: string;
     draft: CalendarWizardDraftRecord;
     summary: ReturnType<typeof summarizeCalendarWizardDraft>;
-    detailLabel: string;
   }>;
+  const savedProgressCards: SavedProgressCard[] = draftCards.map((card) => ({
+    key: card.key,
+    title: card.title,
+    href: card.href,
+    draftId: card.draft.id,
+    schoolYearLabel: card.draft.school_year_label,
+    updatedAt: card.draft.updated_at,
+    completionPercentage: card.summary.completionPercentage,
+    detail:
+      card.key === "ai"
+        ? `${card.summary.remainingScheduleCount} ${card.summary.remainingScheduleCount === 1 ? "schedule" : "schedules"} still need bell times`
+        : `Current step: ${card.draft.wizard_data.currentStep.replaceAll("-", " ")}`,
+  }));
+  const deleteSavedProgress = deleteSavedCalendarProgressAction.bind(
+    null,
+    school,
+  );
 
   const { data: schedules, error: schedulesError } = await supabase
     .from("schedules")
@@ -85,7 +107,10 @@ export default async function AdminCalendarPage({
     .order("schedule_name", { ascending: true });
 
   if (schedulesError) {
-    console.error("Calendar schedules error:", JSON.stringify(schedulesError, null, 2));
+    console.error(
+      "Calendar schedules error:",
+      JSON.stringify(schedulesError, null, 2),
+    );
   }
 
   const { data: calendarDays, error: calendarError } = await supabase
@@ -94,7 +119,10 @@ export default async function AdminCalendarPage({
     .eq("school_id", schoolId);
 
   if (calendarError) {
-    console.error("Calendar days error:", JSON.stringify(calendarError, null, 2));
+    console.error(
+      "Calendar days error:",
+      JSON.stringify(calendarError, null, 2),
+    );
   }
 
   const scheduleIds = (schedules || []).map((schedule) => schedule.id);
@@ -108,9 +136,12 @@ export default async function AdminCalendarPage({
         .order("sort_order", { ascending: true })
     : { data: [], error: null };
 
-    if (periodsError) {
-    console.error("Calendar periods error:", JSON.stringify(periodsError, null, 2));
-    }
+  if (periodsError) {
+    console.error(
+      "Calendar periods error:",
+      JSON.stringify(periodsError, null, 2),
+    );
+  }
 
   async function saveCalendarDay(formData: FormData) {
     "use server";
@@ -118,7 +149,7 @@ export default async function AdminCalendarPage({
     const { supabase } = await requireAdminSectionAccess(
       schoolId,
       "calendar",
-      school
+      school,
     );
 
     const date = String(formData.get("date") || "");
@@ -138,10 +169,13 @@ export default async function AdminCalendarPage({
         .maybeSingle<{ id: string }>();
 
       if (!ownedSchedule) {
-        console.warn("Rejected calendar assignment to an unavailable schedule", {
-          schoolId,
-          scheduleId,
-        });
+        console.warn(
+          "Rejected calendar assignment to an unavailable schedule",
+          {
+            schoolId,
+            scheduleId,
+          },
+        );
         return;
       }
     }
@@ -157,12 +191,12 @@ export default async function AdminCalendarPage({
       },
       {
         onConflict: "school_id,date",
-      }
+      },
     );
 
     if (error) {
-        console.error("Save calendar day error:", JSON.stringify(error, null, 2));
-        return;
+      console.error("Save calendar day error:", JSON.stringify(error, null, 2));
+      return;
     }
 
     revalidatePath(`/${school}/admin/calendar`);
@@ -173,7 +207,9 @@ export default async function AdminCalendarPage({
       <div className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{schoolData.name} Admin</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {schoolData.name} Admin
+            </p>
             <h1 className="mt-1 text-3xl font-bold">Calendar</h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               Assign schedule templates to specific school days.
@@ -188,47 +224,10 @@ export default async function AdminCalendarPage({
           </Link>
         </div>
 
-        {draftCards.length > 0 && (
-          <section className="mb-8 grid gap-4 lg:grid-cols-2">
-            {draftCards.map((card) => (
-              <div
-                key={card.key}
-                className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/50 dark:bg-amber-950/20"
-              >
-                <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#9A7209] dark:text-[#F6C64A]">
-                  Saved Progress
-                </p>
-                <h2 className="mt-2 text-2xl font-bold">{card.title}</h2>
-                <p className="mt-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  {card.summary.schoolYearLabel || "School-Year Calendar Draft"} ·{" "}
-                  {card.summary.completionPercentage}% complete · Last updated{" "}
-                  {new Date(card.draft.updated_at).toLocaleString()}
-                </p>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                  {card.key === "ai"
-                    ? `${card.summary.remainingScheduleCount} ${
-                        card.summary.remainingScheduleCount === 1 ? "schedule" : "schedules"
-                      } still need bell times`
-                    : `Current step: ${card.draft.wizard_data.currentStep.replaceAll("-", " ")}`}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Link
-                    href={card.href}
-                    className="inline-flex items-center justify-center rounded-lg bg-[var(--school-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--school-primary-text)] shadow-sm transition hover:opacity-90"
-                  >
-                    Resume
-                  </Link>
-                  <Link
-                    href={`${card.href}?startOver=1`}
-                    className="inline-flex items-center justify-center rounded-lg border border-amber-300 px-4 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100 dark:border-amber-800 dark:text-amber-100 dark:hover:bg-amber-950/40"
-                  >
-                    Start Over
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </section>
-        )}
+        <SavedProgressCards
+          initialCards={savedProgressCards}
+          deleteAction={deleteSavedProgress}
+        />
 
         <CalendarClient
           schedules={schedules || []}
