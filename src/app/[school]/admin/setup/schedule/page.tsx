@@ -11,6 +11,7 @@ import {
 import { setupPrimaryButtonClass } from "@/lib/ui/setupStyles";
 import { getScheduleSetupReadiness } from "@/lib/setupCalendarCompletion";
 import { loadCalendarWizardDraft } from "../../calendar/wizard/actions";
+import { isAdvancedAiImportEnabled } from "@/features/advanced-ai-import/constants/featureFlag";
 
 type SchedulePageProps = {
   params: Promise<{ school: string }>;
@@ -140,7 +141,7 @@ export default async function OnboardingSchedulePage({
           </div>
         )}
 
-        <div className="mt-7 grid gap-5 lg:grid-cols-2">
+        <div className="mt-7 grid gap-5 lg:grid-cols-3">
           <CalendarSetupChoiceCard
             title="AI Calendar Import"
             badge="Beta"
@@ -167,6 +168,17 @@ export default async function OnboardingSchedulePage({
             href={`${adminBasePath}/calendar/wizard/guided?from=setup`}
             cta="Start Guided Setup"
           />
+          {isAdvancedAiImportEnabled() && (
+            <CalendarSetupChoiceCard
+              title="Advanced AI Import"
+              badge="Alpha"
+              badgeTone="purple"
+              description="Experience Sundial's next-generation AI calendar importer. Experimental workflow with future support for page-by-page analysis, advanced verification, and higher accuracy."
+              highlights={["Upload your school calendar PDF", "Advanced document analysis", "AI verification before calendar creation", "Built for complex school calendars"]}
+              href={`${adminBasePath}/calendar/wizard/advanced?from=setup`}
+              cta="Use Advanced AI Import"
+            />
+          )}
         </div>
       </section>
     </SetupLayout>
@@ -176,6 +188,7 @@ export default async function OnboardingSchedulePage({
 function CalendarSetupChoiceCard({
   title,
   badge,
+  badgeTone = "gold",
   description,
   highlights,
   href,
@@ -183,6 +196,7 @@ function CalendarSetupChoiceCard({
 }: {
   title: string;
   badge?: string;
+  badgeTone?: "gold" | "purple";
   description: string;
   highlights: string[];
   href: string;
@@ -193,7 +207,7 @@ function CalendarSetupChoiceCard({
       <div className="flex items-start justify-between gap-3">
         <h3 className="text-2xl font-bold">{title}</h3>
         {badge && (
-          <span className="rounded-full bg-[#D4A017]/15 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-[#9A7209] dark:text-[#F6C64A]">
+          <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] ${badgeTone === "purple" ? "bg-purple-500/15 text-purple-700 dark:text-purple-300" : "bg-[#D4A017]/15 text-[#9A7209] dark:text-[#F6C64A]"}`}>
             {badge}
           </span>
         )}

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getSchoolAdminPath, requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { getSchoolForSetup } from "@/lib/schools";
 import { sundialPrimaryButtonClass } from "@/lib/ui/buttonStyles";
+import { isAdvancedAiImportEnabled } from "@/features/advanced-ai-import/constants/featureFlag";
 
 export default async function CalendarWizardChoicePage({
   params,
@@ -47,6 +48,15 @@ export default async function CalendarWizardChoicePage({
       href: `${adminBasePath}/calendar/wizard/guided`,
       cta: "Start Guided Setup",
     },
+    ...(isAdvancedAiImportEnabled() ? [{
+      title: "Advanced AI Import",
+      badge: "Alpha",
+      badgeTone: "purple" as const,
+      description: "Experience Sundial's next-generation AI calendar importer. Experimental workflow with future support for page-by-page analysis, advanced verification, and higher accuracy.",
+      highlights: ["Upload your school calendar PDF", "Advanced document analysis", "AI verification before calendar creation", "Built for complex school calendars"],
+      href: `${adminBasePath}/calendar/wizard/advanced`,
+      cta: "Use Advanced AI Import",
+    }] : []),
   ];
 
   return (
@@ -69,7 +79,7 @@ export default async function CalendarWizardChoicePage({
           </Link>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-2">
+        <div className="grid gap-5 lg:grid-cols-3">
           {options.map((option) => (
             <section
               key={option.title}
@@ -78,7 +88,7 @@ export default async function CalendarWizardChoicePage({
               <div className="flex items-start justify-between gap-3">
                 <h2 className="text-2xl font-bold">{option.title}</h2>
                 {option.badge && (
-                  <span className="rounded-full bg-[#D4A017]/15 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-[#9A7209] dark:text-[#F6C64A]">
+                  <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] ${option.badgeTone === "purple" ? "bg-purple-500/15 text-purple-700 dark:text-purple-300" : "bg-[#D4A017]/15 text-[#9A7209] dark:text-[#F6C64A]"}`}>
                     {option.badge}
                   </span>
                 )}

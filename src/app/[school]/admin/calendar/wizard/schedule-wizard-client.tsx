@@ -1259,6 +1259,8 @@ export default function ScheduleWizardClient({
   launchContext = null,
   setupChooserHref,
   aiCalendarDebugEnabled = false,
+  aiImportVariant = "beta",
+  onAiImportEvent,
 }: {
   schoolId: string;
   schoolSlug: string;
@@ -1271,14 +1273,20 @@ export default function ScheduleWizardClient({
   launchContext?: CalendarWizardLaunchContext | null;
   setupChooserHref: string;
   aiCalendarDebugEnabled?: boolean;
+  aiImportVariant?: "beta" | "advanced";
+  onAiImportEvent?: (event: "started" | "upload_completed" | "completed" | "failed", metadata?: Record<string, unknown>) => void;
 }) {
   const draftType = getDraftTypeForCalendarWizardFlow(flowMode);
   const isAiMode = flowMode === "ai";
   const isGuidedMode = flowMode === "guided";
-  const storageKey = `sundial:calendar-wizard:${schoolId}:${flowMode}`;
+  const storageKey = aiImportVariant === "advanced"
+    ? `sundial:calendar-wizard:${schoolId}:${flowMode}:advanced`
+    : `sundial:calendar-wizard:${schoolId}:${flowMode}`;
   const legacyStorageKey = `sundial:schedule-wizard:${schoolId}:${schoolSlug}`;
   const unsafeSlugStorageKey = `calendar-wizard-${flowMode}:${schoolSlug}`;
-  const pageTitle = isAiMode ? "AI Calendar Import" : "Guided Calendar Setup";
+  const pageTitle = isAiMode
+    ? aiImportVariant === "advanced" ? "Advanced AI Import" : "AI Calendar Import"
+    : "Guided Calendar Setup";
   const pageDescription = isAiMode
     ? "Upload your school calendar PDF, review Sundial's draft, and create the calendar."
     : "Build a school-year calendar from your normal schedule, closures, and special school days.";
@@ -1812,6 +1820,7 @@ export default function ScheduleWizardClient({
       });
 
       if (result.status === "success") {
+        onAiImportEvent?.("completed");
         window.sessionStorage.removeItem(storageKey);
         if (result.redirectTo) {
           window.location.assign(result.redirectTo);
@@ -1971,6 +1980,8 @@ export default function ScheduleWizardClient({
           {isAiMode ? (
             <AiCalendarImportCard
               schoolSlug={schoolSlug}
+              variant={aiImportVariant}
+              onImportEvent={onAiImportEvent}
               schedules={schedules}
               draft={draft}
               onAddTimesNow={saveAndOpenSchedule}
@@ -2250,6 +2261,8 @@ function WizardProgress({
 
 function AiCalendarImportCard({
   schoolSlug,
+  variant,
+  onImportEvent,
   schedules,
   draft,
   onAddTimesNow,
@@ -2263,6 +2276,8 @@ function AiCalendarImportCard({
   onDebugRestoreInfoChange,
 }: {
   schoolSlug: string;
+  variant: "beta" | "advanced";
+  onImportEvent?: (event: "started" | "upload_completed" | "completed" | "failed", metadata?: Record<string, unknown>) => void;
   schedules: WizardScheduleSummary[];
   draft: WizardDraft;
   onAddTimesNow: (tempId: string, detectedName: string) => Promise<void>;
@@ -2277,6 +2292,8 @@ function AiCalendarImportCard({
   debugRestoreInfo: AiCalendarDebugRestoreInfo;
   onDebugRestoreInfoChange: (value: AiCalendarDebugRestoreInfo) => void;
 }) {
+  const aiImportApiBase = `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/${variant === "advanced" ? "advanced-ai-import" : "ai-import"}`;
+  const onAiImportEvent = onImportEvent;
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [status, setStatus] = useState<AiImportReviewState>(
     draft.aiImport?.state || "idle"
@@ -2306,8 +2323,10 @@ function AiCalendarImportCard({
     ((pending: PendingAiImport) => Promise<void>) | null
   >(null);
   const pendingImportStorageKey = useMemo(
-    () => getPendingAiImportStorageKey(schoolSlug),
-    [schoolSlug]
+    () => variant === "advanced"
+      ? `${getPendingAiImportStorageKey(schoolSlug)}:advanced`
+      : getPendingAiImportStorageKey(schoolSlug),
+    [schoolSlug, variant]
   );
   const isWorking = status === "uploading" || status === "analyzing" || isPolling;
   const importResult = draft.aiImport?.result;
@@ -2641,7 +2660,7 @@ function AiCalendarImportCard({
       attemptId: pending.attemptId,
     });
     const response = await fetch(
-      `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/result?${query.toString()}`
+      `${aiImportApiBase}/result?${query.toString()}`
     );
 
     return parseAiImportResponse(response);
@@ -2701,7 +2720,7 @@ function AiCalendarImportCard({
           attemptId: pending.attemptId,
         });
         const response = await fetch(
-          `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/status?${query.toString()}`
+          `${aiImportApiBase}/status?${query.toString()}`
         );
         const statusResult = await parseAiImportStatusResponse(response);
         applyStatusProgress(statusResult);
@@ -2796,7 +2815,7 @@ function AiCalendarImportCard({
         attemptId: pending.attemptId,
       });
       const response = await fetch(
-        `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import/status?${query.toString()}`
+        `${aiImportApiBase}/status?${query.toString()}`
       );
       const statusResult = await parseAiImportStatusResponse(response);
 
@@ -2848,6 +2867,7 @@ function AiCalendarImportCard({
 
   async function analyzeSelectedFile() {
     if (!selectedFile || isWorking) return;
+    onAiImportEvent?.("started", { fileName: selectedFile.name, fileSize: selectedFile.size });
 
     const timeoutController = createAiImportClientTimeoutController();
     const startedAt = Date.now();
@@ -2897,7 +2917,7 @@ function AiCalendarImportCard({
       setStatus("analyzing");
       setMessage("Finding school dates and checking schedule patterns...");
       const response = await fetch(
-        `/api/admin/${encodeURIComponent(schoolSlug)}/calendar/ai-import`,
+        aiImportApiBase,
         {
           method: "POST",
           body: formData,
@@ -2919,6 +2939,7 @@ function AiCalendarImportCard({
         }
         setStatus(result.status === "validation_error" ? "failed" : "failed");
         setMessage(result.message);
+        onAiImportEvent?.("failed", { status: result.status });
         clearPendingAiImport();
         return;
       }
@@ -2930,6 +2951,7 @@ function AiCalendarImportCard({
         pdfHash: pendingImport?.pdfHash,
         attemptId,
       });
+      onAiImportEvent?.("upload_completed", { requestId });
     } catch (error) {
       const result = mapAiImportClientError(error);
       if (pendingImport && isRecoverableAiImportInterruption(result)) {
@@ -2940,6 +2962,7 @@ function AiCalendarImportCard({
       setActionResult(result);
       setStatus("failed");
       setMessage(result.message);
+      onAiImportEvent?.("failed", { status: result.status });
       clearPendingAiImport();
     } finally {
       timeoutController.clear();
