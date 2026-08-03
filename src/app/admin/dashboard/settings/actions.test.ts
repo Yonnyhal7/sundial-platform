@@ -4,6 +4,7 @@ const backend = vi.hoisted(() => ({
   activeProvider: "resend",
   version: 4,
   saveFailure: null as "returned" | "thrown" | null,
+  unconfiguredProvider: null as "google_workspace" | "resend" | null,
 }));
 
 const { requireSuperAdminAccess } = vi.hoisted(() => ({ requireSuperAdminAccess: vi.fn(async () => ({
@@ -27,7 +28,10 @@ const { requireSuperAdminAccess } = vi.hoisted(() => ({ requireSuperAdminAccess:
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth/adminPermissions", () => ({ requireSuperAdminAccess }));
 vi.mock("@/lib/email/schoolSetupProviders.server", () => ({
-  getSchoolSetupProviderConfiguration: vi.fn(() => ({ configured: true, missing: [] })),
+  getSchoolSetupProviderConfiguration: vi.fn((provider: string) => ({
+    configured: backend.unconfiguredProvider !== provider,
+    missing: backend.unconfiguredProvider === provider ? ["TEST_PROVIDER_SECRET"] : [],
+  })),
   sendSchoolSetupEmail: vi.fn(),
 }));
 
@@ -45,6 +49,7 @@ describe("Email Delivery settings actions", () => {
     backend.activeProvider = "resend";
     backend.version = 4;
     backend.saveFailure = null;
+    backend.unconfiguredProvider = null;
     requireSuperAdminAccess.mockClear();
   });
 
@@ -60,15 +65,50 @@ describe("Email Delivery settings actions", () => {
   });
 
   it("persists Resend to Google Workspace and returns the reloaded provider", async () => {
+    const form = saveForm("google_workspace");
+    form.set("$ACTION_ID_saveEmailDeliverySettings", "framework-metadata");
     const result = await saveEmailDeliverySettings(
       { status: "idle" },
-      saveForm("google_workspace")
+      form
     );
 
     const reloadedProvider = backend.activeProvider;
     expect(result).toMatchObject({ status: "success", version: 5 });
     expect(reloadedProvider).toBe("google_workspace");
     expect(requireSuperAdminAccess).toHaveBeenCalledOnce();
+  });
+
+  it("persists Google Workspace back to Resend", async () => {
+    backend.activeProvider = "google_workspace";
+    const result = await saveEmailDeliverySettings({ status: "idle" }, saveForm("resend"));
+
+    expect(result).toMatchObject({ status: "success", version: 5 });
+    expect(backend.activeProvider).toBe("resend");
+  });
+
+  it("rejects unknown setting names while allowing Server Action metadata", async () => {
+    const form = saveForm("google_workspace");
+    form.set("settingName", "school_setup_email_provider");
+    form.set("$ACTION_KEY", "framework-metadata");
+
+    await expect(saveEmailDeliverySettings({ status: "idle" }, form)).resolves.toEqual({
+      status: "validation_error",
+      message: "Unsupported platform setting.",
+    });
+    expect(backend.activeProvider).toBe("resend");
+  });
+
+  it("blocks a configured enum value when its provider configuration is missing", async () => {
+    backend.unconfiguredProvider = "google_workspace";
+
+    const result = await saveEmailDeliverySettings(
+      { status: "idle" },
+      saveForm("google_workspace")
+    );
+
+    expect(result).toMatchObject({ status: "validation_error" });
+    expect(result.message).toContain("Google Workspace is not configured");
+    expect(backend.activeProvider).toBe("resend");
   });
 
   it.each(["returned", "thrown"] as const)(

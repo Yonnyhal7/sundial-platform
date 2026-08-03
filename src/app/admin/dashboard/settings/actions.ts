@@ -7,10 +7,17 @@ import { getSchoolSetupProviderConfiguration, sendSchoolSetupEmail } from "@/lib
 import type { SettingsActionState, TestEmailState } from "./actionState";
 
 type RpcResult={status?:string;version?:number};
+const isActionMetadataField=(key:string)=>key.startsWith("$ACTION_");
+function rejectUnsupportedField(formData:FormData,allowed:ReadonlySet<string>):SettingsActionState|null{
+ const rejected=[...formData.keys()].find(key=>!isActionMetadataField(key)&&!allowed.has(key));
+ if(!rejected)return null;
+ console.warn("Rejected unsupported platform setting field.",{field:rejected});
+ return{status:"validation_error",message:"Unsupported platform setting."};
+}
 
 export async function saveGeneralSettings(_state:SettingsActionState,formData:FormData):Promise<SettingsActionState>{
  const {supabase}=await requireSuperAdminAccess();
- const allowed=new Set(["support_email","default_sender_name","support_website_url","support_phone","version"]); if([...formData.keys()].some(key=>!allowed.has(key)))return{status:"validation_error",message:"Unknown setting submitted."};
+ const unsupported=rejectUnsupportedField(formData,new Set(["support_email","default_sender_name","support_website_url","support_phone","version"]));if(unsupported)return unsupported;
  const values={support_email:String(formData.get("support_email")||""),default_sender_name:String(formData.get("default_sender_name")||""),support_website_url:String(formData.get("support_website_url")||""),support_phone:String(formData.get("support_phone")||"")};
  const validation=validateGeneralSettings(values); if(validation)return{status:"validation_error",message:validation};
  const version=Number(formData.get("version")); if(!Number.isSafeInteger(version)||version<1)return{status:"validation_error",message:"Reload settings and try again."};
@@ -23,7 +30,7 @@ export async function saveGeneralSettings(_state:SettingsActionState,formData:Fo
 
 export async function saveNewSchoolDefaults(_state:SettingsActionState,formData:FormData):Promise<SettingsActionState>{
  const {supabase}=await requireSuperAdminAccess(); const timezone=String(formData.get("default_timezone")||""); const appearance=String(formData.get("default_appearance")||"");
- const allowed=new Set(["default_timezone","default_appearance","version","feature_key",...PLATFORM_FEATURE_KEYS.map(key=>`feature_${key}`)]); if([...formData.keys()].some(key=>!allowed.has(key)))return{status:"validation_error",message:"Unknown setting submitted."};
+ const unsupported=rejectUnsupportedField(formData,new Set(["default_timezone","default_appearance","version","feature_key",...PLATFORM_FEATURE_KEYS.map(key=>`feature_${key}`)]));if(unsupported)return unsupported;
  if(!isValidTimeZone(timezone))return{status:"validation_error",message:"Choose a valid IANA timezone."}; if(!["light","dark","system"].includes(appearance))return{status:"validation_error",message:"Choose a valid appearance."};
  const submittedKeys=formData.getAll("feature_key").map(String); if(submittedKeys.some(k=>!PLATFORM_FEATURE_KEYS.includes(k as never)))return{status:"validation_error",message:"Unknown feature setting submitted."};
  const features=Object.fromEntries(PLATFORM_FEATURE_KEYS.map(key=>[key,formData.get(`feature_${key}`)==="on"])); const version=Number(formData.get("version"));
@@ -34,7 +41,7 @@ export async function saveNewSchoolDefaults(_state:SettingsActionState,formData:
 
 export async function saveEmailDeliverySettings(_state:SettingsActionState,formData:FormData):Promise<SettingsActionState>{
  const {supabase}=await requireSuperAdminAccess();
- const allowed=new Set(["school_setup_email_provider","version"]);if([...formData.keys()].some(key=>!allowed.has(key)))return{status:"validation_error",message:"Unknown setting submitted."};
+ const unsupported=rejectUnsupportedField(formData,new Set(["school_setup_email_provider","version"]));if(unsupported)return unsupported;
  const provider=String(formData.get("school_setup_email_provider")||"");if(!isSchoolSetupEmailProvider(provider))return{status:"validation_error",message:"Choose an approved email provider."};
  const version=Number(formData.get("version"));if(!Number.isSafeInteger(version)||version<1)return{status:"validation_error",message:"Reload settings and try again."};
  try {
