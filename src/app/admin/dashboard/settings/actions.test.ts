@@ -3,25 +3,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const backend = vi.hoisted(() => ({
   activeProvider: "resend",
   version: 4,
-  saveFailure: null as "returned" | "thrown" | null,
+  saveFailure: null as "returned" | "thrown" | "structured" | null,
   unconfiguredProvider: null as "google_workspace" | "resend" | null,
 }));
 
 const { requireSuperAdminAccess } = vi.hoisted(() => ({ requireSuperAdminAccess: vi.fn(async () => ({
   profile: { id: "00000000-0000-4000-8000-000000000001" },
   supabase: {
-    rpc: vi.fn((_name: string, args: { p_expected_version: number; p_values: { school_setup_email_provider: string } }) => ({
-      single: async () => {
+    rpc: vi.fn(async (_name: string, args: { p_expected_version: number; p_values: { school_setup_email_provider: string } }) => {
         if (backend.saveFailure === "thrown") throw new Error("network unavailable");
         if (backend.saveFailure === "returned") return { data: null, error: { message: "write failed" } };
+        if (backend.saveFailure === "structured") return { data: { status: "server_error" }, error: null };
         if (args.p_expected_version !== backend.version) {
           return { data: { status: "stale", version: backend.version }, error: null };
         }
         backend.activeProvider = args.p_values.school_setup_email_provider;
         backend.version += 1;
         return { data: { status: "success", version: backend.version }, error: null };
-      },
-    })),
+    }),
   },
 })) }));
 
@@ -119,9 +118,21 @@ describe("Email Delivery settings actions", () => {
         saveEmailDeliverySettings({ status: "idle" }, saveForm("google_workspace"))
       ).resolves.toEqual({
         status: "server_error",
-        message: "Sundial could not save email delivery settings. Try again.",
+        message: expect.stringMatching(/^Sundial could not save email delivery settings\. Try again\. Support ID: [0-9a-f-]+$/),
       });
       expect(backend.activeProvider).toBe("resend");
     }
   );
+
+  it("handles the production scalar JSONB failure payload", async () => {
+    backend.saveFailure = "structured";
+    const result = await saveEmailDeliverySettings(
+      { status: "idle" },
+      saveForm("google_workspace")
+    );
+
+    expect(result.status).toBe("server_error");
+    expect(result.message).toContain("Support ID:");
+    expect(backend.activeProvider).toBe("resend");
+  });
 });
