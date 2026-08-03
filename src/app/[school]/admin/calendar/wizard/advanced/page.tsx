@@ -20,6 +20,7 @@ export default async function AdvancedAiImportPage({ params, searchParams }: {
       <AdvancedImportWizard
         {...data}
         aiCalendarDebugEnabled={process.env.AI_CALENDAR_DEBUG === "true"}
+        importSessionDebugEnabled={process.env.ADVANCED_AI_IMPORT_DEBUG === "true"}
         launchContext={parseCalendarWizardLaunchContext(from)}
         setupChooserHref={await getSchoolSetupStepPath(school, "schedule")}
       />

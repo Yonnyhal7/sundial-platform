@@ -2926,6 +2926,7 @@ function AiCalendarImportCard({
       );
       const result = await parseAiImportResponse(response);
       const requestId = response.headers.get("x-sundial-ai-import-request-id");
+      const importSessionId = response.headers.get("x-sundial-advanced-import-session-id");
       if (pendingImport) {
         pendingImport = { ...pendingImport, requestId: requestId || attemptId };
         persistPendingAiImport(pendingImport);
@@ -2951,7 +2952,7 @@ function AiCalendarImportCard({
         pdfHash: pendingImport?.pdfHash,
         attemptId,
       });
-      onAiImportEvent?.("upload_completed", { requestId });
+      onAiImportEvent?.("upload_completed", { requestId, importSessionId });
     } catch (error) {
       const result = mapAiImportClientError(error);
       if (pendingImport && isRecoverableAiImportInterruption(result)) {

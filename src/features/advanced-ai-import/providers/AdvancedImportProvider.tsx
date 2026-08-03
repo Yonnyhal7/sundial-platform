@@ -6,6 +6,7 @@ import { ADVANCED_IMPORT_EVENTS, trackAdvancedImportEvent } from "../analytics/e
 type LifecycleEvent = "started" | "upload_completed" | "completed" | "failed";
 type AdvancedImportContextValue = {
   lifecycle: "idle" | LifecycleEvent;
+  sessionId: string | null;
   recordEvent: (event: LifecycleEvent, metadata?: Record<string, unknown>) => void;
 };
 
@@ -13,15 +14,17 @@ const AdvancedImportContext = createContext<AdvancedImportContextValue | null>(n
 
 export function AdvancedImportProvider({ children }: { children: ReactNode }) {
   const [lifecycle, setLifecycle] = useState<AdvancedImportContextValue["lifecycle"]>("idle");
+  const [sessionId, setSessionId] = useState<string | null>(null);
   useEffect(() => trackAdvancedImportEvent(ADVANCED_IMPORT_EVENTS.opened), []);
   const recordEvent = useCallback((event: LifecycleEvent, metadata: Record<string, unknown> = {}) => {
     setLifecycle(event);
+    if (typeof metadata.importSessionId === "string") setSessionId(metadata.importSessionId);
     const analyticsEvent = event === "upload_completed"
       ? ADVANCED_IMPORT_EVENTS.uploadCompleted
       : ADVANCED_IMPORT_EVENTS[event];
     trackAdvancedImportEvent(analyticsEvent, metadata);
   }, []);
-  const value = useMemo(() => ({ lifecycle, recordEvent }), [lifecycle, recordEvent]);
+  const value = useMemo(() => ({ lifecycle, sessionId, recordEvent }), [lifecycle, sessionId, recordEvent]);
   return <AdvancedImportContext.Provider value={value}>{children}</AdvancedImportContext.Provider>;
 }
 
