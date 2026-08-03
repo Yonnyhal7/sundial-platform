@@ -74,6 +74,8 @@ type KioskStyle = CSSProperties & {
   "--school-accent-visible-dark": string;
   "--school-accent-visible-card-light": string;
   "--school-accent-visible-card-dark": string;
+  "--school-primary-visible-card-light": string;
+  "--school-primary-visible-card-dark": string;
 };
 
 const KIOSK_DATA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -322,6 +324,8 @@ export default function KioskDisplay({
     "--school-accent-visible-dark": schoolTheme.dark.visibleAccentOnPage,
     "--school-accent-visible-card-light": schoolTheme.light.visibleAccentOnCard,
     "--school-accent-visible-card-dark": schoolTheme.dark.visibleAccentOnCard,
+    "--school-primary-visible-card-light": schoolTheme.light.visibleSchoolColorOnCard,
+    "--school-primary-visible-card-dark": schoolTheme.dark.visibleSchoolColorOnCard,
   } as KioskStyle;
   const cheerText = schoolMascot?.trim() ? `Go ${schoolMascot.trim()}!` : "Go Sundial!";
 
@@ -523,18 +527,18 @@ export default function KioskDisplay({
                       className={[
                         "grid min-h-0 grid-cols-[minmax(5.6rem,0.8fr)_minmax(7.5rem,1fr)_2rem] items-center gap-[0.6vw] rounded-lg px-[0.9vw] py-[0.35dvh] text-[clamp(0.72rem,0.92vw,1.08rem)] leading-tight",
                         isCurrent
-                          ? "bg-[color-mix(in_srgb,var(--school-primary)_16%,white)] text-[var(--kiosk-text)]"
+                          ? "kiosk-current-period bg-[color-mix(in_srgb,var(--school-primary)_16%,white)] text-[var(--kiosk-text)]"
                           : "border-b border-slate-200",
                       ].join(" ")}
                     >
-                      <div className="flex items-center gap-[0.5vw] font-extrabold">
+                      <div className="kiosk-current-period-name flex items-center gap-[0.5vw] font-extrabold">
                         {isCurrent && (
-                          <span className="h-[0.55vw] w-[0.55vw] rounded-full bg-[var(--school-accent-visible-card)]" />
+                          <span className="kiosk-current-period-dot h-[0.55vw] w-[0.55vw] rounded-full bg-[var(--school-primary)]" />
                         )}
                         {period.name.replace(" Period", "")}
                       </div>
 
-                      <div className="text-slate-600">
+                      <div className="kiosk-current-period-time text-slate-600">
                         {period.startTime} – {period.endTime}
                       </div>
 

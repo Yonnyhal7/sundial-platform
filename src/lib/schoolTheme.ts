@@ -126,6 +126,7 @@ export function getSchoolTheme(
     cardBackground,
     visibleAccentOnPage: getVisibleAccentColor(accentColor, pageBackground),
     visibleAccentOnCard: getVisibleAccentColor(accentColor, cardBackground),
+    visibleSchoolColorOnCard: getVisibleAccentColor(schoolColor, cardBackground),
     visibleAccentOnSchoolColor: getVisibleAccentColor(accentColor, schoolColor),
   };
 }

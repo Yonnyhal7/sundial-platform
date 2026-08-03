@@ -61,6 +61,20 @@ describe("kiosk utility controls", () => {
     expect(kioskColorSource).toContain("var(--school-accent-visible");
   });
 
+  it("keeps the current period dark and primary-color accented in dark mode", () => {
+    expect(kioskSource).toContain("kiosk-current-period");
+    expect(globalStyles).toContain(".dark .kiosk-theme .kiosk-current-period");
+    expect(globalStyles).toContain("var(--school-primary-visible-card-dark) 52%");
+    expect(globalStyles).toContain("var(--school-primary) 10%");
+    expect(globalStyles).toContain("#202020");
+    expect(globalStyles).toContain("color: #ffffff");
+    expect(globalStyles).toContain("color: #cbd5e1");
+    expect(globalStyles).toContain("var(--school-primary-visible-card-dark) 14%");
+    expect(globalStyles).not.toMatch(
+      /\.kiosk-current-period[\s\S]*?#(?:fb7185|f43f5e|e11d48)/
+    );
+  });
+
   it("uses neutral kiosk text on the school-color bottom banner", () => {
     expect(kioskSource).toContain(
       'bg-[var(--school-primary)] text-[clamp(1rem,1.35vw,1.55rem)] font-extrabold text-[var(--kiosk-text)]'

@@ -343,6 +343,37 @@ body {
   box-shadow: 0 8px 30px rgb(0 0 0 / 0.35);
 }
 
+.dark .kiosk-theme .kiosk-current-period {
+  border: 1px solid color-mix(
+    in srgb,
+    var(--school-primary-visible-card-dark) 52%,
+    transparent
+  );
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--school-primary) 10%, transparent),
+      color-mix(in srgb, var(--school-primary) 10%, transparent)
+    ),
+    #202020;
+  box-shadow:
+    0 0 16px color-mix(in srgb, var(--school-primary-visible-card-dark) 14%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--school-primary) 4%, transparent);
+  color: #ffffff;
+}
+
+.dark .kiosk-theme .kiosk-current-period-name {
+  color: #ffffff;
+}
+
+.dark .kiosk-theme .kiosk-current-period-time {
+  color: #cbd5e1;
+}
+
+.dark .kiosk-theme .kiosk-current-period-dot {
+  background: var(--school-primary-visible-card-dark);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--school-primary-visible-card-dark) 24%, transparent);
+}
+
 .kiosk-theme [class~="border-slate-200"],
 .kiosk-theme [class~="border-slate-300"] {
   border-color: var(--kiosk-border);
