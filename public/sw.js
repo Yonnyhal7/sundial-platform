@@ -3,13 +3,14 @@ const SHELL_CACHE = "sundial-shell-v3";
 const ASSET_CACHE = "sundial-assets-v4";
 const NAVIGATION_CACHE = "sundial-navigation-v4";
 
+// Keep this list to assets the launch path actually needs. The full-resolution
+// sundial-icon.png / sundial-logo.png are ~605 KB each and were costing 1.2 MB
+// of install-time bandwidth that competed with the first paint.
 const PRECACHE_URLS = [
   "/favicon.ico",
   "/icon-192.png",
-  "/icon-512.png",
   "/apple-touch-icon.png",
-  "/sundial-icon.png",
-  "/sundial-logo.png",
+  "/sundial-launch-mark.webp",
 ];
 
 self.addEventListener("install", (event) => {

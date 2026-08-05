@@ -86,6 +86,15 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{ __html: getPwaLaunchPrepaintScript() }}
         />
+        {/* Declared explicitly rather than relying on next/image hoisting, which
+            does not reach the head on streamed tenant routes. */}
+        <link
+          rel="preload"
+          as="image"
+          href={PWA_LAUNCH_VISUAL.iconSrc}
+          type="image/webp"
+          fetchPriority="high"
+        />
         <style dangerouslySetInnerHTML={{ __html: PWA_LAUNCH_CRITICAL_CSS }} />
       </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>

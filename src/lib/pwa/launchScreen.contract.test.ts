@@ -46,7 +46,7 @@ describe("installed PWA loading screen integration", () => {
       'html[data-pwa-app-launch="true"][data-pwa-launch="pending"]'
     );
     expect(launchRuntime).toContain('accent: "#f8c531"');
-    expect(launchRuntime).toContain('iconSrc: "/sundial-icon.png"');
+    expect(launchRuntime).toContain('iconSrc: "/sundial-launch-mark.webp"');
     // The launch surface follows the resolved appearance, so a dark-mode user
     // never gets a bright flash and a light-mode user never gets a black one.
     expect(launchRuntime).toContain(`html.dark #\${PWA_LAUNCH_SCREEN_ID}`);
@@ -97,16 +97,17 @@ describe("installed PWA loading screen integration", () => {
     expect(launchScreen).toContain("PWA_LAUNCH_VISUAL.markHeight");
   });
 
-  it("hands off only after cache and audience readiness resolve", () => {
+  it("hands off on shell readiness while the audience lookup continues behind it", () => {
     expect(offlineData).toContain("cacheHydrated: boolean");
     expect(offlineData).toContain("setCacheHydrated(true)");
     expect(startupBoundary).toContain("cacheHydrated");
     expect(startupBoundary).toContain("audience_lookup_started");
-    expect(startupBoundary).toContain("onboarding_required");
     expect(startupBoundary).toContain('type: "onboarding_completed"');
     expect(startupBoundary).toContain("hidePwaLaunchScreen");
-    expect(startupBoundary).toContain("showApp");
+    expect(startupBoundary).toContain("isPwaShellReady");
     expect(startupBoundary).toContain("showRecovery");
+    // The audience result must not appear in the readiness condition.
+    expect(startupBoundary).not.toContain("startup.audience?.status ===\n      \"unassigned\"");
     expect(runtime).not.toContain("hidePwaLaunchScreen");
     expect(runtime).not.toContain("PWA_LAUNCH_MAX_MS");
   });

@@ -6,12 +6,30 @@ export type PwaAudienceResolution =
   | { status: "offline_unknown"; audience: null }
   | { status: "transport_error"; audience: null };
 
+/**
+ * Startup readiness for the installed app.
+ *
+ * The launch overlay is removed when the *minimum usable app shell* is ready,
+ * which means all of the following are true:
+ *
+ *  1. the tenant is resolved — guaranteed by the time the document exists, since
+ *     the server renders tenant branding, appearance and content into the HTML;
+ *  2. React has mounted the startup boundary, so the interface underneath the
+ *     overlay is live rather than static markup;
+ *  3. the local snapshot probe has settled, so we know whether the first screen
+ *     renders cached data or the server-rendered content — or the probe has been
+ *     abandoned, so a wedged IndexedDB can never strand the overlay;
+ *  4. no route-level `loading.tsx` fallback is still mounted;
+ *  5. one frame has painted, so the reveal shows a drawn interface.
+ *
+ * Readiness deliberately does NOT wait for: the notification audience lookup,
+ * device registration, the background snapshot refresh, service-worker update
+ * checks, route prefetching, analytics, or optional images and fonts. Those keep
+ * running behind the overlay and reconcile the interface once they land.
+ */
 export type PwaStartupState =
   | "booting"
   | "hydrating_cached_state"
-  | "checking_audience"
-  | "onboarding_required"
-  | "retry_required"
   | "ready"
   | "recovery_required"
   | "application_reload_pending";
@@ -20,13 +38,15 @@ export type PwaStartupSnapshot = {
   state: PwaStartupState;
   cacheResolved: boolean;
   recoveryRequired: boolean;
+  /** Informational only — the audience never gates the launch overlay. */
   audience: PwaAudienceResolution | null;
+  onboardingCompleted: boolean;
 };
 
 export type PwaStartupEvent =
   | { type: "react_mounted" }
-  | { type: "audience_lookup_started" }
   | { type: "cache_resolved"; recoveryRequired: boolean }
+  | { type: "cache_probe_abandoned" }
   | { type: "audience_resolved"; result: PwaAudienceResolution }
   | { type: "onboarding_completed"; audience: NotificationAudience }
   | { type: "application_reload_pending" };
@@ -36,8 +56,10 @@ export const initialPwaStartupSnapshot: PwaStartupSnapshot = {
   cacheResolved: false,
   recoveryRequired: false,
   audience: null,
+  onboardingCompleted: false,
 };
 
+/** The overlay waits for a route fallback only when the app is the destination. */
 export function shouldWaitForPwaRoute(
   state: PwaStartupState,
   routeFallbackMounted: boolean
@@ -45,54 +67,62 @@ export function shouldWaitForPwaRoute(
   return state === "ready" && routeFallbackMounted;
 }
 
-function settleStartup(
-  snapshot: PwaStartupSnapshot
-): PwaStartupSnapshot {
-  if (!snapshot.cacheResolved || !snapshot.audience) return snapshot;
+/** True once the launch overlay may be removed. */
+export function isPwaShellReady(state: PwaStartupState) {
+  return state === "ready" || state === "recovery_required";
+}
 
-  switch (snapshot.audience.status) {
-    case "assigned":
-      return {
-        ...snapshot,
-        state: snapshot.recoveryRequired ? "recovery_required" : "ready",
-      };
-    case "unassigned":
-      return { ...snapshot, state: "onboarding_required" };
-    case "offline_unknown":
-      return { ...snapshot, state: "recovery_required" };
-    case "transport_error":
-      return { ...snapshot, state: "retry_required" };
-  }
+/**
+ * Onboarding is a destination *above* a ready shell, not a startup gate. A
+ * failed or offline lookup leaves the app usable and retries in the background.
+ */
+export function shouldShowAudienceOnboarding(snapshot: PwaStartupSnapshot) {
+  if (snapshot.onboardingCompleted) return false;
+  if (!isPwaShellReady(snapshot.state)) return false;
+  return snapshot.audience?.status === "unassigned";
+}
+
+function settleStartup(snapshot: PwaStartupSnapshot): PwaStartupSnapshot {
+  if (!snapshot.cacheResolved) return snapshot;
+
+  return {
+    ...snapshot,
+    state: snapshot.recoveryRequired ? "recovery_required" : "ready",
+  };
 }
 
 export function reducePwaStartup(
   snapshot: PwaStartupSnapshot,
   event: PwaStartupEvent
 ): PwaStartupSnapshot {
-  if (
-    snapshot.state === "application_reload_pending" ||
-    snapshot.state === "ready"
-  ) {
+  if (snapshot.state === "application_reload_pending") {
     return snapshot;
   }
 
   switch (event.type) {
     case "react_mounted":
-      return { ...snapshot, state: "hydrating_cached_state" };
-    case "audience_lookup_started":
-      return { ...snapshot, state: "checking_audience", audience: null };
+      return snapshot.state === "booting"
+        ? { ...snapshot, state: "hydrating_cached_state" }
+        : snapshot;
     case "cache_resolved":
       return settleStartup({
         ...snapshot,
         cacheResolved: true,
         recoveryRequired: event.recoveryRequired,
       });
+    case "cache_probe_abandoned":
+      // The probe never settled. The server already rendered a usable screen,
+      // so reveal it rather than holding a loader the user cannot dismiss.
+      return snapshot.cacheResolved
+        ? snapshot
+        : settleStartup({ ...snapshot, cacheResolved: true });
     case "audience_resolved":
-      return settleStartup({ ...snapshot, audience: event.result });
+      // Recorded for onboarding, never for readiness.
+      return { ...snapshot, audience: event.result };
     case "onboarding_completed":
       return {
         ...snapshot,
-        state: snapshot.recoveryRequired ? "recovery_required" : "ready",
+        onboardingCompleted: true,
         audience: { status: "assigned", audience: event.audience },
       };
     case "application_reload_pending":

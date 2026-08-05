@@ -15,11 +15,14 @@ export const PWA_LAUNCH_VISUAL = {
   copyColorDark: "#a1a1aa",
   titleColor: "#0f172a",
   titleColorDark: "#ffffff",
-  iconSrc: "/sundial-icon.png",
+  // A small bundled mark, not the 605 KB source icon. It renders at 7.5rem, so
+  // 288px covers high-DPI screens while staying light enough to arrive with the
+  // first frame instead of seconds later on a slow connection.
+  iconSrc: "/sundial-launch-mark.webp",
   title: "Sundial",
   copy: "Opening your school app…",
-  markWidth: 120,
-  markHeight: 131,
+  markWidth: 288,
+  markHeight: 313,
 } as const;
 
 export const PWA_LAUNCH_CRITICAL_CSS = `

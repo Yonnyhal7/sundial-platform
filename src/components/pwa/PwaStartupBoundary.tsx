@@ -34,8 +34,10 @@ import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
 import {
   initialPwaStartupSnapshot,
   isInstalledPwaLaunch,
+  isPwaShellReady,
   reducePwaStartup,
   reuseAudienceLookup,
+  shouldShowAudienceOnboarding,
   shouldWaitForPwaRoute,
   type PwaAudienceResolution,
 } from "@/lib/pwa/startupCoordinator";
@@ -52,6 +54,13 @@ const PwaStartupContext = createContext<PwaStartupContextValue>({
 
 const AUDIENCE_LOOKUP_TIMEOUT_MS = 4_000;
 const ROUTE_LOADING_SELECTOR = '[data-pwa-route-loading="true"]';
+
+// Every constant below is a failure ceiling, never a minimum. Startup never
+// waits for one of these on the healthy path; they exist so a wedged probe, a
+// stuck route fallback or a throttled frame callback can't strand the overlay.
+const CACHE_PROBE_FAILSAFE_MS = 4_000;
+const ROUTE_FALLBACK_MAX_WAIT_MS = 3_000;
+const PAINT_HANDOFF_FALLBACK_MS = 300;
 
 export async function resolveAudience(
   schoolId: string,
@@ -130,8 +139,9 @@ function StartupCoordinator({
     recordPwaResumeDiagnostic(type, detail);
   }, []);
 
+  // Non-blocking: the audience result only decides whether onboarding appears
+  // once the shell is already on screen. It never holds the launch overlay.
   const runAudienceLookup = useCallback(() => {
-    dispatch({ type: "audience_lookup_started" });
     recordPwaResumeDiagnostic("audience_lookup_started");
     const installedApp = isInstalledPwaLaunch(
       window.matchMedia("(display-mode: standalone)").matches,
@@ -190,36 +200,57 @@ function StartupCoordinator({
     });
   }, [cacheHydrated, isOnline, recordOnce, snapshot, syncState]);
 
-  const stableState =
-    startup.state === "onboarding_required" ||
-    startup.state === "retry_required" ||
-    startup.state === "ready" ||
-    startup.state === "recovery_required";
-
+  // Failure ceiling: IndexedDB can hang indefinitely when another tab holds an
+  // upgrade transaction. The server already rendered a usable screen, so give
+  // up on the probe rather than showing a loader forever.
   useEffect(() => {
-    if (!stableState || handoffComplete) return;
+    if (cacheHydrated || startup.cacheResolved) return;
+    const failsafe = window.setTimeout(() => {
+      recordOnce("cache_hydration_complete", "abandoned");
+      dispatch({ type: "cache_probe_abandoned" });
+    }, CACHE_PROBE_FAILSAFE_MS);
+    return () => window.clearTimeout(failsafe);
+  }, [cacheHydrated, recordOnce, startup.cacheResolved]);
 
+  const shellReady = isPwaShellReady(startup.state);
+
+  // The single readiness handoff: reveal the interface that is already rendered
+  // underneath the overlay, on or immediately after a painted frame.
+  useEffect(() => {
+    if (!shellReady || handoffComplete) return;
+
+    let cancelled = false;
     let observer: MutationObserver | null = null;
     let firstFrame = 0;
     let secondFrame = 0;
+    let paintFallback = 0;
+    let routeFallbackTimer = 0;
+
+    const finish = () => {
+      if (cancelled) return;
+      cancelled = true;
+      recordOnce("stable_destination_painted", startup.state);
+      recordOnce("react_loader_hidden");
+      hidePwaLaunchScreen(
+        startup.state === "recovery_required"
+          ? "recovery_required"
+          : "app_shell_ready"
+      );
+      recordOnce("launch_shell_removed", startup.state);
+      setHandoffComplete(true);
+    };
 
     const completeHandoff = () => {
+      if (cancelled) return;
+      // requestAnimationFrame never fires in a hidden or heavily throttled tab,
+      // so pair it with a timeout that cannot leave the overlay up.
+      paintFallback = window.setTimeout(finish, PAINT_HANDOFF_FALLBACK_MS);
+      if (typeof window.requestAnimationFrame !== "function") {
+        finish();
+        return;
+      }
       firstFrame = window.requestAnimationFrame(() => {
-        secondFrame = window.requestAnimationFrame(() => {
-          recordOnce("stable_destination_painted", startup.state);
-          recordOnce("react_loader_hidden");
-          hidePwaLaunchScreen(
-            startup.state === "recovery_required"
-              ? "recovery_required"
-              : startup.state === "retry_required"
-                ? "audience_retry_required"
-                : startup.state === "ready"
-                  ? "app_shell_ready"
-                  : "onboarding_required"
-          );
-          recordOnce("launch_shell_removed", startup.state);
-          setHandoffComplete(true);
-        });
+        secondFrame = window.requestAnimationFrame(finish);
       });
     };
 
@@ -230,23 +261,32 @@ function StartupCoordinator({
 
     if (routeIsLoading) {
       recordOnce("react_loader_rendered");
-      observer = new MutationObserver(() => {
-        if (document.querySelector(ROUTE_LOADING_SELECTOR)) return;
+      const stopWaiting = () => {
         observer?.disconnect();
         observer = null;
         completeHandoff();
+      };
+      observer = new MutationObserver(() => {
+        if (document.querySelector(ROUTE_LOADING_SELECTOR)) return;
+        stopWaiting();
       });
       observer.observe(document.body, { childList: true, subtree: true });
+      // Failure ceiling: a route that never resolves its fallback must not hold
+      // the overlay. The shell underneath is still usable navigation.
+      routeFallbackTimer = window.setTimeout(stopWaiting, ROUTE_FALLBACK_MAX_WAIT_MS);
     } else {
       completeHandoff();
     }
 
     return () => {
+      cancelled = true;
       observer?.disconnect();
       if (firstFrame) window.cancelAnimationFrame(firstFrame);
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
+      if (paintFallback) window.clearTimeout(paintFallback);
+      if (routeFallbackTimer) window.clearTimeout(routeFallbackTimer);
     };
-  }, [handoffComplete, recordOnce, stableState, startup.state]);
+  }, [handoffComplete, recordOnce, shellReady, startup.state]);
 
   useEffect(() => {
     if (!handoffComplete) return;
@@ -259,13 +299,6 @@ function StartupCoordinator({
       document.documentElement.dataset.pwaStartupReady = "true";
       recordOnce("recovery_shown");
     }
-    if (startup.state === "onboarding_required") {
-      recordOnce("onboarding_shown");
-      const paintFrame = window.requestAnimationFrame(() =>
-        recordOnce("audience_screen_painted")
-      );
-      return () => window.cancelAnimationFrame(paintFrame);
-    }
   }, [handoffComplete, recordOnce, startup.state]);
 
   const audience =
@@ -276,47 +309,31 @@ function StartupCoordinator({
     () => ({ audience, startupReady: startup.state === "ready" }),
     [audience, startup.state]
   );
-  const showOnboarding = startup.state === "onboarding_required";
-  const showApp = startup.state === "ready" && handoffComplete;
-  const appDestinationMounted = startup.state === "ready";
+  const showOnboarding = shouldShowAudienceOnboarding(startup);
   const showRecovery = startup.state === "recovery_required";
-  const showRetry =
-    startup.state === "retry_required" ||
-    (startup.state === "checking_audience" && handoffComplete);
+
+  useEffect(() => {
+    if (!showOnboarding) return;
+    recordOnce("onboarding_shown");
+    if (typeof window.requestAnimationFrame !== "function") return;
+    const paintFrame = window.requestAnimationFrame(() =>
+      recordOnce("audience_screen_painted")
+    );
+    return () => window.cancelAnimationFrame(paintFrame);
+  }, [recordOnce, showOnboarding]);
 
   return (
     <PwaStartupContext.Provider value={context}>
-      <div
-        data-pwa-startup-state={startup.state}
-        style={{ visibility: appDestinationMounted ? "visible" : "hidden" }}
-        aria-hidden={!showApp}
-      >
-        {children}
-      </div>
+      {/* The interface renders and initializes here from the first frame. The
+          launch overlay sits above it, so nothing is hidden or unmounted. */}
+      <div data-pwa-startup-state={startup.state}>{children}</div>
       {showRecovery && (
-        <main className="grid min-h-dvh place-items-center bg-slate-50 px-5 text-slate-950 dark:bg-black dark:text-white">
+        <main className="fixed inset-0 z-[2147483645] grid min-h-dvh place-items-center bg-slate-50 px-5 text-slate-950 dark:bg-black dark:text-white">
           <section className="max-w-sm rounded-[2rem] border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
             <h1 className="text-xl font-black">Connect to finish opening Sundial</h1>
             <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
               This installation needs one online sync before it can open offline.
             </p>
-          </section>
-        </main>
-      )}
-      {showRetry && (
-        <main className="grid min-h-dvh place-items-center bg-slate-50 px-5 text-slate-950 dark:bg-black dark:text-white">
-          <section className="max-w-sm rounded-[2rem] border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
-            <h1 className="text-xl font-black">We couldn&apos;t finish opening Sundial</h1>
-            <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
-              Check your connection and try the device setup check again.
-            </p>
-            <button
-              type="button"
-              onClick={runAudienceLookup}
-              className="mt-5 min-h-12 w-full rounded-xl bg-[var(--school-primary)] px-4 py-3 font-black text-[var(--school-primary-text)]"
-            >
-              Try again
-            </button>
           </section>
         </main>
       )}
