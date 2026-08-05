@@ -22,6 +22,9 @@ export default function PwaLaunchScreen({
         suppressHydrationWarning
       >
         <div className="sundial-pwa-launch-card">
+          {/* `priority` emits the preload link and eager loading this mark needs:
+              it is the first thing the user sees. Explicit width/height keep the
+              launch card from shifting once it decodes. */}
           <Image
             className="sundial-pwa-launch-icon"
             aria-hidden="true"
@@ -29,6 +32,7 @@ export default function PwaLaunchScreen({
             src={PWA_LAUNCH_VISUAL.iconSrc}
             width={PWA_LAUNCH_VISUAL.markWidth}
             height={PWA_LAUNCH_VISUAL.markHeight}
+            priority
             fetchPriority="high"
             unoptimized
           />

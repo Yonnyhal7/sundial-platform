@@ -92,7 +92,16 @@ export async function generateMetadata({
 
 export async function generateViewport(): Promise<Viewport> {
   return {
-    themeColor: PWA_LAUNCH_VISUAL.background,
+    themeColor: [
+      {
+        media: "(prefers-color-scheme: light)",
+        color: PWA_LAUNCH_VISUAL.background,
+      },
+      {
+        media: "(prefers-color-scheme: dark)",
+        color: PWA_LAUNCH_VISUAL.backgroundDark,
+      },
+    ],
     colorScheme: "light dark",
   };
 }

@@ -62,7 +62,7 @@ describe("School App PWA integration contract", () => {
 
     expect(worker).toContain('const ASSET_CACHE = "sundial-assets-v4"');
     expect(worker).toContain('request.destination === "manifest"');
-    expect(worker).toContain("networkFirstResource(request, ASSET_CACHE)");
+    expect(worker).toContain("networkFirstResource(request, ASSET_CACHE, event)");
     expect(worker).toContain('if (segments[0] === "app") return ["/app", url.pathname]');
     expect(worker).toContain('if (segments[0] === "kiosk") return ["/kiosk", url.pathname]');
     expect(worker).toContain("request.mode === \"navigate\" && isAppOrKioskPath");

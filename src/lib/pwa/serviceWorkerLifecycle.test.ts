@@ -60,6 +60,17 @@ function createWorkerHarness() {
   return { context, listeners, stores, deleted };
 }
 
+function stubCache(overrides: Record<string, any>) {
+  return {
+    addAll: vi.fn(async () => undefined),
+    keys: vi.fn(async () => [] as { url: string }[]),
+    match: vi.fn(async () => undefined),
+    put: vi.fn(async () => undefined),
+    delete: vi.fn(async () => false),
+    ...overrides,
+  } as any;
+}
+
 async function dispatchWaitUntil(handler: (event: any) => void, extra = {}) {
   let work: Promise<unknown> = Promise.resolve();
   handler({ ...extra, waitUntil: (promise: Promise<unknown>) => (work = promise) });
@@ -147,10 +158,112 @@ describe("service worker lifecycle and caching", () => {
 
   it("reports the foreground-resume worker version without changing push handling", () => {
     expect(workerSource).toContain(
-      'SERVICE_WORKER_VERSION = "2026-07-25-pwa-first-paint-v1"'
+      'SERVICE_WORKER_VERSION = "2026-08-05-pwa-streaming-navigation-v1"'
     );
     expect(workerSource).toContain('event.data?.type === "GET_PWA_DIAGNOSTICS"');
     expect(workerSource).toContain('event.data?.type === "SKIP_WAITING"');
+  });
+
+  it("returns the navigation response without waiting for the cache write", async () => {
+    const harness = createWorkerHarness();
+    const request = {
+      url: "https://example.test/deloro/app",
+      mode: "navigate",
+      destination: "document",
+    };
+    const clone = { marker: "clone" };
+    const fresh = { ok: true, status: 200, type: "basic", clone: () => clone };
+    harness.context.fetch.mockResolvedValueOnce(fresh);
+
+    // A cache write that never settles stands in for a slowly-streamed document:
+    // `cache.put()` does not resolve until the whole body has been read.
+    let releaseCacheWrite: () => void = () => {};
+    const pendingWrite = new Promise<void>((resolve) => {
+      releaseCacheWrite = resolve;
+    });
+    const store = harness.stores.get("sundial-navigation-v4") || new Map();
+    harness.stores.set("sundial-navigation-v4", store);
+    harness.context.caches.open.mockImplementationOnce(async () =>
+      stubCache({ put: vi.fn(() => pendingWrite) })
+    );
+
+    let responsePromise: Promise<unknown> = Promise.resolve();
+    const waited: Promise<unknown>[] = [];
+    harness.listeners.get("fetch")!({
+      request,
+      respondWith: (promise: Promise<unknown>) => (responsePromise = promise),
+      waitUntil: (promise: Promise<unknown>) => waited.push(promise),
+    });
+
+    // The page gets the live response even though the cache write is still open.
+    expect(await responsePromise).toBe(fresh);
+    expect(waited).toHaveLength(1);
+    releaseCacheWrite();
+    await Promise.all(waited);
+  });
+
+  it("caches only a clone and survives a failing cache write", async () => {
+    const harness = createWorkerHarness();
+    const request = {
+      url: "https://example.test/deloro/app",
+      mode: "navigate",
+      destination: "document",
+    };
+    const clone = { marker: "clone" };
+    const clonedFor = vi.fn(() => clone);
+    const fresh = { ok: true, status: 200, type: "basic", clone: clonedFor };
+    harness.context.fetch.mockResolvedValueOnce(fresh);
+
+    const put = vi.fn(async () => {
+      throw new Error("quota exceeded");
+    });
+    harness.context.caches.open.mockImplementationOnce(async () =>
+      stubCache({ put })
+    );
+
+    let responsePromise: Promise<unknown> = Promise.resolve();
+    const waited: Promise<unknown>[] = [];
+    harness.listeners.get("fetch")!({
+      request,
+      respondWith: (promise: Promise<unknown>) => (responsePromise = promise),
+      waitUntil: (promise: Promise<unknown>) => waited.push(promise),
+    });
+
+    // Rendering is unaffected by the cache failure, and the write is swallowed
+    // rather than becoming an unhandled rejection.
+    expect(await responsePromise).toBe(fresh);
+    expect(clonedFor).toHaveBeenCalledTimes(1);
+    expect(put).toHaveBeenCalledWith(request, clone);
+    await expect(Promise.all(waited)).resolves.toBeDefined();
+  });
+
+  it("never stores unsuccessful, partial, or opaque responses", async () => {
+    const harness = createWorkerHarness();
+
+    for (const response of [
+      { ok: false, status: 500, type: "basic", clone: () => ({}) },
+      { ok: true, status: 206, type: "basic", clone: () => ({}) },
+    ]) {
+      const request = {
+        url: "https://example.test/deloro/app",
+        mode: "navigate",
+        destination: "document",
+      };
+      harness.context.fetch.mockResolvedValueOnce(response);
+      let responsePromise: Promise<unknown> = Promise.resolve();
+      harness.listeners.get("fetch")!({
+        request,
+        respondWith: (promise: Promise<unknown>) => (responsePromise = promise),
+        waitUntil: () => undefined,
+      });
+      expect(await responsePromise).toBe(response);
+    }
+
+    const navigationStore = harness.stores.get("sundial-navigation-v4");
+    expect(navigationStore?.size ?? 0).toBe(0);
+
+    // An opaque cross-origin navigation response must not be stored either.
+    expect(workerSource).toContain('response.type === "basic"');
   });
 
   it("does not precache a generic manifest over a tenant install manifest", () => {
@@ -160,6 +273,8 @@ describe("service worker lifecycle and caching", () => {
     );
     expect(precache).not.toContain("manifest.webmanifest");
     expect(workerSource).toContain('request.destination === "manifest"');
-    expect(workerSource).toContain("networkFirstResource(request, ASSET_CACHE)");
+    expect(workerSource).toContain(
+      "networkFirstResource(request, ASSET_CACHE, event)"
+    );
   });
 });

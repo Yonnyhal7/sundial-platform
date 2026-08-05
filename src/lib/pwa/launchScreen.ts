@@ -1,9 +1,20 @@
 export const PWA_LAUNCH_SCREEN_ID = "sundial-pwa-launch";
+// Sundial's launch surface. `background` is the product's established launch
+// colour (the same slate-50 the root manifest and the app shell already use);
+// the `*Dark` values are the existing Sundial dark surfaces. The synchronous
+// theme bootstrap sets `.dark` on <html> before this CSS is applied, so the
+// launch surface matches the resolved appearance on the very first paint and a
+// dark-mode user never sees a bright flash.
 export const PWA_LAUNCH_VISUAL = {
-  background: "#000000",
+  background: "#f8fafc",
+  backgroundDark: "#101214",
   accent: "#f8c531",
-  track: "#374151",
-  copyColor: "#a1a1aa",
+  track: "#e2e8f0",
+  trackDark: "#374151",
+  copyColor: "#64748b",
+  copyColorDark: "#a1a1aa",
+  titleColor: "#0f172a",
+  titleColorDark: "#ffffff",
   iconSrc: "/sundial-icon.png",
   title: "Sundial",
   copy: "Opening your school app…",
@@ -15,11 +26,14 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
   html, body {
     min-height: 100%;
     margin: 0;
-    background: ${PWA_LAUNCH_VISUAL.background};
   }
   html[data-pwa-app-launch="true"][data-pwa-launch="pending"],
   html[data-pwa-app-launch="true"][data-pwa-launch="pending"] body {
     background: ${PWA_LAUNCH_VISUAL.background};
+  }
+  html.dark[data-pwa-app-launch="true"][data-pwa-launch="pending"],
+  html.dark[data-pwa-app-launch="true"][data-pwa-launch="pending"] body {
+    background: ${PWA_LAUNCH_VISUAL.backgroundDark};
   }
   #${PWA_LAUNCH_SCREEN_ID} {
     position: fixed;
@@ -32,7 +46,12 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
     box-sizing: border-box;
     padding: calc(2rem + env(safe-area-inset-top)) 1.5rem calc(2rem + env(safe-area-inset-bottom));
     background: ${PWA_LAUNCH_VISUAL.background};
-    color: #ffffff;
+    color: ${PWA_LAUNCH_VISUAL.titleColor};
+    color-scheme: light;
+  }
+  html.dark #${PWA_LAUNCH_SCREEN_ID} {
+    background: ${PWA_LAUNCH_VISUAL.backgroundDark};
+    color: ${PWA_LAUNCH_VISUAL.titleColorDark};
     color-scheme: dark;
   }
   html[data-pwa-app-launch="true"] #${PWA_LAUNCH_SCREEN_ID}:not([hidden]) {
@@ -53,7 +72,7 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
   }
   .sundial-pwa-launch-title {
     margin: .25rem 0 0;
-    color: #ffffff;
+    color: inherit;
     font: 800 clamp(2rem, 9vw, 2.75rem)/1.05 system-ui, -apple-system, sans-serif;
     letter-spacing: -.035em;
   }
@@ -63,12 +82,18 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
     color: ${PWA_LAUNCH_VISUAL.copyColor};
     font: 500 1rem/1.4 system-ui, -apple-system, sans-serif;
   }
+  html.dark .sundial-pwa-launch-copy {
+    color: ${PWA_LAUNCH_VISUAL.copyColorDark};
+  }
   .sundial-pwa-launch-indicator {
     width: 3.5rem;
     height: .3rem;
     overflow: hidden;
     border-radius: 999px;
     background: ${PWA_LAUNCH_VISUAL.track};
+  }
+  html.dark .sundial-pwa-launch-indicator {
+    background: ${PWA_LAUNCH_VISUAL.trackDark};
   }
   .sundial-pwa-launch-indicator::after {
     content: "";

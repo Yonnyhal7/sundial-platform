@@ -49,7 +49,16 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: PWA_LAUNCH_VISUAL.background,
+  themeColor: [
+    {
+      media: "(prefers-color-scheme: light)",
+      color: PWA_LAUNCH_VISUAL.background,
+    },
+    {
+      media: "(prefers-color-scheme: dark)",
+      color: PWA_LAUNCH_VISUAL.backgroundDark,
+    },
+  ],
   colorScheme: "light dark",
 };
 
@@ -62,7 +71,6 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-      style={{ backgroundColor: PWA_LAUNCH_VISUAL.background }}
       suppressHydrationWarning
     >
       <head>
@@ -80,11 +88,7 @@ export default function RootLayout({
         />
         <style dangerouslySetInnerHTML={{ __html: PWA_LAUNCH_CRITICAL_CSS }} />
       </head>
-      <body
-        className="min-h-full flex flex-col"
-        style={{ backgroundColor: PWA_LAUNCH_VISUAL.background }}
-        suppressHydrationWarning
-      >
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <PwaLaunchScreen />
         <ServiceWorkerRegister
           deploymentVersion={getPwaDeploymentVersion()}

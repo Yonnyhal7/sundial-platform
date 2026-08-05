@@ -1,4 +1,4 @@
-const SERVICE_WORKER_VERSION = "2026-07-25-pwa-first-paint-v1";
+const SERVICE_WORKER_VERSION = "2026-08-05-pwa-streaming-navigation-v1";
 const SHELL_CACHE = "sundial-shell-v3";
 const ASSET_CACHE = "sundial-assets-v4";
 const NAVIGATION_CACHE = "sundial-navigation-v4";
@@ -115,14 +115,37 @@ function getNavigationFallbacks(url) {
   return [url.pathname];
 }
 
-async function networkFirstNavigation(request) {
+// A cache write must never delay or consume the response the page is waiting on.
+// `cache.put()` does not settle until the whole body has been read, so awaiting it
+// buffers the entire streamed Next.js document before the browser sees a single
+// byte. Clone up front, hand the live response back immediately, and let the write
+// finish in the background under `event.waitUntil()` so the worker stays alive.
+function cacheInBackground(cache, request, response, event) {
+  if (!isCacheableResponse(response)) return;
+
+  const write = Promise.resolve(cache.put(request, response.clone())).catch(() => {
+    // A failed cache write is not fatal: the page already has its response.
+  });
+
+  if (event && typeof event.waitUntil === "function") {
+    event.waitUntil(write);
+  }
+}
+
+function isCacheableResponse(response) {
+  // 206 responses cannot be stored by the Cache API, and opaque/cors responses
+  // must not stand in for a real navigation or asset.
+  return Boolean(response) && response.ok && response.status !== 206;
+}
+
+async function networkFirstNavigation(request, event) {
   const cache = await caches.open(NAVIGATION_CACHE);
 
   try {
     const response = await fetch(request);
 
-    if (response.ok && response.type === "basic") {
-      await cache.put(request, response.clone());
+    if (response.type === "basic") {
+      cacheInBackground(cache, request, response, event);
     }
 
     return response;
@@ -142,7 +165,7 @@ async function networkFirstNavigation(request) {
   }
 }
 
-async function cacheFirst(request, cacheName) {
+async function cacheFirst(request, cacheName, event) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
 
@@ -150,22 +173,18 @@ async function cacheFirst(request, cacheName) {
 
   const response = await fetch(request);
 
-  if (response.ok) {
-    await cache.put(request, response.clone());
-  }
+  cacheInBackground(cache, request, response, event);
 
   return response;
 }
 
-async function networkFirstResource(request, cacheName) {
+async function networkFirstResource(request, cacheName, event) {
   const cache = await caches.open(cacheName);
 
   try {
     const response = await fetch(request);
 
-    if (response.ok) {
-      await cache.put(request, response.clone());
-    }
+    cacheInBackground(cache, request, response, event);
 
     return response;
   } catch {
@@ -189,17 +208,17 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate" && isAppOrKioskPath(url.pathname)) {
-    event.respondWith(networkFirstNavigation(request));
+    event.respondWith(networkFirstNavigation(request, event));
     return;
   }
 
   if (request.destination === "manifest") {
-    event.respondWith(networkFirstResource(request, ASSET_CACHE));
+    event.respondWith(networkFirstResource(request, ASSET_CACHE, event));
     return;
   }
 
   if (url.pathname.startsWith("/_next/static/")) {
-    event.respondWith(cacheFirst(request, ASSET_CACHE));
+    event.respondWith(cacheFirst(request, ASSET_CACHE, event));
     return;
   }
 
@@ -209,7 +228,7 @@ self.addEventListener("fetch", (event) => {
     request.destination === "font" ||
     request.destination === "image"
   ) {
-    event.respondWith(networkFirstResource(request, ASSET_CACHE));
+    event.respondWith(networkFirstResource(request, ASSET_CACHE, event));
   }
 });
 

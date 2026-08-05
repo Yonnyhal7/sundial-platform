@@ -3,7 +3,8 @@ import type { MobileAppSchool } from "@/lib/mobileAppData";
 import { PWA_LAUNCH_VISUAL } from "@/lib/pwa/launchScreen";
 
 const DEFAULT_THEME_COLOR = "#2563EB";
-const LIGHT_BACKGROUND_COLOR = PWA_LAUNCH_VISUAL.background.toUpperCase();
+export const SUNDIAL_LAUNCH_BACKGROUND_COLOR =
+  PWA_LAUNCH_VISUAL.background.toUpperCase();
 
 function normalizeColor(value: string | null | undefined, fallback: string) {
   const color = value?.trim();
@@ -63,8 +64,8 @@ export function buildSchoolAppManifest(
   // iOS may paint these values before receiving any document HTML. Keep the
   // native standalone launch surface deterministic and non-black; the
   // synchronous theme bootstrap applies the tenant's resolved appearance.
-  const themeColor = LIGHT_BACKGROUND_COLOR;
-  const backgroundColor = LIGHT_BACKGROUND_COLOR;
+  const themeColor = SUNDIAL_LAUNCH_BACKGROUND_COLOR;
+  const backgroundColor = SUNDIAL_LAUNCH_BACKGROUND_COLOR;
   const icons: NonNullable<MetadataRoute.Manifest["icons"]> = [];
 
   if (schoolIcon) {

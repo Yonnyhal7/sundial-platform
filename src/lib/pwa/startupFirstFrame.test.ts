@@ -53,7 +53,10 @@ describe("PWA startup first frame", () => {
 
   it("defines the document background and launch shell without external CSS or fonts", () => {
     expect(PWA_LAUNCH_CRITICAL_CSS).toContain("html, body");
-    expect(PWA_LAUNCH_CRITICAL_CSS).toContain("background: #000000");
+    expect(PWA_LAUNCH_CRITICAL_CSS).toContain("background: #f8fafc");
+    expect(PWA_LAUNCH_CRITICAL_CSS).toContain("background: #101214");
+    expect(PWA_LAUNCH_CRITICAL_CSS).not.toContain("#000000");
+    expect(PWA_LAUNCH_CRITICAL_CSS).toContain("color-scheme: light");
     expect(PWA_LAUNCH_CRITICAL_CSS).toContain("color-scheme: dark");
     expect(PWA_LAUNCH_CRITICAL_CSS).toContain(
       'html[data-pwa-app-launch="true"]'
@@ -62,5 +65,14 @@ describe("PWA startup first frame", () => {
       "system-ui, -apple-system, sans-serif"
     );
     expect(PWA_LAUNCH_CRITICAL_CSS).not.toContain("@import");
+  });
+
+  it("only claims the document background while the launch shell is pending", () => {
+    // An ungated `html, body { background }` rule overrides globals.css on every
+    // route in the product, which is what produced the black screen everywhere.
+    expect(PWA_LAUNCH_CRITICAL_CSS).not.toMatch(/html, body \{[^}]*background:/);
+    expect(PWA_LAUNCH_CRITICAL_CSS).toContain(
+      'html[data-pwa-app-launch="true"][data-pwa-launch="pending"] body'
+    );
   });
 });

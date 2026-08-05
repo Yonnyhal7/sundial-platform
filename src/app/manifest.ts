@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { PWA_LAUNCH_VISUAL } from "@/lib/pwa/launchScreen";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -10,8 +11,9 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#f8fafc",
-    theme_color: "#f8fafc",
+    // Shared with the per-school app manifest so the two can never diverge.
+    background_color: PWA_LAUNCH_VISUAL.background,
+    theme_color: PWA_LAUNCH_VISUAL.background,
     icons: [
       {
         src: "/favicon.ico",

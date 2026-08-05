@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { PWA_LAUNCH_VISUAL } from "./launchScreen";
 
 function source(relativePath: string) {
   return fs.readFileSync(path.join(process.cwd(), relativePath), "utf8");
@@ -37,22 +38,20 @@ describe("installed PWA loading screen integration", () => {
     expect(launchScreen).toContain("server_launch_shell_present");
   });
 
-  it("keeps an always-dark, safe-area-aware, reduced-motion launch shell", () => {
+  it("keeps a branded, appearance-aware, safe-area-aware, reduced-motion launch shell", () => {
     expect(rootLayout.indexOf("__html: getThemeBootstrapScript()")).toBeLessThan(
       rootLayout.indexOf("__html: PWA_LAUNCH_CRITICAL_CSS")
     );
     expect(launchRuntime).toContain(
       'html[data-pwa-app-launch="true"][data-pwa-launch="pending"]'
     );
-    expect(launchRuntime).toContain("color-scheme: dark");
-    expect(launchRuntime).toContain('background: "#000000"');
     expect(launchRuntime).toContain('accent: "#f8c531"');
-    expect(launchRuntime).toContain('track: "#374151"');
-    expect(launchRuntime).toContain('copyColor: "#a1a1aa"');
     expect(launchRuntime).toContain('iconSrc: "/sundial-icon.png"');
-    expect(launchRuntime).not.toContain(
-      `html.dark #\${PWA_LAUNCH_SCREEN_ID}`
-    );
+    // The launch surface follows the resolved appearance, so a dark-mode user
+    // never gets a bright flash and a light-mode user never gets a black one.
+    expect(launchRuntime).toContain(`html.dark #\${PWA_LAUNCH_SCREEN_ID}`);
+    expect(launchRuntime).toContain("color-scheme: light");
+    expect(launchRuntime).toContain("color-scheme: dark");
     expect(launchRuntime).toContain("env(safe-area-inset-top)");
     expect(launchRuntime).toContain("env(safe-area-inset-bottom)");
     expect(launchRuntime).toContain("prefers-reduced-motion: reduce");
@@ -61,8 +60,24 @@ describe("installed PWA loading screen integration", () => {
     expect(launchScreen).toContain("prepaint_shell_shown");
   });
 
-  it("keeps first-paint metadata and inline document backgrounds black", () => {
-    expect(rootLayout).toContain("themeColor: PWA_LAUNCH_VISUAL.background");
+  it("never paints a black launch surface", () => {
+    expect(PWA_LAUNCH_VISUAL.background).toBe("#f8fafc");
+    expect(PWA_LAUNCH_VISUAL.backgroundDark).toBe("#101214");
+    for (const value of Object.values(PWA_LAUNCH_VISUAL)) {
+      expect(String(value).toLowerCase()).not.toBe("#000000");
+      expect(String(value).toLowerCase()).not.toBe("#000");
+    }
+    // The document background must only be claimed while the launch shell is up;
+    // an ungated rule would blacken (or wash out) every other route in Sundial.
+    expect(launchRuntime).not.toMatch(/html, body \{[^}]*background:/);
+    expect(rootLayout).not.toContain("backgroundColor: PWA_LAUNCH_VISUAL");
+  });
+
+  it("keeps first-paint metadata appearance-aware", () => {
+    expect(rootLayout).toContain("(prefers-color-scheme: light)");
+    expect(rootLayout).toContain("(prefers-color-scheme: dark)");
+    expect(rootLayout).toContain("color: PWA_LAUNCH_VISUAL.background");
+    expect(rootLayout).toContain("color: PWA_LAUNCH_VISUAL.backgroundDark");
     expect(rootLayout).toContain('colorScheme: "light dark"');
     expect(rootLayout).toContain('statusBarStyle: "black-translucent"');
     expect(rootLayout).toContain('"apple-mobile-web-app-capable": "yes"');
@@ -70,9 +85,16 @@ describe("installed PWA loading screen integration", () => {
       'name="apple-mobile-web-app-status-bar-style"'
     );
     expect(rootLayout).toContain('name="mobile-web-app-capable"');
-    expect(rootLayout.match(/backgroundColor: PWA_LAUNCH_VISUAL.background/g)).toHaveLength(2);
-    expect(appLayout).toContain("themeColor: PWA_LAUNCH_VISUAL.background");
+    expect(appLayout).toContain("color: PWA_LAUNCH_VISUAL.background");
+    expect(appLayout).toContain("color: PWA_LAUNCH_VISUAL.backgroundDark");
     expect(appLayout).not.toContain("getSchoolAppThemeColor");
+  });
+
+  it("gives the launch mark first-paint priority", () => {
+    expect(launchScreen).toContain("priority");
+    expect(launchScreen).toContain('fetchPriority="high"');
+    expect(launchScreen).toContain("PWA_LAUNCH_VISUAL.markWidth");
+    expect(launchScreen).toContain("PWA_LAUNCH_VISUAL.markHeight");
   });
 
   it("hands off only after cache and audience readiness resolve", () => {

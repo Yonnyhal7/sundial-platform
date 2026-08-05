@@ -58,8 +58,8 @@ describe("school App manifest", () => {
       display: "standalone",
       orientation: "portrait",
       name: "Del Oro High School App",
-      theme_color: "#000000",
-      background_color: "#000000",
+      theme_color: "#F8FAFC",
+      background_color: "#F8FAFC",
     });
     expect(JSON.stringify(manifest)).not.toContain("/deloro/app");
     expect(manifest.shortcuts?.map((shortcut) => shortcut.url)).toEqual([
@@ -109,8 +109,8 @@ describe("school App manifest", () => {
       getSchoolAppShortName("A Very Long Tenant School Name That Will Not Fit")
         .length
     ).toBeLessThanOrEqual(20);
-    expect(manifest.theme_color).toBe("#000000");
-    expect(manifest.background_color).toBe("#000000");
+    expect(manifest.theme_color).toBe("#F8FAFC");
+    expect(manifest.background_color).toBe("#F8FAFC");
   });
 
   it("serves production tenant manifests with host-visible App paths", async () => {
