@@ -40,16 +40,15 @@ describe("PWA unified launch handoff", () => {
   });
 
   it("mounts the destination beneath the root overlay before handoff", () => {
-    // The interface is always mounted and visible underneath the overlay; the
-    // overlay is what covers it, so nothing is hidden or conditionally rendered.
+    // The application is always mounted and initializing underneath whichever
+    // full-screen startup surface is showing; it is never unmounted or hidden.
+    expect(boundary).toContain("data-pwa-startup-phase={startup.phase}");
+    expect(boundary).toContain("{children}");
     expect(boundary).toContain(
-      "<div data-pwa-startup-state={startup.state}>{children}</div>"
+      'const showRecovery = startup.phase === "recovery"'
     );
     expect(boundary).toContain(
-      'const showRecovery = startup.state === "recovery_required"'
-    );
-    expect(boundary).toContain(
-      "const showOnboarding = shouldShowAudienceOnboarding(startup)"
+      'const showAudienceSelection = startup.phase === "audience_selection"'
     );
     expect(boundary).not.toContain("visibility:");
   });

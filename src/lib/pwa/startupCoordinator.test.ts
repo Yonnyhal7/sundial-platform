@@ -1,140 +1,192 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  hasPwaDestination,
   initialPwaStartupSnapshot,
   isInstalledPwaLaunch,
-  isPwaShellReady,
+  isPwaStartupComplete,
   reducePwaStartup,
+  resolveLocalAudienceState,
   reuseAudienceLookup,
-  shouldShowAudienceOnboarding,
   shouldWaitForPwaRoute,
+  type PwaStartupEvent,
   type PwaStartupSnapshot,
 } from "./startupCoordinator";
 
-function mountedStartup() {
-  return reducePwaStartup(initialPwaStartupSnapshot, {
-    type: "react_mounted",
-  });
+function run(events: PwaStartupEvent[], from = initialPwaStartupSnapshot) {
+  return events.reduce(reducePwaStartup, from);
 }
 
-function withCache(recoveryRequired = false) {
-  return reducePwaStartup(mountedStartup(), {
-    type: "cache_resolved",
-    recoveryRequired,
-  });
-}
+const localKnown: PwaStartupEvent = {
+  type: "local_state_resolved",
+  audience: "student",
+  audienceRequired: false,
+};
+const localMissing: PwaStartupEvent = {
+  type: "local_state_resolved",
+  audience: null,
+  audienceRequired: true,
+};
+const cacheOk: PwaStartupEvent = {
+  type: "cache_resolved",
+  recoveryRequired: false,
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("PWA startup readiness", () => {
-  it("becomes ready as soon as the local snapshot probe settles", () => {
-    expect(mountedStartup().state).toBe("hydrating_cached_state");
-    expect(withCache().state).toBe("ready");
-    expect(isPwaShellReady(withCache().state)).toBe(true);
+describe("PWA startup state machine", () => {
+  it("goes launching → app_ready when the audience is already known", () => {
+    expect(initialPwaStartupSnapshot.phase).toBe("launching");
+    expect(run([localKnown]).phase).toBe("launching");
+    expect(run([localKnown, cacheOk]).phase).toBe("app_ready");
   });
 
-  it("never waits on the notification audience lookup", () => {
-    const ready = withCache();
+  it("goes launching → audience_selection → app_ready when it is not", () => {
+    const selecting = run([localMissing, cacheOk]);
+    expect(selecting.phase).toBe("audience_selection");
 
+    const chosen = reducePwaStartup(selecting, {
+      type: "audience_selected",
+      audience: "parent",
+    });
+    expect(chosen.phase).toBe("app_ready");
+    expect(chosen.audience).toBe("parent");
+  });
+
+  it("goes launching → recovery when offline with no cached data", () => {
+    expect(
+      run([localKnown, { type: "cache_resolved", recoveryRequired: true }]).phase
+    ).toBe("recovery");
+  });
+
+  it("never moves backwards to an earlier phase", () => {
+    const ready = run([localKnown, cacheOk]);
+
+    for (const event of [
+      localMissing,
+      cacheOk,
+      { type: "cache_resolved", recoveryRequired: true },
+      { type: "cache_probe_abandoned" },
+      { type: "audience_sync_completed", result: { status: "unassigned", audience: null } },
+    ] satisfies PwaStartupEvent[]) {
+      expect(reducePwaStartup(ready, event).phase).toBe("app_ready");
+    }
+
+    // audience_selection may only move forward, never back to launching.
+    const selecting = run([localMissing, cacheOk]);
+    expect(reducePwaStartup(selecting, localMissing).phase).toBe(
+      "audience_selection"
+    );
+  });
+
+  it("keeps the overlay until a destination exists, then releases it once", () => {
+    const launching = run([localKnown]);
+    expect(hasPwaDestination(launching)).toBe(false);
+    // The overlay cannot be released while startup is still launching.
+    expect(
+      reducePwaStartup(launching, { type: "overlay_released" }).overlayReleased
+    ).toBe(false);
+
+    const ready = run([localKnown, cacheOk]);
+    expect(isPwaStartupComplete(ready)).toBe(false);
+    const released = reducePwaStartup(ready, { type: "overlay_released" });
+    expect(isPwaStartupComplete(released)).toBe(true);
+
+    // Monotonic: nothing can bring the overlay back.
+    for (const event of [localMissing, cacheOk] satisfies PwaStartupEvent[]) {
+      expect(reducePwaStartup(released, event).overlayReleased).toBe(true);
+    }
+  });
+
+  it("releases the overlay onto the audience screen, not onto the app", () => {
+    const selecting = run([localMissing, cacheOk]);
+    const released = reducePwaStartup(selecting, { type: "overlay_released" });
+
+    expect(released.phase).toBe("audience_selection");
+    expect(isPwaStartupComplete(released)).toBe(true);
+
+    // Completing selection then reveals the app; the overlay never returns.
+    const chosen = reducePwaStartup(released, {
+      type: "audience_selected",
+      audience: "staff",
+    });
+    expect(chosen.phase).toBe("app_ready");
+    expect(chosen.overlayReleased).toBe(true);
+  });
+
+  it("never lets the background audience sync change the current launch", () => {
     for (const status of [
+      "assigned",
       "unassigned",
-      "transport_error",
       "offline_unknown",
+      "transport_error",
     ] as const) {
-      const next = reducePwaStartup(ready, {
-        type: "audience_resolved",
-        result: { status, audience: null },
+      const before = run([localKnown, cacheOk]);
+      const after = reducePwaStartup(before, {
+        type: "audience_sync_completed",
+        result:
+          status === "assigned"
+            ? { status, audience: "student" }
+            : { status, audience: null },
       });
-      expect(next.state).toBe("ready");
-      expect(isPwaShellReady(next.state)).toBe(true);
+      expect(after.phase).toBe("app_ready");
+      expect(after.audience).toBe("student");
     }
   });
 
-  it("stays in the loading state until the probe settles or is abandoned", () => {
-    const mounted = mountedStartup();
-
+  it("abandoning a wedged cache probe still picks a destination", () => {
+    expect(run([localKnown, { type: "cache_probe_abandoned" }]).phase).toBe(
+      "app_ready"
+    );
+    expect(run([localMissing, { type: "cache_probe_abandoned" }]).phase).toBe(
+      "audience_selection"
+    );
+    // It cannot undo a recovery decision that already resolved.
+    const recovery = run([
+      localKnown,
+      { type: "cache_resolved", recoveryRequired: true },
+    ]);
     expect(
-      reducePwaStartup(mounted, {
-        type: "audience_resolved",
-        result: { status: "assigned", audience: "student" },
-      }).state
-    ).toBe("hydrating_cached_state");
-
-    expect(
-      reducePwaStartup(mounted, { type: "cache_probe_abandoned" }).state
-    ).toBe("ready");
+      reducePwaStartup(recovery, { type: "cache_probe_abandoned" }).phase
+    ).toBe("recovery");
   });
 
-  it("abandoning the probe after it resolved cannot downgrade recovery", () => {
-    const recovery = withCache(true);
-    expect(recovery.state).toBe("recovery_required");
-    expect(
-      reducePwaStartup(recovery, { type: "cache_probe_abandoned" }).state
-    ).toBe("recovery_required");
-  });
-
-  it("shows an actionable recovery screen instead of a permanent loader", () => {
-    expect(withCache(true).state).toBe("recovery_required");
-    expect(isPwaShellReady(withCache(true).state)).toBe(true);
-  });
-
-  it("surfaces onboarding above a ready shell, never as a startup gate", () => {
-    const unassigned = reducePwaStartup(withCache(), {
-      type: "audience_resolved",
-      result: { status: "unassigned", audience: null },
+  it("resolves the audience from local state with no network", () => {
+    expect(resolveLocalAudienceState(true, "student")).toEqual({
+      audience: "student",
+      audienceRequired: false,
     });
-
-    expect(unassigned.state).toBe("ready");
-    expect(shouldShowAudienceOnboarding(unassigned)).toBe(true);
-
-    // Not while the shell is still loading.
-    const stillLoading = reducePwaStartup(mountedStartup(), {
-      type: "audience_resolved",
-      result: { status: "unassigned", audience: null },
+    expect(resolveLocalAudienceState(true, null)).toEqual({
+      audience: null,
+      audienceRequired: true,
     });
-    expect(shouldShowAudienceOnboarding(stillLoading)).toBe(false);
-
-    const completed = reducePwaStartup(unassigned, {
-      type: "onboarding_completed",
-      audience: "parent",
-    });
-    expect(completed.state).toBe("ready");
-    expect(shouldShowAudienceOnboarding(completed)).toBe(false);
-    expect(completed.audience).toEqual({
-      status: "assigned",
-      audience: "parent",
+    // A plain browser tab is never asked to choose an audience.
+    expect(resolveLocalAudienceState(false, null)).toEqual({
+      audience: null,
+      audienceRequired: false,
     });
   });
 
-  it("does not show onboarding for a failed or offline lookup", () => {
-    for (const status of ["transport_error", "offline_unknown"] as const) {
-      const snapshot = reducePwaStartup(withCache(), {
-        type: "audience_resolved",
-        result: { status, audience: null },
-      });
-      expect(shouldShowAudienceOnboarding(snapshot)).toBe(false);
+  it("waits for a route fallback only when the app is the destination", () => {
+    expect(shouldWaitForPwaRoute("app_ready", true)).toBe(true);
+    expect(shouldWaitForPwaRoute("app_ready", false)).toBe(false);
+    expect(shouldWaitForPwaRoute("audience_selection", true)).toBe(false);
+    expect(shouldWaitForPwaRoute("recovery", true)).toBe(false);
+    expect(shouldWaitForPwaRoute("launching", true)).toBe(false);
+  });
+
+  it("always reaches a destination for every startup outcome", () => {
+    const outcomes: PwaStartupSnapshot[] = [
+      run([localKnown, cacheOk]),
+      run([localMissing, cacheOk]),
+      run([localKnown, { type: "cache_resolved", recoveryRequired: true }]),
+      run([localMissing, { type: "cache_probe_abandoned" }]),
+    ];
+
+    for (const outcome of outcomes) {
+      expect(hasPwaDestination(outcome)).toBe(true);
     }
-  });
-
-  it("locks a confirmed application reload state", () => {
-    const pending = reducePwaStartup(mountedStartup(), {
-      type: "application_reload_pending",
-    });
-
-    expect(
-      reducePwaStartup(pending, {
-        type: "cache_resolved",
-        recoveryRequired: false,
-      }).state
-    ).toBe("application_reload_pending");
-  });
-
-  it("waits for route fallback removal only when the app is the destination", () => {
-    expect(shouldWaitForPwaRoute("ready", true)).toBe(true);
-    expect(shouldWaitForPwaRoute("ready", false)).toBe(false);
-    expect(shouldWaitForPwaRoute("recovery_required", true)).toBe(false);
-    expect(shouldWaitForPwaRoute("hydrating_cached_state", true)).toBe(false);
   });
 
   it("reuses one lookup promise during duplicate effect execution", async () => {
@@ -159,23 +211,5 @@ describe("PWA startup readiness", () => {
     expect(isInstalledPwaLaunch(false, true)).toBe(true);
     expect(isInstalledPwaLaunch(true, undefined)).toBe(true);
     expect(isInstalledPwaLaunch(false, undefined)).toBe(false);
-  });
-
-  it("cannot leave the overlay up for any audience outcome", () => {
-    const outcomes: PwaStartupSnapshot[] = (
-      ["assigned", "unassigned", "transport_error", "offline_unknown"] as const
-    ).map((status) =>
-      reducePwaStartup(withCache(), {
-        type: "audience_resolved",
-        result:
-          status === "assigned"
-            ? { status, audience: "student" }
-            : { status, audience: null },
-      })
-    );
-
-    for (const outcome of outcomes) {
-      expect(isPwaShellReady(outcome.state)).toBe(true);
-    }
   });
 });

@@ -7,127 +7,167 @@ export type PwaAudienceResolution =
   | { status: "transport_error"; audience: null };
 
 /**
- * Startup readiness for the installed app.
+ * Startup has exactly one owner of what fills the screen.
  *
- * The launch overlay is removed when the *minimum usable app shell* is ready,
- * which means all of the following are true:
+ *   launching → audience_selection → app_ready
+ *   launching → app_ready
+ *   launching → recovery
  *
- *  1. the tenant is resolved — guaranteed by the time the document exists, since
- *     the server renders tenant branding, appearance and content into the HTML;
- *  2. React has mounted the startup boundary, so the interface underneath the
- *     overlay is live rather than static markup;
- *  3. the local snapshot probe has settled, so we know whether the first screen
- *     renders cached data or the server-rendered content — or the probe has been
- *     abandoned, so a wedged IndexedDB can never strand the overlay;
- *  4. no route-level `loading.tsx` fallback is still mounted;
- *  5. one frame has painted, so the reveal shows a drawn interface.
+ * `phase` decides which full-screen surface is on top; `overlayReleased` decides
+ * whether the server-rendered launch overlay still covers it. Both are monotonic
+ * — startup can never fall back to an earlier phase, and the overlay can never
+ * be shown again once released — so the launch screen cannot flash, remount or
+ * restart.
  *
- * Readiness deliberately does NOT wait for: the notification audience lookup,
- * device registration, the background snapshot refresh, service-worker update
- * checks, route prefetching, analytics, or optional images and fonts. Those keep
- * running behind the overlay and reconcile the interface once they land.
+ * The destination is chosen from synchronous local state (the IndexedDB probe
+ * plus the audience persisted in localStorage). No network request participates:
+ * the audience sync, snapshot refresh, service-worker update check, prefetching
+ * and analytics all run behind whichever surface is showing.
  */
-export type PwaStartupState =
-  | "booting"
-  | "hydrating_cached_state"
-  | "ready"
-  | "recovery_required"
-  | "application_reload_pending";
+export type PwaStartupPhase =
+  | "launching"
+  | "audience_selection"
+  | "app_ready"
+  | "recovery";
+
+const PHASE_RANK: Record<PwaStartupPhase, number> = {
+  launching: 0,
+  audience_selection: 1,
+  recovery: 1,
+  app_ready: 2,
+};
 
 export type PwaStartupSnapshot = {
-  state: PwaStartupState;
+  phase: PwaStartupPhase;
+  /** Monotonic false → true. The launch overlay is visible until this is true. */
+  overlayReleased: boolean;
   cacheResolved: boolean;
+  localStateResolved: boolean;
   recoveryRequired: boolean;
-  /** Informational only — the audience never gates the launch overlay. */
-  audience: PwaAudienceResolution | null;
-  onboardingCompleted: boolean;
+  audienceRequired: boolean;
+  audience: NotificationAudience | null;
+  /** Background reconciliation only — never affects `phase`. */
+  audienceSync: PwaAudienceResolution | null;
 };
 
 export type PwaStartupEvent =
-  | { type: "react_mounted" }
+  | {
+      type: "local_state_resolved";
+      audience: NotificationAudience | null;
+      audienceRequired: boolean;
+    }
   | { type: "cache_resolved"; recoveryRequired: boolean }
   | { type: "cache_probe_abandoned" }
-  | { type: "audience_resolved"; result: PwaAudienceResolution }
-  | { type: "onboarding_completed"; audience: NotificationAudience }
-  | { type: "application_reload_pending" };
+  | { type: "audience_selected"; audience: NotificationAudience }
+  | { type: "audience_sync_completed"; result: PwaAudienceResolution }
+  | { type: "overlay_released" };
 
 export const initialPwaStartupSnapshot: PwaStartupSnapshot = {
-  state: "booting",
+  phase: "launching",
+  overlayReleased: false,
   cacheResolved: false,
+  localStateResolved: false,
   recoveryRequired: false,
+  audienceRequired: false,
   audience: null,
-  onboardingCompleted: false,
+  audienceSync: null,
 };
 
-/** The overlay waits for a route fallback only when the app is the destination. */
-export function shouldWaitForPwaRoute(
-  state: PwaStartupState,
-  routeFallbackMounted: boolean
-) {
-  return state === "ready" && routeFallbackMounted;
-}
-
-/** True once the launch overlay may be removed. */
-export function isPwaShellReady(state: PwaStartupState) {
-  return state === "ready" || state === "recovery_required";
+/** Refuses any transition that would move startup backwards. */
+function advance(
+  snapshot: PwaStartupSnapshot,
+  phase: PwaStartupPhase
+): PwaStartupSnapshot {
+  if (PHASE_RANK[phase] <= PHASE_RANK[snapshot.phase]) return snapshot;
+  return { ...snapshot, phase };
 }
 
 /**
- * Onboarding is a destination *above* a ready shell, not a startup gate. A
- * failed or offline lookup leaves the app usable and retries in the background.
+ * Decide the destination once both local inputs have settled. Only ever runs
+ * while the launch overlay still owns the screen.
  */
-export function shouldShowAudienceOnboarding(snapshot: PwaStartupSnapshot) {
-  if (snapshot.onboardingCompleted) return false;
-  if (!isPwaShellReady(snapshot.state)) return false;
-  return snapshot.audience?.status === "unassigned";
-}
-
-function settleStartup(snapshot: PwaStartupSnapshot): PwaStartupSnapshot {
-  if (!snapshot.cacheResolved) return snapshot;
-
-  return {
-    ...snapshot,
-    state: snapshot.recoveryRequired ? "recovery_required" : "ready",
-  };
+function settleDestination(snapshot: PwaStartupSnapshot): PwaStartupSnapshot {
+  if (snapshot.phase !== "launching") return snapshot;
+  if (!snapshot.cacheResolved || !snapshot.localStateResolved) return snapshot;
+  if (snapshot.recoveryRequired) return advance(snapshot, "recovery");
+  if (snapshot.audienceRequired) return advance(snapshot, "audience_selection");
+  return advance(snapshot, "app_ready");
 }
 
 export function reducePwaStartup(
   snapshot: PwaStartupSnapshot,
   event: PwaStartupEvent
 ): PwaStartupSnapshot {
-  if (snapshot.state === "application_reload_pending") {
-    return snapshot;
-  }
-
   switch (event.type) {
-    case "react_mounted":
-      return snapshot.state === "booting"
-        ? { ...snapshot, state: "hydrating_cached_state" }
-        : snapshot;
+    case "local_state_resolved":
+      return settleDestination({
+        ...snapshot,
+        localStateResolved: true,
+        audience: snapshot.audience ?? event.audience,
+        audienceRequired: event.audienceRequired,
+      });
     case "cache_resolved":
-      return settleStartup({
+      return settleDestination({
         ...snapshot,
         cacheResolved: true,
         recoveryRequired: event.recoveryRequired,
       });
     case "cache_probe_abandoned":
       // The probe never settled. The server already rendered a usable screen,
-      // so reveal it rather than holding a loader the user cannot dismiss.
+      // so choose a destination rather than holding the overlay forever.
       return snapshot.cacheResolved
         ? snapshot
-        : settleStartup({ ...snapshot, cacheResolved: true });
-    case "audience_resolved":
-      // Recorded for onboarding, never for readiness.
-      return { ...snapshot, audience: event.result };
-    case "onboarding_completed":
-      return {
-        ...snapshot,
-        onboardingCompleted: true,
-        audience: { status: "assigned", audience: event.audience },
-      };
-    case "application_reload_pending":
-      return { ...snapshot, state: "application_reload_pending" };
+        : settleDestination({ ...snapshot, cacheResolved: true });
+    case "audience_selected":
+      return advance(
+        { ...snapshot, audience: event.audience, audienceRequired: false },
+        "app_ready"
+      );
+    case "audience_sync_completed":
+      // Recorded for the next launch; it must never move the current one.
+      return { ...snapshot, audienceSync: event.result };
+    case "overlay_released":
+      return snapshot.phase === "launching" || snapshot.overlayReleased
+        ? snapshot
+        : { ...snapshot, overlayReleased: true };
   }
+}
+
+/** True once a destination has been chosen and may be painted. */
+export function hasPwaDestination(snapshot: PwaStartupSnapshot) {
+  return snapshot.phase !== "launching";
+}
+
+/** True once the destination is visible and the overlay is gone. */
+export function isPwaStartupComplete(snapshot: PwaStartupSnapshot) {
+  return hasPwaDestination(snapshot) && snapshot.overlayReleased;
+}
+
+/**
+ * The overlay waits for a route fallback only when the app itself is the
+ * destination — the audience and recovery surfaces do not depend on the route.
+ */
+export function shouldWaitForPwaRoute(
+  phase: PwaStartupPhase,
+  routeFallbackMounted: boolean
+) {
+  return phase === "app_ready" && routeFallbackMounted;
+}
+
+/**
+ * Resolve the audience from persisted local state alone. A device with no saved
+ * choice goes straight to the full-screen selection step; the network lookup
+ * only reconciles it afterwards.
+ */
+export function resolveLocalAudienceState(
+  installedApp: boolean,
+  storedAudience: NotificationAudience | null
+): { audience: NotificationAudience | null; audienceRequired: boolean } {
+  if (!installedApp) return { audience: storedAudience, audienceRequired: false };
+  return {
+    audience: storedAudience,
+    audienceRequired: storedAudience === null,
+  };
 }
 
 const audienceLookups = new Map<string, Promise<PwaAudienceResolution>>();

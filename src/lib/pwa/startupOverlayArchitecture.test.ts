@@ -8,6 +8,10 @@ const appLayout = read("src/app/[school]/app/layout.tsx");
 const launchScreen = read("src/components/pwa/PwaLaunchScreen.tsx");
 const boundary = read("src/components/pwa/PwaStartupBoundary.tsx");
 const coordinator = read("src/lib/pwa/startupCoordinator.ts");
+const onboarding = read(
+  "src/components/mobile-app/NotificationAudienceOnboarding.tsx"
+);
+const updateLifecycle = read("src/lib/pwa/updateLifecycle.ts");
 
 describe("PWA launch overlay architecture", () => {
   it("server-renders the launch shell in the root layout body", () => {
@@ -55,12 +59,42 @@ describe("PWA launch overlay architecture", () => {
   });
 
   it("renders the application tree beneath the overlay rather than replacing it", () => {
-    expect(boundary).toContain("<div data-pwa-startup-state={startup.state}>{children}</div>");
+    expect(boundary).toContain("data-pwa-startup-phase={startup.phase}");
+    expect(boundary).toContain("{children}");
     // The tree must not be hidden, unmounted or gated behind readiness.
     expect(boundary).not.toContain("visibility:");
     expect(boundary).not.toContain("appDestinationMounted");
-    expect(boundary).not.toContain("aria-hidden={!showApp}");
     expect(boundary).not.toMatch(/showApp\s*&&\s*children/);
+  });
+
+  it("covers the application with an opaque surface during audience selection", () => {
+    // The Home interface initializes underneath and must never show through.
+    expect(onboarding).toContain('className="sundial-startup-surface"');
+    expect(onboarding).not.toContain("bg-black/45");
+    expect(PWA_LAUNCH_CRITICAL_CSS).toContain(".sundial-startup-surface");
+    const surface = PWA_LAUNCH_CRITICAL_CSS.slice(
+      PWA_LAUNCH_CRITICAL_CSS.indexOf(".sundial-startup-surface")
+    );
+    expect(surface).toContain("position: fixed");
+    expect(surface).toContain("inset: 0");
+    expect(surface).toContain(`background: ${PWA_LAUNCH_VISUAL.background}`);
+    expect(surface).toContain("env(safe-area-inset-top)");
+    // Directly beneath the launch overlay, above everything else.
+    expect(surface).toContain("z-index: 2147483645");
+  });
+
+  it("suppresses the first-install controller reload that restarted startup", () => {
+    // clients.claim() hands an uncontrolled page its first controller. Treating
+    // that as a deployment reloads mid-launch and flashes the launch screen.
+    expect(updateLifecycle).toContain("hadControllerAtStart");
+    expect(updateLifecycle).toContain("isInitialControllerClaim");
+    expect(updateLifecycle).toContain('"initial_claim"');
+    const handler = updateLifecycle.slice(
+      updateLifecycle.indexOf("const handleControllerChange")
+    );
+    expect(handler.indexOf("initialClaim")).toBeLessThan(
+      handler.indexOf("pendingControllerRefresh = true")
+    );
   });
 
   it("keeps the overlay above the interface with standalone-safe insets", () => {
@@ -88,15 +122,20 @@ describe("PWA launch overlay architecture", () => {
     }
   });
 
-  it("gates removal on shell readiness, not on background work", () => {
-    expect(coordinator).toContain("export function isPwaShellReady");
-    expect(boundary).toContain("isPwaShellReady(startup.state)");
-    // The audience lookup records a result but never drives readiness.
+  it("has one monotonic owner of startup-screen visibility", () => {
+    expect(coordinator).toContain("export function hasPwaDestination");
+    expect(coordinator).toContain("export function isPwaStartupComplete");
+    expect(coordinator).toContain("function advance");
+    expect(coordinator).toContain("PHASE_RANK");
+    // The overlay is owned by one monotonic flag, not competing booleans.
+    expect(coordinator).toContain("overlayReleased");
     expect(coordinator).toContain(
-      "// Recorded for onboarding, never for readiness."
+      "// Recorded for the next launch; it must never move the current one."
     );
     expect(coordinator).not.toContain('"retry_required"');
     expect(coordinator).not.toContain('"checking_audience"');
+    // The destination is chosen from local state, never from a network result.
+    expect(coordinator).toContain("resolveLocalAudienceState");
   });
 
   it("cannot leave the overlay visible when startup work fails", () => {
@@ -122,11 +161,11 @@ describe("PWA launch overlay architecture", () => {
   });
 
   it("introduces no artificial minimum launch duration", () => {
-    // Ceilings are allowed; floors are not. A ready shell must hand off on the
-    // next painted frame, never after a timer.
-    expect(boundary).not.toMatch(/setTimeout\(\s*completeHandoff/);
-    expect(boundary).not.toMatch(/setTimeout\(\(\)\s*=>\s*completeHandoff/);
-    expect(boundary).toContain("      completeHandoff();");
+    // Ceilings are allowed; floors are not. A chosen destination must hand off
+    // on the next painted frame, never after a timer.
+    expect(boundary).not.toMatch(/setTimeout\(\s*releaseAfterPaint/);
+    expect(boundary).not.toMatch(/setTimeout\(\(\)\s*=>\s*releaseAfterPaint/);
+    expect(boundary).toContain("      releaseAfterPaint();");
     // The only timers in the handoff are the documented failure ceilings.
     const timerTargets = [...boundary.matchAll(/setTimeout\(\s*([A-Za-z]+)/g)].map(
       (match) => match[1]

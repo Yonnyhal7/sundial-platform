@@ -97,17 +97,18 @@ describe("installed PWA loading screen integration", () => {
     expect(launchScreen).toContain("PWA_LAUNCH_VISUAL.markHeight");
   });
 
-  it("hands off on shell readiness while the audience lookup continues behind it", () => {
+  it("hands off to a destination while the audience sync continues behind it", () => {
     expect(offlineData).toContain("cacheHydrated: boolean");
     expect(offlineData).toContain("setCacheHydrated(true)");
     expect(startupBoundary).toContain("cacheHydrated");
     expect(startupBoundary).toContain("audience_lookup_started");
-    expect(startupBoundary).toContain('type: "onboarding_completed"');
+    expect(startupBoundary).toContain('type: "audience_selected"');
     expect(startupBoundary).toContain("hidePwaLaunchScreen");
-    expect(startupBoundary).toContain("isPwaShellReady");
+    expect(startupBoundary).toContain("hasPwaDestination");
     expect(startupBoundary).toContain("showRecovery");
-    // The audience result must not appear in the readiness condition.
-    expect(startupBoundary).not.toContain("startup.audience?.status ===\n      \"unassigned\"");
+    // The destination comes from local state; the network sync only reconciles.
+    expect(startupBoundary).toContain("resolveLocalAudienceState");
+    expect(startupBoundary).toContain('type: "audience_sync_completed"');
     expect(runtime).not.toContain("hidePwaLaunchScreen");
     expect(runtime).not.toContain("PWA_LAUNCH_MAX_MS");
   });

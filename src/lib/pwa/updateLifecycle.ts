@@ -120,6 +120,18 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
   let pendingDeploymentRefresh = false;
   let reloadAttemptedAt: number | null = null;
   let lastKnownController = options.serviceWorker.controller;
+  // A page that loaded before any worker existed receives its first controller
+  // from `clients.claim()` during the very first install. That is not a new
+  // deployment: treating it as one reloads the page mid-launch and restarts the
+  // whole startup sequence, which the user sees as the launch screen flashing.
+  const hadControllerAtStart = Boolean(lastKnownController);
+  let initialClaimSettled = hadControllerAtStart;
+
+  const isInitialControllerClaim = () => {
+    if (initialClaimSettled) return false;
+    initialClaimSettled = true;
+    return true;
+  };
   const foregroundReasons = new Set<string>();
   const observedWorkers = new WeakSet<ServiceWorker>();
   const skipWaitingWorkers = new WeakSet<ServiceWorker>();
@@ -312,12 +324,18 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
       controller === lastKnownController ? "unchanged" : "changed"
     );
     if (controller && controller !== lastKnownController) {
+      const initialClaim = !hadControllerAtStart && isInitialControllerClaim();
       lastKnownController = controller;
-      pendingControllerRefresh = true;
-      markApplicationUpdatePending();
-      diagnostics.newControllerActive = true;
-      recordDiagnostic("controllerchange_received", `${reason}:observed`);
-      requestDiagnostics();
+      if (initialClaim) {
+        recordDiagnostic("controllerchange_received", `${reason}:initial_claim`);
+        requestDiagnostics();
+      } else {
+        pendingControllerRefresh = true;
+        markApplicationUpdatePending();
+        diagnostics.newControllerActive = true;
+        recordDiagnostic("controllerchange_received", `${reason}:observed`);
+        requestDiagnostics();
+      }
     }
     observeWorker(options.registration.installing);
     if (options.registration.waiting) {
@@ -467,7 +485,16 @@ export function startPwaUpdateLifecycle(options: PwaUpdateLifecycleOptions) {
   };
   const handleOnline = () => requestForegroundCheck("online");
   const handleControllerChange = () => {
+    const initialClaim = !hadControllerAtStart && isInitialControllerClaim();
     lastKnownController = options.serviceWorker.controller;
+
+    if (initialClaim) {
+      options.onResumeDiagnostic?.("controllerchange", "initial_claim");
+      recordDiagnostic("controllerchange_received", "initial_claim");
+      requestDiagnostics();
+      return;
+    }
+
     pendingControllerRefresh = true;
     markApplicationUpdatePending();
     options.onResumeDiagnostic?.("controllerchange", "event");

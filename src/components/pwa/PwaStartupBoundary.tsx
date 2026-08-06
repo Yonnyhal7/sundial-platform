@@ -8,7 +8,6 @@ import {
   useMemo,
   useReducer,
   useRef,
-  useState,
   type ReactNode,
 } from "react";
 import NotificationAudienceOnboarding from "@/components/mobile-app/NotificationAudienceOnboarding";
@@ -27,17 +26,16 @@ import {
   isNotificationAudience,
   type NotificationAudience,
 } from "@/lib/notifications";
-import {
-  hidePwaLaunchScreen,
-} from "@/lib/pwa/launchScreen";
+import { hidePwaLaunchScreen } from "@/lib/pwa/launchScreen";
 import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
 import {
+  hasPwaDestination,
   initialPwaStartupSnapshot,
   isInstalledPwaLaunch,
-  isPwaShellReady,
+  isPwaStartupComplete,
   reducePwaStartup,
+  resolveLocalAudienceState,
   reuseAudienceLookup,
-  shouldShowAudienceOnboarding,
   shouldWaitForPwaRoute,
   type PwaAudienceResolution,
 } from "@/lib/pwa/startupCoordinator";
@@ -55,13 +53,49 @@ const PwaStartupContext = createContext<PwaStartupContextValue>({
 const AUDIENCE_LOOKUP_TIMEOUT_MS = 4_000;
 const ROUTE_LOADING_SELECTOR = '[data-pwa-route-loading="true"]';
 
-// Every constant below is a failure ceiling, never a minimum. Startup never
-// waits for one of these on the healthy path; they exist so a wedged probe, a
-// stuck route fallback or a throttled frame callback can't strand the overlay.
+// Failure ceilings, never minimums. Startup never waits for one of these on the
+// healthy path; they exist so a wedged probe, a stuck route fallback or a
+// throttled frame callback cannot strand the launch overlay.
 const CACHE_PROBE_FAILSAFE_MS = 4_000;
 const ROUTE_FALLBACK_MAX_WAIT_MS = 3_000;
 const PAINT_HANDOFF_FALLBACK_MS = 300;
 
+/**
+ * Device evidence. Every number is relative to navigation start, which is the
+ * earliest moment the web layer exists — so any black the user sees *before*
+ * 0 ms is the platform's own launch surface and no web code can shorten it.
+ * Readable on a real device over Safari Web Inspector or chrome://inspect.
+ */
+function reportStartupTimeline(phase: string) {
+  try {
+    const navigation = performance.getEntriesByType(
+      "navigation"
+    )[0] as PerformanceNavigationTiming | undefined;
+    const paint = performance
+      .getEntriesByType("paint")
+      .find((entry) => entry.name === "first-contentful-paint");
+
+    console.info("[sundial:startup]", {
+      destination: phase,
+      standalone: window.matchMedia("(display-mode: standalone)").matches,
+      ttfbMs: navigation ? Math.round(navigation.responseStart) : null,
+      documentCompleteMs: navigation
+        ? Math.round(navigation.responseEnd)
+        : null,
+      firstContentfulPaintMs: paint ? Math.round(paint.startTime) : null,
+      launchOverlayReleasedMs: Math.round(performance.now()),
+      note: "relative to navigation start; black before 0ms is the platform launch surface",
+    });
+  } catch {
+    // Diagnostics must never affect startup.
+  }
+}
+
+/**
+ * Background reconciliation of the device's notification audience. This never
+ * gates startup: the launch destination is chosen from local state, and this
+ * result is only persisted for the next launch.
+ */
 export async function resolveAudience(
   schoolId: string,
   school: string,
@@ -129,9 +163,9 @@ function StartupCoordinator({
     reducePwaStartup,
     initialPwaStartupSnapshot
   );
-  const [handoffComplete, setHandoffComplete] = useState(false);
   const diagnosticsRef = useRef(new Set<string>());
-  const previousStartupStateRef = useRef(startup.state);
+  const previousPhaseRef = useRef(startup.phase);
+  const handoffScheduledRef = useRef(false);
 
   const recordOnce = useCallback((type: Parameters<typeof recordPwaResumeDiagnostic>[0], detail?: string) => {
     if (diagnosticsRef.current.has(type)) return;
@@ -139,18 +173,33 @@ function StartupCoordinator({
     recordPwaResumeDiagnostic(type, detail);
   }, []);
 
-  // Non-blocking: the audience result only decides whether onboarding appears
-  // once the shell is already on screen. It never holds the launch overlay.
-  const runAudienceLookup = useCallback(() => {
-    recordPwaResumeDiagnostic("audience_lookup_started");
+  // Synchronous local state decides the destination. No network involved.
+  useEffect(() => {
+    recordOnce("react_hydration_start");
+    recordOnce("react_startup_boundary_mounted");
+    recordOnce("react_mounted");
+    recordOnce("tenant_resolved");
+    recordOnce("cache_hydration_started");
+
     const installedApp = isInstalledPwaLaunch(
       window.matchMedia("(display-mode: standalone)").matches,
       (navigator as Navigator & { standalone?: boolean }).standalone
     );
+    const local = resolveLocalAudienceState(
+      installedApp,
+      getConfirmedNotificationAudience(schoolId)
+    );
+    recordPwaResumeDiagnostic(
+      "audience_lookup_result",
+      local.audienceRequired ? "local_missing" : "local_present"
+    );
+    dispatch({ type: "local_state_resolved", ...local });
+
+    // Reconciliation only — the result is persisted for the next launch.
+    recordPwaResumeDiagnostic("audience_lookup_started");
     void reuseAudienceLookup(schoolId, () =>
       resolveAudience(schoolId, school, installedApp)
     ).then((result) => {
-      recordPwaResumeDiagnostic("audience_lookup_result", result.status);
       recordPwaResumeDiagnostic(
         "device_registration_result",
         result.status === "assigned"
@@ -159,40 +208,28 @@ function StartupCoordinator({
             ? "not_registered"
             : result.status
       );
-      dispatch({ type: "audience_resolved", result });
+      dispatch({ type: "audience_sync_completed", result });
     });
-  }, [school, schoolId]);
 
-  useEffect(() => {
-    recordOnce("react_hydration_start");
-    recordOnce("react_startup_boundary_mounted");
-    recordOnce("react_mounted");
-    recordOnce("tenant_resolved");
-    recordOnce("cache_hydration_started");
-    dispatch({ type: "react_mounted" });
-    runAudienceLookup();
     return () => {
       recordPwaResumeDiagnostic("startup_boundary_unmounted");
     };
-  }, [recordOnce, runAudienceLookup]);
+  }, [recordOnce, school, schoolId]);
 
   useEffect(() => {
-    const previous = previousStartupStateRef.current;
-    if (previous !== startup.state) {
+    const previous = previousPhaseRef.current;
+    if (previous !== startup.phase) {
       recordPwaResumeDiagnostic(
         "startup_state_transition",
-        `${previous}->${startup.state}`
+        `${previous}->${startup.phase}`
       );
-      previousStartupStateRef.current = startup.state;
+      previousPhaseRef.current = startup.phase;
     }
-  }, [startup.state]);
+  }, [startup.phase]);
 
   useEffect(() => {
     if (!cacheHydrated) return;
-    recordOnce(
-      "cache_hydration_complete",
-      snapshot ? "available" : "empty"
-    );
+    recordOnce("cache_hydration_complete", snapshot ? "available" : "empty");
     dispatch({
       type: "cache_resolved",
       recoveryRequired:
@@ -200,9 +237,9 @@ function StartupCoordinator({
     });
   }, [cacheHydrated, isOnline, recordOnce, snapshot, syncState]);
 
-  // Failure ceiling: IndexedDB can hang indefinitely when another tab holds an
-  // upgrade transaction. The server already rendered a usable screen, so give
-  // up on the probe rather than showing a loader forever.
+  // Failure ceiling: IndexedDB can hang when another tab holds an upgrade
+  // transaction. The server already rendered a usable screen, so give up on the
+  // probe rather than showing a loader the user cannot dismiss.
   useEffect(() => {
     if (cacheHydrated || startup.cacheResolved) return;
     const failsafe = window.setTimeout(() => {
@@ -212,12 +249,16 @@ function StartupCoordinator({
     return () => window.clearTimeout(failsafe);
   }, [cacheHydrated, recordOnce, startup.cacheResolved]);
 
-  const shellReady = isPwaShellReady(startup.state);
+  const destinationChosen = hasPwaDestination(startup);
+  const startupComplete = isPwaStartupComplete(startup);
 
-  // The single readiness handoff: reveal the interface that is already rendered
-  // underneath the overlay, on or immediately after a painted frame.
+  // The single handoff. The destination is already rendered underneath the
+  // overlay; this only releases the overlay once that destination has painted,
+  // so one surface replaces another with no gap and no flash.
   useEffect(() => {
-    if (!shellReady || handoffComplete) return;
+    if (!destinationChosen || startup.overlayReleased) return;
+    if (handoffScheduledRef.current) return;
+    handoffScheduledRef.current = true;
 
     let cancelled = false;
     let observer: MutationObserver | null = null;
@@ -229,21 +270,23 @@ function StartupCoordinator({
     const finish = () => {
       if (cancelled) return;
       cancelled = true;
-      recordOnce("stable_destination_painted", startup.state);
+      recordOnce("stable_destination_painted", startup.phase);
       recordOnce("react_loader_hidden");
       hidePwaLaunchScreen(
-        startup.state === "recovery_required"
+        startup.phase === "recovery"
           ? "recovery_required"
-          : "app_shell_ready"
+          : startup.phase === "audience_selection"
+            ? "onboarding_required"
+            : "app_shell_ready"
       );
-      recordOnce("launch_shell_removed", startup.state);
-      setHandoffComplete(true);
+      recordOnce("launch_shell_removed", startup.phase);
+      dispatch({ type: "overlay_released" });
     };
 
-    const completeHandoff = () => {
+    const releaseAfterPaint = () => {
       if (cancelled) return;
-      // requestAnimationFrame never fires in a hidden or heavily throttled tab,
-      // so pair it with a timeout that cannot leave the overlay up.
+      // requestAnimationFrame never fires in a hidden or throttled tab, so pair
+      // it with a timeout that cannot leave the overlay up.
       paintFallback = window.setTimeout(finish, PAINT_HANDOFF_FALLBACK_MS);
       if (typeof window.requestAnimationFrame !== "function") {
         finish();
@@ -255,7 +298,7 @@ function StartupCoordinator({
     };
 
     const routeIsLoading = shouldWaitForPwaRoute(
-      startup.state,
+      startup.phase,
       Boolean(document.querySelector(ROUTE_LOADING_SELECTOR))
     );
 
@@ -264,7 +307,7 @@ function StartupCoordinator({
       const stopWaiting = () => {
         observer?.disconnect();
         observer = null;
-        completeHandoff();
+        releaseAfterPaint();
       };
       observer = new MutationObserver(() => {
         if (document.querySelector(ROUTE_LOADING_SELECTOR)) return;
@@ -272,63 +315,71 @@ function StartupCoordinator({
       });
       observer.observe(document.body, { childList: true, subtree: true });
       // Failure ceiling: a route that never resolves its fallback must not hold
-      // the overlay. The shell underneath is still usable navigation.
-      routeFallbackTimer = window.setTimeout(stopWaiting, ROUTE_FALLBACK_MAX_WAIT_MS);
+      // the overlay.
+      routeFallbackTimer = window.setTimeout(
+        stopWaiting,
+        ROUTE_FALLBACK_MAX_WAIT_MS
+      );
     } else {
-      completeHandoff();
+      releaseAfterPaint();
     }
 
     return () => {
       cancelled = true;
+      // Allow a re-run if this tore down before releasing; the guard above
+      // short-circuits once `overlayReleased` is true, so it still runs once.
+      handoffScheduledRef.current = false;
       observer?.disconnect();
       if (firstFrame) window.cancelAnimationFrame(firstFrame);
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
       if (paintFallback) window.clearTimeout(paintFallback);
       if (routeFallbackTimer) window.clearTimeout(routeFallbackTimer);
     };
-  }, [handoffComplete, recordOnce, shellReady, startup.state]);
+  }, [destinationChosen, recordOnce, startup.overlayReleased, startup.phase]);
 
   useEffect(() => {
-    if (!handoffComplete) return;
-    if (startup.state === "ready") {
+    if (!startupComplete) return;
+    reportStartupTimeline(startup.phase);
+    if (startup.phase === "app_ready") {
       document.documentElement.dataset.pwaStartupReady = "true";
       recordOnce("app_ready");
       recordOnce("app_shell_revealed");
     }
-    if (startup.state === "recovery_required") {
+    if (startup.phase === "recovery") {
       document.documentElement.dataset.pwaStartupReady = "true";
       recordOnce("recovery_shown");
     }
-  }, [handoffComplete, recordOnce, startup.state]);
+    if (startup.phase === "audience_selection") {
+      recordOnce("onboarding_shown");
+      recordOnce("audience_screen_painted");
+    }
+  }, [recordOnce, startup.phase, startupComplete]);
 
-  const audience =
-    startup.audience?.status === "assigned"
-      ? startup.audience.audience
-      : null;
   const context = useMemo(
-    () => ({ audience, startupReady: startup.state === "ready" }),
-    [audience, startup.state]
+    () => ({
+      audience: startup.audience,
+      startupReady: startup.phase === "app_ready",
+    }),
+    [startup.audience, startup.phase]
   );
-  const showOnboarding = shouldShowAudienceOnboarding(startup);
-  const showRecovery = startup.state === "recovery_required";
 
-  useEffect(() => {
-    if (!showOnboarding) return;
-    recordOnce("onboarding_shown");
-    if (typeof window.requestAnimationFrame !== "function") return;
-    const paintFrame = window.requestAnimationFrame(() =>
-      recordOnce("audience_screen_painted")
-    );
-    return () => window.cancelAnimationFrame(paintFrame);
-  }, [recordOnce, showOnboarding]);
+  const showAudienceSelection = startup.phase === "audience_selection";
+  const showRecovery = startup.phase === "recovery";
+  // While a full-screen startup surface owns the viewport the application is
+  // still mounted and initializing underneath it, but must not be reachable.
+  const applicationCovered =
+    !startup.overlayReleased || showAudienceSelection || showRecovery;
 
   return (
     <PwaStartupContext.Provider value={context}>
-      {/* The interface renders and initializes here from the first frame. The
-          launch overlay sits above it, so nothing is hidden or unmounted. */}
-      <div data-pwa-startup-state={startup.state}>{children}</div>
+      <div
+        data-pwa-startup-phase={startup.phase}
+        aria-hidden={applicationCovered || undefined}
+      >
+        {children}
+      </div>
       {showRecovery && (
-        <main className="fixed inset-0 z-[2147483645] grid min-h-dvh place-items-center bg-slate-50 px-5 text-slate-950 dark:bg-black dark:text-white">
+        <main className="sundial-startup-surface">
           <section className="max-w-sm rounded-[2rem] border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
             <h1 className="text-xl font-black">Connect to finish opening Sundial</h1>
             <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
@@ -337,12 +388,12 @@ function StartupCoordinator({
           </section>
         </main>
       )}
-      {showOnboarding && (
+      {showAudienceSelection && (
         <NotificationAudienceOnboarding
           schoolId={schoolId}
           school={school}
           onComplete={(nextAudience) => {
-            dispatch({ type: "onboarding_completed", audience: nextAudience });
+            dispatch({ type: "audience_selected", audience: nextAudience });
           }}
         />
       )}

@@ -65,7 +65,11 @@ export default function NotificationAudienceOnboarding({
   if (stage === "done") return null;
 
   return (
-    <div className="fixed inset-0 z-[110] grid place-items-center overflow-y-auto bg-black/45 px-5 py-[calc(1.5rem+env(safe-area-inset-top))] text-slate-950 dark:text-white">
+    // `sundial-startup-surface` is the opaque, full-viewport, safe-area-aware
+    // startup surface defined in the inline launch CSS. It must stay opaque:
+    // this step hands straight over from the launch screen, and the Home
+    // interface initializing underneath must never be visible through it.
+    <div className="sundial-startup-surface">
       <section
         role="dialog"
         aria-modal="true"

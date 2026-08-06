@@ -6,6 +6,7 @@ import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { getPwaDeploymentVersion } from "@/lib/pwa/deploymentVersion";
 import { getThemeBootstrapScript } from "@/lib/themeBootstrap";
 import PwaLaunchScreen from "@/components/pwa/PwaLaunchScreen";
+import { IOS_STARTUP_IMAGES } from "@/lib/pwa/iosStartupImages.generated";
 import {
   getPwaLaunchPrepaintScript,
   PWA_LAUNCH_CRITICAL_CSS,
@@ -95,6 +96,20 @@ export default function RootLayout({
           type="image/webp"
           fetchPriority="high"
         />
+        {/* iOS does not use the manifest's background_color for the standalone
+            launch surface. Without a startup image matching the device exactly
+            it shows a blank (black) screen until the web view paints, so each
+            supported iPhone size and appearance gets the exact launch
+            background — the web launch screen then draws on top of the same
+            colour with no seam. */}
+        {IOS_STARTUP_IMAGES.map((image) => (
+          <link
+            key={image.href}
+            rel="apple-touch-startup-image"
+            media={image.media}
+            href={image.href}
+          />
+        ))}
         <style dangerouslySetInnerHTML={{ __html: PWA_LAUNCH_CRITICAL_CSS }} />
       </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>

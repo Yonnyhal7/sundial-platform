@@ -61,6 +61,28 @@ export const PWA_LAUNCH_CRITICAL_CSS = `
     display: flex;
   }
   #${PWA_LAUNCH_SCREEN_ID}[hidden] { display: none; }
+  /* Full-screen startup destinations (audience selection, offline recovery).
+     Opaque and inline-styled so they are already painted underneath the launch
+     overlay when it is released — the application never shows through. */
+  .sundial-startup-surface {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483645;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: calc(1.5rem + env(safe-area-inset-top)) 1.25rem calc(1.5rem + env(safe-area-inset-bottom));
+    background: ${PWA_LAUNCH_VISUAL.background};
+    color: ${PWA_LAUNCH_VISUAL.titleColor};
+    color-scheme: light;
+  }
+  html.dark .sundial-startup-surface {
+    background: ${PWA_LAUNCH_VISUAL.backgroundDark};
+    color: ${PWA_LAUNCH_VISUAL.titleColorDark};
+    color-scheme: dark;
+  }
   .sundial-pwa-launch-card {
     display: grid;
     width: min(100%, 22rem);
