@@ -61,6 +61,18 @@ describe("tenant domain routing", () => {
     }
   );
 
+  it.each(["sundialk12.com", "www.sundialk12.com"])(
+    "serves the marketing homepage only on the root of %s",
+    async (host) => {
+      const response = await proxy(request(host));
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
+      expect(response.headers.get("x-middleware-rewrite")).toBeNull();
+      expect(mockedAvailability).not.toHaveBeenCalled();
+    }
+  );
+
   it.each([
     "/admin",
     "/api/health",
