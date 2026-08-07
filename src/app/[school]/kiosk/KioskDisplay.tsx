@@ -485,7 +485,7 @@ export default function KioskDisplay({
                     className={[
                       "mt-3 max-w-[80%] text-center font-extrabold leading-none tracking-tight",
                       countdownIsLong
-                        ? "text-[50px]"
+                        ? "text-[40px]"
                         : "text-[68px]",
                     ].join(" ")}
                   >
