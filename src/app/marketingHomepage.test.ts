@@ -38,4 +38,17 @@ describe("Sundial marketing homepage", () => {
     expect(page).toContain("The feature is in beta");
     expect(page).toContain("staff stay in control");
   });
+
+  it("contains hero copy and layered previews in separate responsive columns", () => {
+    expect(page).toContain("data-hero-copy");
+    expect(page).toContain("data-hero-previews");
+    expect(page).toContain(
+      "xl:grid-cols-[minmax(0,1.05fr)_minmax(30rem,.95fr)]"
+    );
+    expect(page).toContain("max-w-[36rem]");
+    expect(page).toContain('style={{ minHeight: "44rem" }}');
+    expect(page).not.toContain("-translate-x-[42%]");
+    expect(page).not.toContain("-translate-x-[68%]");
+    expect(page).not.toContain("-translate-x-[82%]");
+  });
 });

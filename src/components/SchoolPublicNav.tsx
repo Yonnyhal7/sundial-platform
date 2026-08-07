@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import SchoolLogo from "@/components/SchoolLogo";
 import KioskMenuControls from "@/components/KioskMenuControls";
+import ThemeToggle from "@/components/ThemeToggle";
 import SchoolAppInstallLink from "@/components/pwa/SchoolAppInstallLink";
 import { DashboardIcon, EventIcon, MegaphoneIcon, ResourcesIcon, UserIcon } from "@/components/admin/AdminNavIcons";
 import { CalendarIcon, HomeIcon, MenuIcon } from "@/components/mobile-app/AppIcons";
@@ -133,7 +134,8 @@ export default function SchoolPublicNav({ school, schoolName, logoUrl, base, sch
           ? <SchoolAppInstallLink key={href} href={href} aria-current={active(href) ? "page" : undefined} className={className}>{desktopLabel || label}</SchoolAppInstallLink>
           : <Link key={href} href={href} aria-current={active(href) ? "page" : undefined} className={className}>{desktopLabel || label}</Link>;
       })}</nav>
-      <button ref={menuButtonRef} type="button" className="ml-auto grid h-11 w-11 place-items-center rounded-full border border-slate-300 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] xl:hidden dark:border-white/20 dark:hover:bg-white/10" aria-expanded={open} aria-controls="public-mobile-menu" aria-label={open ? "Close navigation" : "Open navigation"} onClick={() => open ? closeMenu() : setOpen(true)}>{open ? <CloseIcon /> : <MenuIcon className="h-6 w-6" />}</button>
+      <ThemeToggle scope="site" variant="icon" className="ml-auto xl:ml-2" />
+      <button ref={menuButtonRef} type="button" className="grid h-11 w-11 place-items-center rounded-full border border-slate-300 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)] xl:hidden dark:border-white/20 dark:hover:bg-white/10" aria-expanded={open} aria-controls="public-mobile-menu" aria-label={open ? "Close navigation" : "Open navigation"} onClick={() => open ? closeMenu() : setOpen(true)}>{open ? <CloseIcon /> : <MenuIcon className="h-6 w-6" />}</button>
     </div>
 
   </header>

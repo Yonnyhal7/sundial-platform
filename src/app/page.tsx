@@ -299,7 +299,7 @@ export default function Home() {
       <nav className="relative z-20 border-b border-slate-200/80 bg-[#fbfaf7]/90 backdrop-blur" aria-label="Main navigation">
         <div className="mx-auto flex min-h-20 w-full max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <Link href="/" aria-label="Sundial home"><SundialBrand /></Link>
-          <div className="hidden items-center gap-7 text-sm font-bold text-slate-600 md:flex">
+          <div className="hidden items-center gap-7 text-sm font-bold text-slate-600 lg:flex">
             <a href="#experiences" className="hover:text-slate-950">Experiences</a>
             <a href="#features" className="hover:text-slate-950">What it includes</a>
             <a href="#setup" className="hover:text-slate-950">School setup</a>
@@ -312,10 +312,10 @@ export default function Home() {
 
       <section className="relative isolate">
         <div aria-hidden="true" className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_77%_18%,rgba(217,155,22,.22),transparent_28%),radial-gradient(circle_at_8%_72%,rgba(58,29,11,.08),transparent_24%)]" />
-        <div className="mx-auto grid w-full max-w-[1200px] items-center gap-14 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.08fr_.92fr] lg:px-8 lg:py-24">
-          <div className="max-w-3xl">
+        <div className="mx-auto grid w-full max-w-[1280px] items-center gap-14 px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24 xl:grid-cols-[minmax(0,1.05fr)_minmax(30rem,.95fr)] xl:gap-12">
+          <div data-hero-copy className="min-w-0 max-w-3xl">
             <Eyebrow>One school day, connected</Eyebrow>
-            <h1 className="mt-5 text-[clamp(3.3rem,8vw,6.7rem)] font-black leading-[.9] tracking-[-.07em] text-slate-950">
+            <h1 className="mt-5 text-[clamp(3.25rem,7.5vw,6.35rem)] font-black leading-[.92] tracking-[-.065em] text-slate-950">
               Know what&apos;s happening at school.
             </h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-600 sm:text-xl">
@@ -327,11 +327,15 @@ export default function Home() {
             </div>
             <p className="mt-5 text-sm font-semibold text-slate-500">Built for the people checking the school day—and the staff keeping it current.</p>
           </div>
-          <div className="relative min-h-[35rem] lg:min-h-[39rem]">
-            <div className="absolute left-1/2 top-0 w-[22rem] -translate-x-[42%] rotate-2 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_35px_90px_rgb(15_23_42/0.16)] sm:w-[27rem] lg:left-auto lg:right-0 lg:translate-x-0">
+          <div
+            data-hero-previews
+            className="relative mx-auto w-full max-w-[36rem] px-4"
+            style={{ minHeight: "44rem" }}
+          >
+            <div className="absolute right-4 top-0 w-[min(27rem,86%)] rotate-2 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_35px_90px_rgb(15_23_42/0.16)]">
               <WebsitePreview />
             </div>
-            <div className="absolute bottom-0 left-1/2 -translate-x-[68%] -rotate-3 sm:-translate-x-[82%] lg:left-0 lg:translate-x-0">
+            <div className="absolute bottom-0 left-4 -rotate-3">
               <PhonePreview />
             </div>
           </div>

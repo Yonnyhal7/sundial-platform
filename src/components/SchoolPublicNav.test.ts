@@ -22,8 +22,9 @@ describe("public mobile navigation accessibility", () => {
     expect(source).toContain("hidden items-center gap-1 xl:flex");
   });
 
-  it("keeps appearance out of the header and opens it from the mobile menu", () => {
-    expect(source).not.toContain("ThemeToggle");
+  it("keeps a visible site-scoped light and dark toggle in the header", () => {
+    expect(source).toContain("ThemeToggle");
+    expect(source).toContain('<ThemeToggle scope="site" variant="icon"');
     expect(source).toContain('aria-haspopup="dialog"');
     expect(source).toContain('aria-label="Website appearance"');
     expect(source).toContain('setStoredAppearancePreference("site"');
