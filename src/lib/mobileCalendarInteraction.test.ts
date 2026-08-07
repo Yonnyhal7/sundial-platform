@@ -54,6 +54,23 @@ describe("mobile calendar interaction contract", () => {
     expect(bottomNav).toContain('aria-current={active ? "page" : undefined}');
   });
 
+  it("resets shared swipe state before direct tab navigation", () => {
+    const swipeNavigation = source(
+      "src/components/mobile-app/AppSwipeNavigation.tsx"
+    );
+    const tabLink = source("src/components/mobile-app/AppTabLink.tsx");
+    const bottomNav = source("src/components/mobile-app/AppBottomNav.tsx");
+
+    expect(tabLink).toContain("APP_TAB_DIRECT_NAVIGATION_EVENT");
+    expect(tabLink).toContain("flushSync");
+    expect(swipeNavigation).toContain("gestureRef.current = null");
+    expect(swipeNavigation).toContain(
+      "setDragState({ pathname, x: 0, dragging: false, animate: false })"
+    );
+    expect(swipeNavigation).toContain("releasePointerCapture");
+    expect(bottomNav).toContain("<AppTabLink");
+  });
+
   it("recognizes both tenant-host and path-based offline calendar routes", () => {
     const offlineContent = source(
       "src/components/offline/OfflineStudentAppContent.tsx"

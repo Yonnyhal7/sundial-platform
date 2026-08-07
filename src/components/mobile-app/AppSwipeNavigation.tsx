@@ -1,10 +1,11 @@
 "use client";
 
 import type { PointerEvent, ReactNode } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   APP_TAB_PENDING_EVENT,
+  APP_TAB_DIRECT_NAVIGATION_EVENT,
   getActiveAppTabIndex,
   getAppTabs,
 } from "@/lib/appTabs";
@@ -28,6 +29,7 @@ type DragState = {
   pathname: string;
   x: number;
   dragging: boolean;
+  animate: boolean;
 };
 
 const SWIPE_DISTANCE_THRESHOLD = 72;
@@ -63,11 +65,13 @@ export default function AppSwipeNavigation({
 }: AppSwipeNavigationProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const swipeContainerRef = useRef<HTMLDivElement>(null);
   const gestureRef = useRef<SwipeGesture | null>(null);
   const [dragState, setDragState] = useState<DragState>({
     pathname,
     x: 0,
     dragging: false,
+    animate: true,
   });
 
   const tabs = getAppTabs(school, pathname);
@@ -75,8 +79,36 @@ export default function AppSwipeNavigation({
   const visibleDragX = dragState.pathname === pathname ? dragState.x : 0;
   const isDragging = dragState.pathname === pathname && dragState.dragging;
 
+  useEffect(() => {
+    function handleDirectNavigation() {
+      const activeGesture = gestureRef.current;
+      gestureRef.current = null;
+
+      if (
+        activeGesture &&
+        swipeContainerRef.current?.hasPointerCapture(activeGesture.pointerId)
+      ) {
+        swipeContainerRef.current.releasePointerCapture(activeGesture.pointerId);
+      }
+
+      setDragState({ pathname, x: 0, dragging: false, animate: false });
+    }
+
+    window.addEventListener(
+      APP_TAB_DIRECT_NAVIGATION_EVENT,
+      handleDirectNavigation,
+    );
+
+    return () => {
+      window.removeEventListener(
+        APP_TAB_DIRECT_NAVIGATION_EVENT,
+        handleDirectNavigation,
+      );
+    };
+  }, [pathname]);
+
   function resetDrag() {
-    setDragState({ pathname, x: 0, dragging: false });
+    setDragState({ pathname, x: 0, dragging: false, animate: true });
   }
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -136,6 +168,7 @@ export default function AppSwipeNavigation({
       pathname,
       x: clamp(deltaX * resistance, -MAX_DRAG_OFFSET, MAX_DRAG_OFFSET),
       dragging: true,
+      animate: false,
     });
   }
 
@@ -177,6 +210,7 @@ export default function AppSwipeNavigation({
         pathname,
         x: shouldNavigateLeft ? -MAX_DRAG_OFFSET : MAX_DRAG_OFFSET,
         dragging: false,
+        animate: true,
       });
       window.dispatchEvent(
         new CustomEvent(APP_TAB_PENDING_EVENT, {
@@ -192,6 +226,7 @@ export default function AppSwipeNavigation({
 
   return (
     <div
+      ref={swipeContainerRef}
       className={classNames(
         "relative flex min-h-0 flex-1 flex-col touch-pan-y",
         className,
@@ -207,7 +242,10 @@ export default function AppSwipeNavigation({
           transform: visibleDragX
             ? `translate3d(${visibleDragX}px, 0, 0)`
             : undefined,
-          transition: isDragging ? "none" : "transform 180ms ease-out",
+          transition:
+            isDragging || !dragState.animate
+              ? "none"
+              : "transform 180ms ease-out",
         }}
       >
         {children}

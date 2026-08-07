@@ -12,6 +12,8 @@ export type AppTabRoute = (typeof APP_TAB_DEFINITIONS)[number] & {
 };
 
 export const APP_TAB_PENDING_EVENT = "sundial:app-tab-pending";
+export const APP_TAB_DIRECT_NAVIGATION_EVENT =
+  "sundial:app-tab-direct-navigation";
 
 export type AppTabPendingEventDetail = {
   href: string;

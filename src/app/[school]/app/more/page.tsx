@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AppTabLink from "@/components/mobile-app/AppTabLink";
 import {
   BellIcon,
   BookIcon,
@@ -37,11 +38,11 @@ export default async function MobileMorePage({
     .returns<Announcement[]>();
 
   const items = [
-    { title: "Bell Schedule", href: `/${school}/app/bell`, icon: BellIcon },
-    { title: "Calendar", href: `/${school}/app/schedule`, icon: CalendarIcon },
-    { title: "Athletics", href: `/${school}/app/athletics`, icon: BellIcon },
-    { title: "Resources", href: `/${school}/app/resources`, icon: BookIcon },
-    { title: "Public Website", href: `/${school}`, icon: HomeIcon },
+    { title: "Bell Schedule", href: `/${school}/app/bell`, icon: BellIcon, tab: false },
+    { title: "Calendar", href: `/${school}/app/schedule`, icon: CalendarIcon, tab: true },
+    { title: "Athletics", href: `/${school}/app/athletics`, icon: BellIcon, tab: true },
+    { title: "Resources", href: `/${school}/app/resources`, icon: BookIcon, tab: false },
+    { title: "Public Website", href: `/${school}`, icon: HomeIcon, tab: false },
   ];
 
   return (
@@ -58,9 +59,10 @@ export default async function MobileMorePage({
       <section className="grid grid-cols-2 gap-3">
         {items.map((item) => {
           const Icon = item.icon;
+          const ItemLink = item.tab ? AppTabLink : Link;
 
           return (
-            <Link
+            <ItemLink
               key={item.title}
               href={item.href}
               className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
@@ -71,7 +73,7 @@ export default async function MobileMorePage({
               <h2 className="mt-4 font-black text-slate-950 dark:text-white">
                 {item.title}
               </h2>
-            </Link>
+            </ItemLink>
           );
         })}
       </section>

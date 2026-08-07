@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -14,6 +13,7 @@ import {
   type AppTabPendingEventDetail,
   getAppTabs,
 } from "@/lib/appTabs";
+import AppTabLink from "@/components/mobile-app/AppTabLink";
 
 type AppBottomNavProps = {
   school: string;
@@ -66,7 +66,7 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
               : activePathname === item.href || activePathname.startsWith(`${item.href}/`);
 
           return (
-            <Link
+            <AppTabLink
               key={item.href}
               href={item.href}
               prefetch
@@ -82,7 +82,7 @@ export default function AppBottomNav({ school }: AppBottomNavProps) {
               <span className="mt-0.5 text-center leading-tight max-[480px]:sr-only">
                 {item.label}
               </span>
-            </Link>
+            </AppTabLink>
           );
         })}
       </div>

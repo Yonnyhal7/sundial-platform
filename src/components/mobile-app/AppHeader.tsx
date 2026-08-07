@@ -24,6 +24,7 @@ import {
 } from "@/lib/notifications/inboxClient";
 import NotificationDrawer from "@/components/mobile-app/NotificationDrawer";
 import OverlayDrawer from "@/components/mobile-app/OverlayDrawer";
+import AppTabLink from "@/components/mobile-app/AppTabLink";
 
 type QuickLink = {
   title: string;
@@ -175,7 +176,7 @@ export default function AppHeader({
           <MenuIcon className="h-[clamp(1.25rem,3vw,1.75rem)] w-[clamp(1.25rem,3vw,1.75rem)]" />
         </button>
 
-        <Link
+        <AppTabLink
           href={homeHref}
           aria-label="Go to home"
           className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
@@ -185,7 +186,7 @@ export default function AppHeader({
             logoUrl={logoUrl}
             variant="appHeader"
           />
-        </Link>
+        </AppTabLink>
 
         <button
           ref={bellButtonRef}
@@ -212,7 +213,7 @@ export default function AppHeader({
             </button>
 
             <div className="border-b border-[color-mix(in_srgb,var(--school-primary-text)_24%,transparent)] pb-6 text-center">
-              <Link
+              <AppTabLink
                 href={homeHref}
                 onClick={closeMenu}
                 className="mx-auto block w-fit"
@@ -223,7 +224,7 @@ export default function AppHeader({
                   variant="preview"
                   className="h-16 w-16"
                 />
-              </Link>
+              </AppTabLink>
               <p className="mt-4 truncate text-center text-xl font-black">{schoolName}</p>
             </div>
             </div>
