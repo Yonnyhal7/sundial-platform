@@ -77,7 +77,7 @@ describe("kiosk utility controls", () => {
 
   it("uses neutral kiosk text on the school-color bottom banner", () => {
     expect(kioskSource).toContain(
-      'bg-[var(--school-primary)] text-[clamp(1rem,1.35vw,1.55rem)] font-extrabold text-[var(--kiosk-text)]'
+      'bg-[var(--school-primary)] text-[26px] font-extrabold text-[var(--kiosk-text)]'
     );
     expect(kioskSource).not.toContain(
       'font-extrabold text-[var(--school-primary-text)]'
@@ -89,7 +89,7 @@ describe("kiosk utility controls", () => {
       "pointer-events-none absolute inset-0 z-0 bg-[radial-gradient"
     );
     expect(kioskSource).toContain(
-      "relative isolate z-10 mt-[2dvh] h-[min(45dvh,450px)]"
+      "relative isolate z-10 mt-4 h-[430px] w-[430px] shrink-0"
     );
     expect(kioskSource).toContain(
       'stroke="var(--kiosk-countdown-ring)"'

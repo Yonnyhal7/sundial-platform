@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { calculateKioskViewportLayout } from "@/lib/kioskViewport";
 import SchoolLogo from "@/components/SchoolLogo";
 import SportIcon from "@/components/SportIcon";
 import { getSchoolThemeModes } from "@/lib/schoolTheme";
@@ -79,6 +80,45 @@ type KioskStyle = CSSProperties & {
 };
 
 const KIOSK_DATA_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+function KioskViewport({ children, style }: { children: React.ReactNode; style: KioskStyle }) {
+  const stageRef = useRef<HTMLElement>(null);
+  const [layout, setLayout] = useState<ReturnType<typeof calculateKioskViewportLayout> | null>(null);
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const update = () => {
+      const bounds = stage.getBoundingClientRect();
+      setLayout(calculateKioskViewportLayout(bounds.width, bounds.height));
+    };
+    const observer = new ResizeObserver(update);
+    const viewport = window.visualViewport;
+    const documentOverflow = document.documentElement.style.overflow;
+    const bodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    observer.observe(stage);
+    viewport?.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    document.addEventListener("fullscreenchange", update);
+    update();
+    return () => {
+      observer.disconnect();
+      viewport?.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      document.removeEventListener("fullscreenchange", update);
+      document.documentElement.style.overflow = documentOverflow;
+      document.body.style.overflow = bodyOverflow;
+    };
+  }, []);
+  return (
+    <main ref={stageRef} className="kiosk-theme kiosk-viewport-stage overflow-hidden bg-[var(--kiosk-bg)] text-[var(--kiosk-text)]" style={style}>
+      <div data-kiosk-canvas className="absolute left-0 top-0 h-[1080px] w-[1920px] overflow-hidden" style={{ transform: layout ? `translate3d(${layout.left}px, ${layout.top}px, 0) scale(${layout.scale})` : "scale(0)", transformOrigin: "top left", visibility: layout ? "visible" : "hidden" }}>
+        {children}
+      </div>
+    </main>
+  );
+}
 
 function getHexLuminance(color: string) {
   const match = color.match(/^#([0-9a-f]{6})$/i);
@@ -336,90 +376,82 @@ export default function KioskDisplay({
 
   if (isNoSchool) {
     return (
-      <main
-        className="kiosk-theme flex h-[99dvh] w-screen items-center justify-center bg-[var(--kiosk-bg)] p-6 text-[var(--kiosk-text)]"
-        style={kioskStyle}
-      >
+      <KioskViewport style={kioskStyle}>
+        <div className="flex h-full w-full items-center justify-center p-12">
         <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
-          <h1 className="text-[clamp(3rem,7vw,7rem)] font-extrabold">
+          <h1 className="text-[112px] font-extrabold">
             No School Today
           </h1>
-          <p className="mt-6 text-[clamp(1.5rem,3vw,4rem)] text-slate-500">
+          <p className="mt-6 text-[56px] text-slate-500">
             {noSchoolLabel}
           </p>
-        </div>
-
-      </main>
+        </div></div>
+      </KioskViewport>
     );
   }
 
   return (
-    <main
-      className="kiosk-theme h-[99dvh] w-screen overflow-hidden bg-[var(--kiosk-bg)] text-[var(--kiosk-text)]"
-      style={kioskStyle}
-    >
-      <div className="flex h-full w-full flex-col px-[1.25vw] py-[1dvh]">
-        <header className="grid h-[11dvh] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-[1vw]">
-          <div className="flex min-w-0 items-center gap-[1vw]">
+    <KioskViewport style={kioskStyle}>
+      <div className="flex h-full w-full flex-col px-6 pt-4">
+        <header className="grid h-[120px] shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6">
+          <div className="flex min-w-0 items-center gap-5">
             <SchoolLogo
               schoolName={schoolName}
               logoUrl={schoolLogoUrl}
               variant="kioskHeader"
-              className="rounded-[1.2dvh]"
+              className="!h-[88px] !w-[88px] rounded-[14px]"
             />
 
-            <div className="flex min-w-0 items-end gap-[15vw]">
-              <h1 className="truncate text-[clamp(1.8rem,3vw,3.75rem)] font-extrabold leading-[1.25] tracking-tight">
+            <div className="min-w-0">
+              <h1 className="truncate text-[54px] font-extrabold leading-tight tracking-tight">
                 {schoolName}
               </h1>
 
-              <p className="ml-[2vw] mb-[0.6dvh] whitespace-nowrap text-[clamp(0.9rem,1.15vw,1.35rem)] text-slate-500">
-                {formatDateLabel(now, timeZone)}
-              </p>
             </div>
-            </div>
-          <div className="flex shrink-0 items-start gap-[0.45vw] text-right">
-            <div className="text-[clamp(2.8rem,4.8vw,5rem)] font-extrabold leading-none tracking-tight">
+          </div>
+          <p className="whitespace-nowrap text-[22px] text-slate-500">{formatDateLabel(now, timeZone)}</p>
+          <div className="grid min-w-[330px] shrink-0 grid-cols-[auto_64px] items-start justify-self-end gap-2 text-right">
+            <div className="text-[82px] font-extrabold leading-none tracking-tight">
               {formatClock(now, timeZone).replace(" AM", "").replace(" PM", "")}
             </div>
-            <div className="pt-[0.35dvh]">
-              <div className="text-[clamp(1.25rem,1.9vw,2.25rem)] font-bold leading-none">
+            <div className="pt-1">
+              <div className="text-[34px] font-bold leading-none">
                 {getAmPm(now, timeZone)}
               </div>
-              <div className="mt-[0.4dvh] text-[clamp(1rem,1.45vw,1.75rem)] font-semibold leading-none text-slate-500">
+              <div className="mt-2 text-[28px] font-semibold leading-none text-slate-500">
                 {formatSeconds(now, timeZone)}
               </div>
             </div>
           </div>
         </header>
 
-        <section className="grid min-h-0 flex-1 grid-cols-1 gap-[1vw] pb-[1dvh] lg:grid-cols-[1.22fr_1fr]">
+        <section className="grid min-h-0 flex-1 grid-cols-[1.22fr_1fr] gap-5 pb-3">
           <div className="relative min-h-0 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
             <div className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(circle_at_25%_45%,color-mix(in_srgb,var(--school-accent-visible-card)_14%,transparent),transparent_35%)]" />
 
-            <div className="relative z-10 flex h-full flex-col items-center px-[1.75vw] py-[1.8dvh]">
-              <p className="text-[clamp(0.95rem,1.35vw,1.55rem)] font-bold uppercase tracking-wide text-[var(--school-accent-visible-card)]">
+            <div className="relative z-10 flex h-full flex-col items-center px-9 py-5">
+              <p className="text-[25px] font-bold uppercase tracking-wide text-[var(--school-accent-visible-card)]">
                 Current Period
               </p>
 
-              <h2 className="mt-[1.6dvh] text-center text-[clamp(2.5rem,4vw,5rem)] font-extrabold leading-tight tracking-tight">
+              <h2 className="mt-3 text-center text-[60px] font-extrabold leading-tight tracking-tight">
                 {currentPeriodTitle}
               </h2>
 
               {currentPeriod && !scheduleNeedsTimes && (
-                <p className="mt-[0.6dvh] text-[clamp(1rem,1.55vw,1.75rem)] text-slate-500">
+                <p className="mt-1 text-[28px] text-slate-500">
                   {currentPeriod.startTime} – {currentPeriod.endTime}
                 </p>
               )}
 
               {scheduleNeedsTimes ? (
-                <div className="mt-[5dvh] max-w-[48rem] rounded-3xl bg-slate-50 px-[3vw] py-[4dvh] text-center">
-                  <p className="text-[clamp(1.15rem,1.55vw,1.85rem)] font-semibold text-slate-500">
+                <div className="mt-12 max-w-[48rem] rounded-3xl bg-slate-50 px-14 py-10 text-center">
+                  <p className="text-[28px] font-semibold text-slate-500">
                     Bell times have not been added yet.
                   </p>
                 </div>
               ) : (
-              <div className="relative isolate z-10 mt-[2dvh] h-[min(45dvh,450px)] w-[min(45dvh,450px)]">
+              <div className="relative isolate z-10 mt-4 h-[430px] w-[430px] shrink-0">
                 <svg
                   className="h-full w-full -rotate-90"
                   viewBox="0 0 410 410"
@@ -446,15 +478,15 @@ export default function KioskDisplay({
                 </svg>
 
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-[clamp(0.85rem,1.15vw,1.25rem)] font-semibold uppercase tracking-wide text-slate-500">
+                  <p className="text-[20px] font-semibold uppercase tracking-wide text-slate-500">
                     {periodState.countdownLabel}
                   </p>
                   <p
                     className={[
-                      "mt-[1.1dvh] max-w-[82%] text-center font-extrabold leading-none tracking-tight",
+                      "mt-3 max-w-[80%] text-center font-extrabold leading-none tracking-tight",
                       countdownIsLong
-                        ? "text-[clamp(2rem,2.7vw,3.4rem)]"
-                        : "text-[clamp(2.75rem,4.2vw,5rem)]",
+                        ? "text-[50px]"
+                        : "text-[68px]",
                     ].join(" ")}
                   >
                     {periodState.countdown}
@@ -463,33 +495,33 @@ export default function KioskDisplay({
               </div>
               )}
 
-              <div className="mt-auto w-full border-t border-slate-200 pt-[1.8dvh]">
-                <div className="mx-auto grid max-w-[780px] grid-cols-[1fr_auto_1fr] items-center gap-[1.8vw]">
-                  <div className="flex items-center justify-end gap-[0.9vw]">
-                    <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center text-[var(--school-accent-visible-card)]">
-                      <ClockIcon className="h-[3dvh] w-[3dvh]" />
+              <div className="mt-auto w-full border-t border-slate-200 pt-5">
+                <div className="mx-auto grid max-w-[780px] grid-cols-[1fr_auto_1fr] items-center gap-8">
+                  <div className="flex items-center justify-end gap-4">
+                    <div className="flex h-[54px] w-[54px] min-w-[54px] items-center justify-center text-[var(--school-accent-visible-card)]">
+                      <ClockIcon className="h-[32px] w-[32px]" />
                     </div>
                     <div>
-                      <p className="text-[clamp(0.7rem,0.9vw,1rem)] font-semibold uppercase text-slate-500">
+                      <p className="text-[16px] font-semibold uppercase text-slate-500">
                         Next Period
                       </p>
-                      <p className="text-[clamp(0.95rem,1.35vw,1.6rem)] font-extrabold">
+                      <p className="text-[24px] font-extrabold">
                         {scheduleNeedsTimes ? "Bell times needed" : (nextPeriod?.name ?? "End of Day")}
                       </p>
                     </div>
                   </div>
 
-                  <div className="h-[5.5dvh] w-px bg-slate-300" />
+                  <div className="h-[60px] w-px bg-slate-300" />
 
-                  <div className="flex items-center gap-[0.9vw]">
-                    <div className="flex h-[5dvh] w-[5dvh] min-w-[5dvh] items-center justify-center text-[3dvh] text-[var(--school-accent-visible-card)]">
-                      <ScheduleDayIcon className="h-[3dvh] w-[3dvh]" />
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-[54px] w-[54px] min-w-[54px] items-center justify-center text-[var(--school-accent-visible-card)]">
+                      <ScheduleDayIcon className="h-[32px] w-[32px]" />
                     </div>
                     <div>
-                      <p className="text-[clamp(0.7rem,0.9vw,1rem)] font-semibold uppercase text-slate-500">
+                      <p className="text-[16px] font-semibold uppercase text-slate-500">
                         Day Type
                       </p>
-                      <p className="text-[clamp(0.95rem,1.35vw,1.6rem)] font-extrabold">
+                      <p className="text-[24px] font-extrabold">
                         {dayType}
                       </p>
                     </div>
@@ -499,20 +531,17 @@ export default function KioskDisplay({
             </div>
           </div>
 
-          <div className="grid min-h-0 grid-rows-[1.35fr_1.05fr_0.8fr] gap-[1vw]">
+          <div className="grid min-h-0 grid-rows-[390px_270px_174px] gap-5">
             <Card title="Today’s Schedule">
               <div
-                className="grid min-h-0 flex-1 gap-[0.25dvh]"
-                style={{
-                  gridTemplateRows: `repeat(${Math.max(sortedPeriods.length, 1)}, minmax(0, 1fr))`,
-                }}
+                className="grid min-h-0 flex-1 auto-rows-[40px] content-start gap-1 overflow-hidden"
               >
                 {scheduleNeedsTimes ? (
-                  <div className="flex h-full flex-col justify-center rounded-xl bg-slate-50 px-[1vw] text-center">
-                    <p className="text-[clamp(1rem,1.35vw,1.6rem)] font-extrabold">
+                  <div className="flex h-full flex-col justify-center rounded-xl bg-slate-50 px-5 text-center">
+                    <p className="text-[24px] font-extrabold">
                       {dayType}
                     </p>
-                    <p className="mt-[0.8dvh] text-[clamp(0.85rem,1vw,1.2rem)] font-semibold text-slate-500">
+                    <p className="mt-2 text-[18px] font-semibold text-slate-500">
                       Bell times have not been added yet.
                     </p>
                   </div>
@@ -525,15 +554,15 @@ export default function KioskDisplay({
                     <div
                       key={period.id}
                       className={[
-                        "grid min-h-0 grid-cols-[minmax(5.6rem,0.8fr)_minmax(7.5rem,1fr)_2rem] items-center gap-[0.6vw] rounded-lg px-[0.9vw] py-[0.35dvh] text-[clamp(0.72rem,0.92vw,1.08rem)] leading-tight",
+                        "grid min-h-0 grid-cols-[minmax(150px,0.8fr)_minmax(210px,1fr)_40px] items-center gap-3 rounded-lg px-[18px] py-1 text-[18px] leading-tight",
                         isCurrent
                           ? "kiosk-current-period bg-[color-mix(in_srgb,var(--school-primary)_16%,white)] text-[var(--kiosk-text)]"
                           : "border-b border-slate-200",
                       ].join(" ")}
                     >
-                      <div className="kiosk-current-period-name flex items-center gap-[0.5vw] font-extrabold">
+                      <div className="kiosk-current-period-name flex items-center gap-2 font-extrabold">
                         {isCurrent && (
-                          <span className="kiosk-current-period-dot h-[0.55vw] w-[0.55vw] rounded-full bg-[var(--school-primary)]" />
+                          <span className="kiosk-current-period-dot h-[10px] w-[10px] rounded-full bg-[var(--school-primary)]" />
                         )}
                         {period.name.replace(" Period", "")}
                       </div>
@@ -542,7 +571,7 @@ export default function KioskDisplay({
                         {period.startTime} – {period.endTime}
                       </div>
 
-                      <div className="text-right text-[clamp(0.85rem,1.1vw,1.35rem)] font-bold text-green-500">
+                      <div className="text-right text-[22px] font-bold text-green-500">
                         {isComplete && "✓"}
                       </div>
                     </div>
@@ -562,20 +591,20 @@ export default function KioskDisplay({
                     activeInfoCard === "events" ? "translate-x-0" : "-translate-x-1/2",
                   ].join(" ")}
                 >
-                  <div className="flex min-h-0 flex-col justify-center pr-[0.6vw]">
+                  <div className="flex min-h-0 flex-col justify-center pr-3">
                 {events.slice(0, 2).map((event) => (
                   <div
                     key={event.id}
-                    className="flex min-h-0 items-center gap-[1vw] border-b border-slate-200 py-[0.85dvh] first:pt-0 last:border-b-0 last:pb-0"
+                    className="flex min-h-0 items-center gap-5 border-b border-slate-200 py-2 first:pt-0 last:border-b-0 last:pb-0"
                   >
-                    <div className="shrink-0 text-[clamp(1.25rem,1.9vw,2.25rem)] leading-none text-[var(--school-accent-visible-card)]">
-                      <CalendarStarIcon className="h-[2.25dvh] w-[2.25dvh]" />
+                    <div className="shrink-0 text-[32px] leading-none text-[var(--school-accent-visible-card)]">
+                      <CalendarStarIcon className="h-[26px] w-[26px]" />
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate text-[clamp(0.95rem,1.28vw,1.5rem)] font-extrabold leading-tight">
+                      <p className="truncate text-[23px] font-extrabold leading-tight">
                         {event.title}
                       </p>
-                      <p className="mt-[0.25dvh] text-[clamp(0.75rem,0.98vw,1.1rem)] font-semibold leading-tight text-[var(--school-accent-visible-card)]">
+                      <p className="mt-1 text-[17px] font-semibold leading-tight text-[var(--school-accent-visible-card)]">
                         {event.date}
                       </p>
                     </div>
@@ -583,32 +612,32 @@ export default function KioskDisplay({
                 ))}
 
                 {events.length === 0 && (
-                  <p className="text-[clamp(0.95rem,1.25vw,1.5rem)] font-semibold text-slate-500">
+                  <p className="text-[22px] font-semibold text-slate-500">
                     No Upcoming Events
                   </p>
                 )}
                   </div>
-                  <div className="flex min-h-0 flex-col justify-center pl-[0.6vw]">
+                  <div className="flex min-h-0 flex-col justify-center pl-3">
                 {games.slice(0, 3).map((game) => (
                   <div
                     key={game.id}
-                    className="flex min-h-0 items-center gap-[0.8vw] border-b border-slate-200 py-[0.55dvh] first:pt-0 last:border-b-0 last:pb-0"
+                    className="flex min-h-0 items-center gap-4 border-b border-slate-200 py-1.5 first:pt-0 last:border-b-0 last:pb-0"
                   >
                     <div
-                      className="grid h-[3.8dvh] w-[3.8dvh] shrink-0 place-items-center rounded-xl text-[clamp(0.65rem,0.85vw,1rem)] font-extrabold shadow-inner ring-1 ring-black/5"
+                      className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl text-[16px] font-extrabold shadow-inner ring-1 ring-black/5"
                       style={getSportIconBadgeStyle(game.sportIconColor)}
                     >
                       <SportIcon
                         icon={game.sportIcon}
                         color={game.sportIconColor}
-                        className="h-[2dvh] w-[2dvh]"
+                        className="h-[24px] w-[24px]"
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[clamp(0.85rem,1.08vw,1.25rem)] font-extrabold leading-tight">
+                      <p className="truncate text-[20px] font-extrabold leading-tight">
                         {game.title}
                       </p>
-                      <p className="mt-[0.15dvh] truncate text-[clamp(0.68rem,0.85vw,0.98rem)] font-semibold leading-tight text-slate-500">
+                      <p className="mt-0.5 truncate text-[16px] font-semibold leading-tight text-slate-500">
                         {game.time} | {game.location}
                       </p>
                     </div>
@@ -618,21 +647,21 @@ export default function KioskDisplay({
                 {games.length > 3 && (
                   <Link
                     href={athleticsHref}
-                    className="mt-[0.55dvh] text-[clamp(0.7rem,0.85vw,0.95rem)] font-extrabold text-[var(--school-accent-visible-card)]"
+                    className="mt-1.5 text-[16px] font-extrabold text-[var(--school-accent-visible-card)]"
                   >
                     + {games.length - 3} more games today
                   </Link>
                 )}
 
                 {games.length === 0 && (
-                  <p className="text-[clamp(0.95rem,1.25vw,1.5rem)] font-semibold text-slate-500">
+                  <p className="text-[22px] font-semibold text-slate-500">
                     No games today
                   </p>
                 )}
                   </div>
                 </div>
               </div>
-              <div className="mt-[0.65dvh] flex shrink-0 justify-center gap-[0.35vw]">
+              <div className="mt-2 flex shrink-0 justify-center gap-2">
                 {(["events", "games"] as const).map((card) => (
                   <button
                     key={card}
@@ -643,7 +672,7 @@ export default function KioskDisplay({
                       setRotationReset((current) => current + 1);
                     }}
                     className={[
-                      "h-[0.75dvh] w-[0.75dvh] rounded-full transition",
+                      "h-[8px] w-[8px] rounded-full transition",
                       activeInfoCard === card ? "bg-[var(--school-accent-visible-card)]" : "bg-slate-300",
                     ].join(" ")}
                   />
@@ -652,16 +681,16 @@ export default function KioskDisplay({
             </Card>
 
             <Card title="Priority Announcement">
-              <div className="flex items-center gap-[1vw]">
-                <div className="text-[clamp(1.8rem,2.8vw,3.25rem)] text-[var(--school-accent-visible-card)]">
+              <div className="flex min-w-0 items-center gap-5">
+                <div className="text-[44px] text-[var(--school-accent-visible-card)]">
                   📣
                 </div>
-                <div>
-                  <p className="text-[clamp(0.95rem,1.35vw,1.65rem)] font-extrabold">
+                <div className="min-w-0">
+                  <p className="truncate text-[25px] font-extrabold">
                     {announcement?.title ?? "No priority announcement"}
                   </p>
                   {announcement?.body && (
-                    <p className="mt-[0.35dvh] text-[clamp(0.8rem,0.95vw,1.15rem)] text-slate-600">
+                    <p className="mt-1 line-clamp-2 text-[18px] text-slate-600">
                       {announcement.body}
                     </p>
                   )}
@@ -671,11 +700,11 @@ export default function KioskDisplay({
           </div>
         </section>
 
-        <footer className="-mx-[1.25vw] -mb-[1dvh] flex h-[5.25dvh] shrink-0 items-center justify-center bg-[var(--school-primary)] text-[clamp(1rem,1.35vw,1.55rem)] font-extrabold text-[var(--kiosk-text)]">
+        <footer className="-mx-6 flex h-[58px] shrink-0 items-center justify-center bg-[var(--school-primary)] text-[26px] font-extrabold text-[var(--kiosk-text)]">
           {cheerText}
         </footer>
       </div>
-    </main>
+    </KioskViewport>
   );
 }
 
@@ -689,9 +718,9 @@ function Card({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-[1.2vw] shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
-      <div className="mb-[0.9dvh] flex shrink-0 items-center justify-between gap-[1vw]">
-        <h3 className="text-[clamp(0.95rem,1.3vw,1.55rem)] font-extrabold uppercase tracking-wide text-[var(--school-accent-visible-card)]">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.10)]">
+      <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
+        <h3 className="text-[24px] font-extrabold uppercase tracking-wide text-[var(--school-accent-visible-card)]">
           {title}
         </h3>
         {action}

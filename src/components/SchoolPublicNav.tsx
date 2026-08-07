@@ -123,7 +123,7 @@ export default function SchoolPublicNav({ school, schoolName, logoUrl, base, sch
   }
 
   if (pathname === `${base}/app` || pathname.startsWith(`${base}/app/`) || pathname === `${base}/admin` || pathname.startsWith(`${base}/admin/`) || pathname.startsWith(`/admin/${school}`)) return null;
-  if (pathname === `${base}/kiosk` || pathname.startsWith(`${base}/kiosk/`)) return <nav className="school-menu-bar border-b border-slate-200 bg-white px-6 py-3 dark:border-neutral-800 dark:bg-black"><div className="flex justify-end"><KioskMenuControls school={school} schoolDefaultAppearance={schoolDefaultAppearance} /></div></nav>;
+  if (pathname === `${base}/kiosk` || pathname.startsWith(`${base}/kiosk/`)) return <nav className="school-menu-bar flex h-16 items-center justify-end border-b border-slate-200 bg-white px-6 dark:border-neutral-800 dark:bg-black"><KioskMenuControls school={school} schoolDefaultAppearance={schoolDefaultAppearance} /></nav>;
 
   return <><header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 text-slate-950 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-[#141618]/90 dark:text-white">
     <div className={`${publicDensity.container} flex min-h-16 items-center gap-4`}>

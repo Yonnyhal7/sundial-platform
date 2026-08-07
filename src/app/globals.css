@@ -31,6 +31,15 @@ body {
   display: none;
 }
 
+.kiosk-viewport-stage {
+  position: fixed;
+  inset: 4rem 0 0;
+}
+
+:fullscreen .kiosk-viewport-stage {
+  inset: 0;
+}
+
 .school-public-theme [class~="bg-neutral-950"] {
   background: #f1f5f9;
   color: #0f172a;

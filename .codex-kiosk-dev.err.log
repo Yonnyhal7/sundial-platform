@@ -1,0 +1,49 @@
+⨯ Error: Missing Supabase service role environment variables
+    at createSupabaseServiceRoleClient (src\lib\supabase\serviceRole.ts:9:11)
+    at getSchoolLifecycleBySubdomain (src\lib\schools.ts:26:58)
+    at SchoolLayout (src\app\[school]\layout.tsx:86:56)
+   7 |
+   8 |   if (!supabaseUrl || !serviceRoleKey) {
+>  9 |     throw new Error("Missing Supabase service role environment variables");
+     |           ^
+  10 |   }
+  11 |
+  12 |   return createClient(supabaseUrl, serviceRoleKey, { {
+  digest: '361884365'
+}
+⨯ Error: Missing Supabase service role environment variables
+    at createSupabaseServiceRoleClient (src\lib\supabase\serviceRole.ts:9:11)
+    at <unknown> (src\lib\schools.ts:222:58)
+    at Module.generateMetadata (src\app\[school]\kiosk\page.tsx:27:45)
+   7 |
+   8 |   if (!supabaseUrl || !serviceRoleKey) {
+>  9 |     throw new Error("Missing Supabase service role environment variables");
+     |           ^
+  10 |   }
+  11 |
+  12 |   return createClient(supabaseUrl, serviceRoleKey, { {
+  digest: '1241852271'
+}
+⨯ Error: Missing Supabase environment variables
+    at createSupabaseServerClient (src\lib\supabase\server.ts:11:11)
+    at async KioskPage (src\app\[school]\kiosk\page.tsx:102:20)
+   9 |
+  10 |   if (!supabaseUrl || !supabaseAnonKey) {
+> 11 |     throw new Error("Missing Supabase environment variables");
+     |           ^
+  12 |   }
+  13 |
+  14 |   return createServerClient(supabaseUrl, supabaseAnonKey, { {
+  digest: '2745596208'
+}
+[browser] Uncaught Error: Missing Supabase service role environment variables
+    at createSupabaseServiceRoleClient (src\lib\supabase\serviceRole.ts:9:11)
+    at getSchoolLifecycleBySubdomain (src\lib\schools.ts:26:58)
+    at SchoolLayout (src\app\[school]\layout.tsx:86:56)
+   7 |
+   8 |   if (!supabaseUrl || !serviceRoleKey) {
+>  9 |     throw new Error("Missing Supabase service role environment variables");
+     |           ^
+  10 |   }
+  11 |
+  12 |   return createClient(supabaseUrl, serviceRoleKey, {
