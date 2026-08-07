@@ -103,9 +103,9 @@ function SectionHeading({
   );
 }
 
-function PhonePreview() {
+function PhonePreview({ compact = false }: { compact?: boolean } = {}) {
   return (
-    <div className="relative mx-auto w-[17.5rem] rounded-[2.8rem] border-[7px] border-[#251309] bg-slate-50 p-3 shadow-[0_30px_80px_rgb(58_29_11/0.24)] sm:w-[19rem]">
+    <div className={`${compact ? "w-[16rem] sm:w-[17rem]" : "w-[17.5rem] sm:w-[19rem]"} relative mx-auto rounded-[2.8rem] border-[7px] border-[#251309] bg-slate-50 p-3 shadow-[0_30px_80px_rgb(58_29_11/0.24)]`}>
       <div className="mx-auto mb-3 h-1.5 w-16 rounded-full bg-[#251309]" />
       <div className="flex items-center justify-between px-1">
         <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#b88e31] text-[#211507]">
@@ -312,13 +312,13 @@ export default function Home() {
 
       <section className="relative isolate">
         <div aria-hidden="true" className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_77%_18%,rgba(217,155,22,.22),transparent_28%),radial-gradient(circle_at_8%_72%,rgba(58,29,11,.08),transparent_24%)]" />
-        <div className="mx-auto grid w-full max-w-[1440px] items-center gap-14 px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24 2xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] 2xl:gap-12">
-          <div data-hero-copy className="min-w-0 max-w-3xl 2xl:max-w-[42rem]">
+        <div className="mx-auto grid w-full max-w-[1320px] items-center gap-12 px-4 py-14 sm:px-6 sm:py-16 lg:px-8 lg:py-20 2xl:grid-cols-[minmax(0,0.94fr)_minmax(0,1.06fr)] 2xl:gap-12">
+          <div data-hero-copy className="min-w-0 max-w-3xl 2xl:max-w-[38rem]">
             <Eyebrow>One school day, connected</Eyebrow>
-            <h1 className="mt-5 max-w-[10ch] break-words text-[clamp(3.25rem,6vw,5.5rem)] font-black leading-[.94] tracking-[-.055em] text-slate-950">
+            <h1 className="mt-5 max-w-[10ch] break-words text-[clamp(3rem,5vw,4.5rem)] font-black leading-[.96] tracking-[-.05em] text-slate-950">
               Know what&apos;s happening at school.
             </h1>
-            <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-600 sm:text-xl">
+            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">
               Sundial gives students, parents, and staff one clear place for the calendar, events, athletics, announcements, bell schedules, and school resources.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -329,14 +329,14 @@ export default function Home() {
           </div>
           <div
             data-hero-previews
-            className="relative mx-auto min-w-0 w-full max-w-[36rem] px-4 2xl:justify-self-end"
-            style={{ minHeight: "44rem" }}
+            className="relative mx-auto min-w-0 w-full max-w-[32rem] px-4 2xl:justify-self-end"
+            style={{ minHeight: "39rem" }}
           >
-            <div className="absolute right-4 top-0 w-[min(27rem,86%)] rotate-2 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_35px_90px_rgb(15_23_42/0.16)]">
+            <div className="absolute right-4 top-0 w-[min(24rem,84%)] rotate-2 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_35px_90px_rgb(15_23_42/0.16)]">
               <WebsitePreview />
             </div>
             <div className="absolute bottom-0 left-4 -rotate-3">
-              <PhonePreview />
+              <PhonePreview compact />
             </div>
           </div>
         </div>
@@ -372,7 +372,9 @@ export default function Home() {
             <div className="order-1 flex justify-center lg:order-2"><PhonePreview /></div>
           </div>
           <div className="mt-16 grid items-center gap-8 lg:grid-cols-2 lg:gap-12">
-            <KioskPreview />
+            <div data-experience-preview="kiosk" className="mx-auto w-full max-w-[30rem] lg:justify-self-start">
+              <KioskPreview />
+            </div>
             <div className="lg:pl-6">
               <Eyebrow>Kiosk display</Eyebrow>
               <h3 className="mt-3 text-3xl font-black tracking-[-.04em]">A live view for hallways and common spaces.</h3>
@@ -387,7 +389,9 @@ export default function Home() {
               <p className="mt-4 leading-7 text-slate-600">Authorized staff manage schedules, calendars, events, announcements, athletics, resources, notifications, and appearance from one portal.</p>
               <a href={CONTACT_HREF} className={`${primaryButton} mt-6`}>Request an admin walkthrough</a>
             </div>
-            <div className="order-1 lg:order-2"><AdminPreview /></div>
+            <div data-experience-preview="admin" className="order-1 mx-auto w-full max-w-[30rem] lg:order-2 lg:justify-self-end">
+              <AdminPreview />
+            </div>
           </div>
         </div>
       </section>

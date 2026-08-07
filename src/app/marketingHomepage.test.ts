@@ -45,14 +45,18 @@ describe("Sundial marketing homepage", () => {
     expect(page).toContain("data-hero-copy");
     expect(page).toContain("data-hero-previews");
     expect(page).toContain(
-      "2xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]"
+      "2xl:grid-cols-[minmax(0,0.94fr)_minmax(0,1.06fr)]"
     );
     expect(page).toContain("font-sans");
     expect(page).toContain("max-w-[10ch] break-words");
-    expect(page).toContain("2xl:max-w-[42rem]");
-    expect(page).toContain("min-w-0 w-full max-w-[36rem]");
-    expect(page).toContain("max-w-[36rem]");
-    expect(page).toContain('style={{ minHeight: "44rem" }}');
+    expect(page).toContain("2xl:max-w-[38rem]");
+    expect(page).toContain("min-w-0 w-full max-w-[32rem]");
+    expect(page).toContain("max-w-[32rem]");
+    expect(page).toContain('style={{ minHeight: "39rem" }}');
+    expect(page).toContain("<PhonePreview compact />");
+    expect(page).toContain('data-experience-preview="kiosk"');
+    expect(page).toContain('data-experience-preview="admin"');
+    expect(page).toContain("w-full max-w-[30rem]");
     expect(page).not.toContain("-translate-x-[42%]");
     expect(page).not.toContain("-translate-x-[68%]");
     expect(page).not.toContain("-translate-x-[82%]");
