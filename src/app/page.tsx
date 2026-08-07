@@ -295,7 +295,7 @@ const featureItems = [
 
 export default function Home() {
   return (
-    <main className="overflow-hidden bg-[#fbfaf7] text-slate-950 [--brand-brown:#3a1d0b] [--brand-gold:#d99b16]">
+    <main className="overflow-hidden bg-[#fbfaf7] font-sans text-slate-950 [--brand-brown:#3a1d0b] [--brand-gold:#d99b16]">
       <nav className="relative z-20 border-b border-slate-200/80 bg-[#fbfaf7]/90 backdrop-blur" aria-label="Main navigation">
         <div className="mx-auto flex min-h-20 w-full max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <Link href="/" aria-label="Sundial home"><SundialBrand /></Link>
@@ -312,10 +312,10 @@ export default function Home() {
 
       <section className="relative isolate">
         <div aria-hidden="true" className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_77%_18%,rgba(217,155,22,.22),transparent_28%),radial-gradient(circle_at_8%_72%,rgba(58,29,11,.08),transparent_24%)]" />
-        <div className="mx-auto grid w-full max-w-[1280px] items-center gap-14 px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24 xl:grid-cols-[minmax(0,1.05fr)_minmax(30rem,.95fr)] xl:gap-12">
-          <div data-hero-copy className="min-w-0 max-w-3xl">
+        <div className="mx-auto grid w-full max-w-[1440px] items-center gap-14 px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24 2xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] 2xl:gap-12">
+          <div data-hero-copy className="min-w-0 max-w-3xl 2xl:max-w-[42rem]">
             <Eyebrow>One school day, connected</Eyebrow>
-            <h1 className="mt-5 text-[clamp(3.25rem,7.5vw,6.35rem)] font-black leading-[.92] tracking-[-.065em] text-slate-950">
+            <h1 className="mt-5 max-w-[10ch] break-words text-[clamp(3.25rem,6vw,5.5rem)] font-black leading-[.94] tracking-[-.055em] text-slate-950">
               Know what&apos;s happening at school.
             </h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-600 sm:text-xl">
@@ -329,7 +329,7 @@ export default function Home() {
           </div>
           <div
             data-hero-previews
-            className="relative mx-auto w-full max-w-[36rem] px-4"
+            className="relative mx-auto min-w-0 w-full max-w-[36rem] px-4 2xl:justify-self-end"
             style={{ minHeight: "44rem" }}
           >
             <div className="absolute right-4 top-0 w-[min(27rem,86%)] rotate-2 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_35px_90px_rgb(15_23_42/0.16)]">

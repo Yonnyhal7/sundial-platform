@@ -6,6 +6,8 @@ const source = (path: string) => readFileSync(join(process.cwd(), path), "utf8")
 
 describe("Sundial marketing homepage", () => {
   const page = source("src/app/page.tsx");
+  const layout = source("src/app/layout.tsx");
+  const worker = source("public/sw.js");
 
   it("uses the official Sundial mark and real product destinations", () => {
     expect(page).toContain('src="/sundial-launch-mark.webp"');
@@ -43,12 +45,31 @@ describe("Sundial marketing homepage", () => {
     expect(page).toContain("data-hero-copy");
     expect(page).toContain("data-hero-previews");
     expect(page).toContain(
-      "xl:grid-cols-[minmax(0,1.05fr)_minmax(30rem,.95fr)]"
+      "2xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]"
     );
+    expect(page).toContain("font-sans");
+    expect(page).toContain("max-w-[10ch] break-words");
+    expect(page).toContain("2xl:max-w-[42rem]");
+    expect(page).toContain("min-w-0 w-full max-w-[36rem]");
     expect(page).toContain("max-w-[36rem]");
     expect(page).toContain('style={{ minHeight: "44rem" }}');
     expect(page).not.toContain("-translate-x-[42%]");
     expect(page).not.toContain("-translate-x-[68%]");
     expect(page).not.toContain("-translate-x-[82%]");
+  });
+
+  it("uses the self-hosted Geist font instead of a platform-dependent fallback", () => {
+    expect(layout).toContain("--font-geist-sans");
+    expect(page).toContain("font-sans");
+  });
+
+  it("does not serve marketing HTML from the PWA navigation cache", () => {
+    expect(worker).toContain(
+      'request.mode === "navigate" && isAppOrKioskPath(url.pathname)'
+    );
+    expect(worker).not.toMatch(
+      /request\.mode === ["']navigate["'][\s\S]{0,120}url\.pathname === ["']\/["']/
+    );
+    expect(worker).toContain('url.pathname.startsWith("/_next/static/")');
   });
 });
