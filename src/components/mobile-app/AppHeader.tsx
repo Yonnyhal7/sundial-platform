@@ -7,13 +7,7 @@ import {
   MenuIcon,
 } from "@/components/mobile-app/AppIcons";
 import SchoolLogo from "@/components/SchoolLogo";
-import {
-  applyTheme,
-  getPreferredAppearance,
-  resolveAppearanceTheme,
-  setStoredAppearancePreference,
-  type AppearancePreference,
-} from "@/lib/themeScope";
+import type { AppearancePreference } from "@/lib/themeScope";
 import { isNotificationAudience } from "@/lib/notifications";
 import type { NotificationAudience } from "@/lib/notifications";
 import { getNotificationDeviceIdentity, notificationDeviceHeaders } from "@/lib/notifications/deviceClient";
@@ -25,6 +19,7 @@ import {
 import NotificationDrawer from "@/components/mobile-app/NotificationDrawer";
 import OverlayDrawer from "@/components/mobile-app/OverlayDrawer";
 import AppTabLink from "@/components/mobile-app/AppTabLink";
+import { useMobileAppTheme } from "@/components/mobile-app/MobileAppThemeProvider";
 
 type QuickLink = {
   title: string;
@@ -37,7 +32,6 @@ type AppHeaderProps = {
   schoolName: string;
   logoUrl: string | null;
   quickLinks: QuickLink[];
-  schoolDefaultAppearance: AppearancePreference;
   timeZone: string;
 };
 
@@ -75,16 +69,13 @@ export default function AppHeader({
   schoolName,
   logoUrl,
   quickLinks,
-  schoolDefaultAppearance,
   timeZone,
 }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const bellButtonRef = useRef<HTMLButtonElement>(null);
-  const [appearance, setAppearance] = useState<AppearancePreference>(
-    schoolDefaultAppearance
-  );
+  const { appearance, setAppearance } = useMobileAppTheme();
   const [reportedUnreadCount, setReportedUnreadCount] = useState(0);
   const [notificationAudience, setNotificationAudience] = useState<NotificationAudience | null>(null);
   const { startupReady } = usePwaStartup();
@@ -131,22 +122,6 @@ export default function AppHeader({
     return () => window.removeEventListener(NOTIFICATION_INBOX_CHANGED_EVENT, handleInboxChange);
   }, []);
 
-  useEffect(() => {
-    const preferredAppearance = getPreferredAppearance(
-      "app",
-      schoolDefaultAppearance,
-      school
-    );
-
-    const timeout = window.setTimeout(() => {
-      setAppearance(preferredAppearance);
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [school, schoolDefaultAppearance]);
-
   function openMenu() {
     setMenuOpen(true);
   }
@@ -156,11 +131,7 @@ export default function AppHeader({
   const closeNotifications = useCallback(() => setNotificationsOpen(false), []);
 
   function setUserAppearance(nextAppearance: AppearancePreference) {
-    const nextTheme = resolveAppearanceTheme(nextAppearance);
-
     setAppearance(nextAppearance);
-    setStoredAppearancePreference("app", nextAppearance, school);
-    applyTheme(nextTheme, "app", nextAppearance);
   }
 
   return (

@@ -42,7 +42,7 @@ const variantClasses: Record<SchoolLogoVariant, string> = {
 const artworkClasses: Record<SchoolLogoVariant, string> = {
   default: "h-full w-full",
   adminSidebar: "h-[78%] w-[78%]",
-  appHeader: "h-[76%] w-[76%]",
+  appHeader: "h-[87.5%] w-[87.5%]",
   kioskHeader: "h-[86%] w-[86%]",
   websiteHeader: "h-[84%] w-[84%]",
   preview: "h-[84%] w-[84%]",
@@ -58,7 +58,7 @@ const sizeImageSizes: Record<SchoolLogoSize, string> = {
 const variantImageSizes: Record<SchoolLogoVariant, string | null> = {
   default: null,
   adminSidebar: "35px",
-  appHeader: "(max-width: 480px) 37px, 49px",
+  appHeader: "(max-width: 480px) 42px, 56px",
   kioskHeader: "96px",
   websiteHeader: "54px",
   preview: "(min-width: 1024px) 135px, 81px",

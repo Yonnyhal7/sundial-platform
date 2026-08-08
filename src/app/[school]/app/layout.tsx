@@ -3,11 +3,11 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import AppBottomNav from "@/components/mobile-app/AppBottomNav";
 import AppHeader from "@/components/mobile-app/AppHeader";
+import MobileAppThemeProvider from "@/components/mobile-app/MobileAppThemeProvider";
 import AppRoutePrefetch from "@/components/mobile-app/AppRoutePrefetch";
 import AppSwipeNavigation from "@/components/mobile-app/AppSwipeNavigation";
 import PwaStartupBoundary from "@/components/pwa/PwaStartupBoundary";
 import OfflineStudentAppRuntime from "@/components/offline/OfflineStudentAppRuntime";
-import ThemeRouteSync from "@/components/ThemeRouteSync";
 import { getMobileAppQuickLinks, requireMobileAppSchool } from "@/lib/mobileAppData";
 import {
   getSchoolAppIconUrl,
@@ -116,7 +116,9 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
   );
 
   return (
-    <div
+    <MobileAppThemeProvider
+      school={school}
+      schoolDefaultAppearance={schoolDefaultAppearance}
       className="mobile-app-theme min-h-dvh bg-slate-50 text-slate-950 dark:bg-black dark:text-white"
       style={
         {
@@ -143,10 +145,6 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
         }}
       />
       <PwaStartupBoundary schoolId={schoolData.id} school={school}>
-        <ThemeRouteSync
-          schoolDefaultAppearance={schoolDefaultAppearance}
-          schoolSlug={school}
-        />
         <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] md:max-w-2xl md:px-6">
           <AppHeader
             schoolId={schoolData.id}
@@ -154,7 +152,6 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
             schoolName={schoolData.name}
             logoUrl={schoolData.logo_url || null}
             quickLinks={quickLinks}
-            schoolDefaultAppearance={schoolDefaultAppearance}
             timeZone={schoolData.timezone || "America/Los_Angeles"}
           />
           <div className="mt-[clamp(1.25rem,3.2vw,1.75rem)] flex min-h-0 flex-1 flex-col">
@@ -174,6 +171,6 @@ export default async function AppLayout({ children, params }: AppLayoutProps) {
         <AppRoutePrefetch school={school} />
         <AppBottomNav school={school} />
       </PwaStartupBoundary>
-    </div>
+    </MobileAppThemeProvider>
   );
 }

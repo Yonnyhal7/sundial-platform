@@ -25,14 +25,14 @@ describe("public school logo rendering contract", () => {
     expect(source).toContain("width={160}");
     expect(source).toContain("height={160}");
     expect(source).toContain("sizes={getSchoolLogoImageSizes(variant, size)}");
-    expect(source).toContain('appHeader: "(max-width: 480px) 37px, 49px"');
+    expect(source).toContain('appHeader: "(max-width: 480px) 42px, 56px"');
     expect(
       canOptimizeSchoolLogo(
         "https://project.supabase.co/storage/v1/object/public/school-logos/schools/tenant/logo.webp",
       ),
     ).toBe(true);
     expect(getSchoolLogoImageSizes("appHeader", "md")).toBe(
-      "(max-width: 480px) 37px, 49px",
+      "(max-width: 480px) 42px, 56px",
     );
   });
 

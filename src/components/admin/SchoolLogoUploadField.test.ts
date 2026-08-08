@@ -63,9 +63,11 @@ describe("school logo upload and rendering contracts", () => {
     expect(uploadFieldSource).toContain('accept="image/png,image/jpeg,image/webp"');
   });
 
-  it("keeps App header logo dimensions matched to the menu and notification controls", () => {
+  it("uses a larger App header artwork without enlarging its wrapper or controls", () => {
     expect(appHeaderSource).toContain('variant="appHeader"');
     expect(schoolLogoSource).toContain("h-[clamp(3rem,8vw,4rem)] w-[clamp(3rem,8vw,4rem)]");
+    expect(schoolLogoSource).toContain('appHeader: "h-[87.5%] w-[87.5%]"');
+    expect(schoolLogoSource).toContain('appHeader: "(max-width: 480px) 42px, 56px"');
     expect(appHeaderSource).toContain("h-[clamp(3rem,8vw,4rem)] w-[clamp(3rem,8vw,4rem)]");
   });
 
