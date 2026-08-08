@@ -20,6 +20,8 @@ import NotificationDrawer from "@/components/mobile-app/NotificationDrawer";
 import OverlayDrawer from "@/components/mobile-app/OverlayDrawer";
 import AppTabLink from "@/components/mobile-app/AppTabLink";
 import { useMobileAppTheme } from "@/components/mobile-app/MobileAppThemeProvider";
+import { useOfflineSchoolData } from "@/lib/offline/useOfflineSchoolData";
+import { resourceQuickLinks } from "@/lib/resourceQuickLinks";
 
 type QuickLink = {
   title: string;
@@ -79,8 +81,13 @@ export default function AppHeader({
   const [reportedUnreadCount, setReportedUnreadCount] = useState(0);
   const [notificationAudience, setNotificationAudience] = useState<NotificationAudience | null>(null);
   const { startupReady } = usePwaStartup();
+  const { snapshot, syncState, isOnline } = useOfflineSchoolData();
   const homeHref = `/${school}/app`;
   const unreadCount = reportedUnreadCount;
+  const snapshotQuickLinks = snapshot ? resourceQuickLinks(snapshot.data.resources, school) : null;
+  const visibleQuickLinks = snapshotQuickLinks && (syncState === "current" || !isOnline || syncState === "error")
+    ? snapshotQuickLinks
+    : quickLinks;
 
   useEffect(() => {
     if (!startupReady) return;
@@ -202,13 +209,12 @@ export default function AppHeader({
 
             <div className="flex flex-1 flex-col p-5">
             <div className="space-y-7">
-            <section>
+            {visibleQuickLinks.length > 0 && <section>
               <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 dark:text-[#a3a3a3]">
                 Quick Links
               </h2>
               <div className="mt-3 divide-y divide-slate-200 overflow-hidden rounded-3xl border border-slate-200 bg-white dark:divide-[#3a3a3a] dark:border-[#3a3a3a] dark:bg-[#242424]">
-                {quickLinks.length > 0 ? (
-                  quickLinks.map((link) => (
+                {visibleQuickLinks.map((link) => (
                     <Link
                       key={`${link.title}-${link.href}`}
                       href={link.href}
@@ -218,14 +224,9 @@ export default function AppHeader({
                       <span>{link.title}</span>
                       <ExternalLinkIcon />
                     </Link>
-                  ))
-                ) : (
-                  <p className="p-4 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
-                    No quick links are configured yet.
-                  </p>
-                )}
+                  ))}
               </div>
-            </section>
+            </section>}
 
             <section>
               <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 dark:text-[#a3a3a3]">

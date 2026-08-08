@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getSchoolAdminPath, requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { getSchoolForSetup } from "@/lib/schools";
 import { isNotificationCategory, resolveNotificationAudiences, sanitizeNotificationDestination, sanitizeNotificationText, schoolLocalDateTimeToUtc } from "@/lib/notifications";
+import { normalizePeriodReminderCustomMessage } from "@/lib/notifications/periodReminders";
 
 async function authorized(school: string) {
   const schoolData = await getSchoolForSetup(school);
@@ -238,6 +239,9 @@ export async function saveNotificationSettingsAction(school: string, version: nu
     p_sender_display_name: sanitizeNotificationText(formData.get("sender_display_name"), 80) || null,
     p_period_reminders_enabled: formData.get("period_reminders_enabled") === "on",
     p_period_reminder_audiences: audiences,
+    p_period_reminder_custom_message: normalizePeriodReminderCustomMessage(
+      formData.get("period_reminder_custom_message"),
+    ),
   });
   revalidatePath(`/${school}/admin/notifications/settings`);
 }

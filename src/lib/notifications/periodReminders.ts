@@ -1,4 +1,5 @@
 import {
+  getNotificationAudienceLabel,
   schoolLocalDateTimeToUtc,
   type NotificationAudience,
 } from "@/lib/notifications";
@@ -7,9 +8,11 @@ import {
   sortPeriodsByScheduleOrder,
   type SchedulePeriod,
 } from "@/lib/scheduleTime";
+import { addDaysToLocalDateString } from "@/lib/localDate";
 
 export const PERIOD_REMINDER_CATEGORY = "period_reminder" as const;
 export const PERIOD_REMINDER_LEAD_MINUTES = 5;
+export const PERIOD_REMINDER_CUSTOM_MESSAGE_MAX_LENGTH = 160;
 
 export type PeriodReminderSchool = {
   id: string;
@@ -22,6 +25,7 @@ export type PeriodReminderSettings = {
   period_reminders_enabled: boolean;
   period_reminder_minutes_before: number;
   period_reminder_audiences: NotificationAudience[];
+  period_reminder_custom_message: string | null;
 };
 
 export type PeriodReminderCalendarDay = {
@@ -53,6 +57,60 @@ export type PeriodReminderCandidate = {
   audiences: NotificationAudience[];
   leadMinutes: number;
 };
+
+export function normalizePeriodReminderCustomMessage(value: unknown) {
+  const normalized = String(value || "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, PERIOD_REMINDER_CUSTOM_MESSAGE_MAX_LENGTH);
+  return normalized || null;
+}
+
+export function getPeriodReminderAudienceSummary(
+  audiences: NotificationAudience[],
+) {
+  const selected = new Set(audiences);
+  return (["student", "staff", "parent"] as const)
+    .filter((audience) => selected.has(audience))
+    .map((audience) => {
+      const label = getNotificationAudienceLabel(audience) || audience;
+      return audience === "staff" ? label : `${label}s`;
+    })
+    .join(" + ");
+}
+
+export function formatPeriodReminderNextLabel(
+  candidate: PeriodReminderCandidate,
+  now: Date,
+  timeZone: string,
+) {
+  const dateKey = (date: Date) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(date);
+  const today = dateKey(now);
+  const tomorrow = addDaysToLocalDateString(today, 1);
+  const reminderDate = dateKey(candidate.reminderAt);
+  const dayLabel =
+    reminderDate === today
+      ? "Today"
+      : reminderDate === tomorrow
+        ? "Tomorrow"
+        : new Intl.DateTimeFormat("en-US", {
+            timeZone,
+            weekday: "long",
+          }).format(candidate.reminderAt);
+  const timeLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(candidate.reminderAt);
+  return `${candidate.periodName} · ${dayLabel} at ${timeLabel}`;
+}
 
 export function resolvePeriodReminderCandidates({
   school,
@@ -95,6 +153,9 @@ export function resolvePeriodReminderCandidates({
       if (!periodStart) return [];
 
       const name = period.name.trim() || "Next period";
+      const customBody = normalizePeriodReminderCustomMessage(
+        settings.period_reminder_custom_message,
+      );
       return [
         {
           schoolId: school.id,
@@ -108,8 +169,17 @@ export function resolvePeriodReminderCandidates({
             periodStart.getTime() -
               settings.period_reminder_minutes_before * 60_000,
           ),
-      title: `${name} starts in ${settings.period_reminder_minutes_before} minutes`.slice(0, 80),
-      body: `${name} begins at ${formatPeriodTime(period.start_time)}.`.slice(0, 180),
+          title:
+            `${name} starts in ${settings.period_reminder_minutes_before} minutes`.slice(
+              0,
+              80,
+            ),
+          body:
+            customBody ||
+            `${name} begins at ${formatPeriodTime(period.start_time)}.`.slice(
+              0,
+              180,
+            ),
           destinationPath: `/${school.subdomain}/app`,
           audiences: [...settings.period_reminder_audiences],
           leadMinutes: settings.period_reminder_minutes_before,

@@ -64,7 +64,7 @@ export async function processAutomaticPeriodReminders(now = new Date()) {
   const { data: settingRows, error: settingsError } = await db
     .from("notification_school_settings")
     .select(
-      "school_id,notifications_enabled,period_reminders_enabled,period_reminder_minutes_before,period_reminder_audiences",
+      "school_id,notifications_enabled,period_reminders_enabled,period_reminder_minutes_before,period_reminder_audiences,period_reminder_custom_message",
     )
     .eq("notifications_enabled", true)
     .eq("period_reminders_enabled", true)

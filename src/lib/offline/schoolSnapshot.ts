@@ -62,6 +62,11 @@ export function isValidSchoolOfflineSnapshot(
     return false;
   }
 
+  const resources = data.resources as Array<Record<string, unknown>>;
+  if (resources.some((row) => typeof row.is_quick_link !== "boolean")) {
+    return false;
+  }
+
   const schedules = data.schedules as Array<Record<string, unknown>>;
   const scheduleIds = new Set(
     schedules.filter((row) => isNonEmptyString(row.id)).map((row) => row.id as string)

@@ -126,7 +126,7 @@ export default function SchoolPublicNav({ school, schoolName, logoUrl, base, sch
   if (pathname === `${base}/kiosk` || pathname.startsWith(`${base}/kiosk/`)) return <nav className="school-menu-bar flex h-16 items-center justify-end border-b border-slate-200 bg-white px-6 dark:border-neutral-800 dark:bg-black"><KioskMenuControls school={school} schoolDefaultAppearance={schoolDefaultAppearance} /></nav>;
 
   return <><header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 text-slate-950 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-[#141618]/90 dark:text-white">
-    <div className={`${publicDensity.container} flex min-h-16 items-center gap-4`}>
+    <div className={`${publicDensity.container} flex min-h-16 items-center gap-4 lg:min-h-14`}>
       <Link href={homeHref} className={`${publicDensity.touchTarget} flex min-w-0 items-center gap-2.5 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--school-primary)]`}><SchoolLogo schoolName={schoolName} logoUrl={logoUrl} variant="websiteHeader" allowArtworkOverflow className="h-11 w-11 p-1" /><span className="max-w-[13rem] truncate text-sm font-black sm:max-w-[17rem]">{schoolName}</span></Link>
       <nav aria-label="Primary" className="ml-auto hidden items-center gap-1 xl:flex">{items.map(({ label, desktopLabel, href, installSurface }) => {
         const className = `${publicDensity.touchTarget} inline-flex items-center rounded-full px-3 text-sm font-bold transition ${active(href) ? "bg-[color-mix(in_srgb,var(--school-primary)_14%,transparent)] text-[var(--school-primary)]" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"}`;

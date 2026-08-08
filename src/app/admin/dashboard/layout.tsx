@@ -14,11 +14,11 @@ export default async function SuperAdminDashboardLayout({
   const userName = profile.first_name?.trim() || "Super Admin";
 
   return (
-    <div className="admin-theme min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
+    <div className="admin-theme admin-density min-h-screen bg-slate-50 text-slate-950 dark:bg-black dark:text-white">
       <SuperAdminSidebar />
 
       <div className="min-h-screen lg:pl-[var(--admin-sidebar-width)]">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur-xl dark:border-slate-800 dark:bg-black/90">
+        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-5 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-black/90 lg:px-8">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="lg:hidden">
               <p className="text-lg font-bold tracking-tight">Sundial</p>
@@ -39,7 +39,7 @@ export default async function SuperAdminDashboardLayout({
           </div>
         </header>
 
-        <main className="px-6 py-8 lg:px-10">{children}</main>
+        <main className="px-5 py-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

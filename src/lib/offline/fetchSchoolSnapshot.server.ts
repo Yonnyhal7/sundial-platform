@@ -96,7 +96,7 @@ export async function fetchSchoolOfflineSnapshot(
       .returns<SchoolOfflineSnapshot["data"]["events"]>(),
     supabase
       .from("resources")
-      .select("id, school_id, title, description, url, file_url, category")
+      .select("id, school_id, title, description, url, file_url, category, is_quick_link")
       .eq("school_id", school.id)
       .eq("is_active", true)
       .order("category", { ascending: true })

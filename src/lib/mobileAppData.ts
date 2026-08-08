@@ -78,8 +78,8 @@ export const getMobileAppQuickLinks = unstable_cache(
       .select("title, url, file_url")
       .eq("school_id", schoolId)
       .eq("is_active", true)
+      .eq("is_quick_link", true)
       .order("title", { ascending: true })
-      .limit(8)
       .returns<QuickLinkResource[]>();
 
     return (

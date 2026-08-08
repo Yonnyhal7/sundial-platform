@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import NotificationCampaignList from "./NotificationCampaignList";
 
 type Campaign = {
@@ -32,6 +32,7 @@ export default function NotificationCampaignDashboard({
   devices,
   subscriptions,
   recentCampaigns,
+  periodReminderCard,
 }: {
   campaigns: Campaign[];
   school: string;
@@ -41,6 +42,7 @@ export default function NotificationCampaignDashboard({
   devices: number;
   subscriptions: number;
   recentCampaigns: number;
+  periodReminderCard: ReactNode;
 }) {
   const [activeCampaignCount, setActiveCampaignCount] = useState(recentCampaigns);
   const updateActiveCampaignCount = useCallback((delta: number) => {
@@ -63,6 +65,7 @@ export default function NotificationCampaignDashboard({
           <p className="mt-1 text-3xl font-black">{activeCampaignCount}</p>
         </div>
       </section>
+      {periodReminderCard}
       <nav className="mt-6 flex flex-wrap gap-2">
         {["overview", "action-required", "scheduled", "sent", "drafts", "archived"].map((item) => (
           <Link

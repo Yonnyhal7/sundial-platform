@@ -24,7 +24,7 @@ export default function SuperAdminSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="admin-sidebar fixed inset-y-0 left-0 z-40 hidden w-[var(--admin-sidebar-width)] flex-col bg-zinc-800 px-4 py-6 text-white shadow-2xl shadow-black/20 dark:bg-black lg:flex">
+    <aside className="admin-sidebar fixed inset-y-0 left-0 z-40 hidden w-[var(--admin-sidebar-width)] flex-col bg-zinc-800 px-3 py-4 text-white shadow-2xl shadow-black/20 dark:bg-black lg:flex">
       <Link href="/admin/dashboard" className="flex items-center gap-3 px-2">
         <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden">
           <Image
@@ -38,7 +38,7 @@ export default function SuperAdminSidebar() {
         <span className="truncate text-2xl font-bold tracking-tight">Sundial</span>
       </Link>
 
-      <nav className="mt-8 space-y-2">
+      <nav className="mt-6 space-y-1.5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -51,7 +51,7 @@ export default function SuperAdminSidebar() {
               key={item.href}
               href={item.href}
               className={[
-                "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition",
+                "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition",
                 isActive
                   ? "bg-blue-600 text-white shadow-lg shadow-black/15"
                   : "text-white hover:bg-white/10",

@@ -295,7 +295,7 @@ const featureItems = [
 
 export default function Home() {
   return (
-    <main className="overflow-hidden bg-[#fbfaf7] font-sans text-slate-950 [--brand-brown:#3a1d0b] [--brand-gold:#d99b16]">
+    <main className="marketing-density overflow-hidden bg-[#fbfaf7] font-sans text-slate-950 [--brand-brown:#3a1d0b] [--brand-gold:#d99b16]">
       <nav className="relative z-20 border-b border-slate-200/80 bg-[#fbfaf7]/90 backdrop-blur" aria-label="Main navigation">
         <div className="mx-auto flex min-h-20 w-full max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <Link href="/" aria-label="Sundial home"><SundialBrand /></Link>

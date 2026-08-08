@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { updateTag } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -73,6 +74,7 @@ export default async function EditResourcePage({
         file_url: fileUrl || null,
         category: category || null,
         is_active: isActive,
+        ...(!isActive ? { is_quick_link: false } : {}),
       })
       .eq("id", resourceId)
       .eq("school_id", schoolId);
@@ -82,6 +84,7 @@ export default async function EditResourcePage({
       redirect(`/${school}/admin/resources/${resourceId}/edit?error=1`);
     }
 
+    updateTag("mobile-app-quick-links");
     redirect(`/${school}/admin/resources`);
   }
 

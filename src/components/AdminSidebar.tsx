@@ -289,7 +289,7 @@ export default function AdminSidebar({
 
     const baseClass = compact
       ? "flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition"
-      : "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition";
+      : "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition";
 
     if (!item.href) {
       return (
@@ -338,7 +338,7 @@ export default function AdminSidebar({
   function renderExperienceItem(item: SidebarExperienceItem, compact = false) {
     const baseClass = compact
       ? "flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/45"
-      : "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/45";
+      : "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-white transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/45";
 
     return (
       <a
@@ -412,7 +412,7 @@ export default function AdminSidebar({
 
     const itemClass = compact
       ? "flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition"
-      : "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition";
+      : "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition";
 
     const stepLabel =
       status === "completed" ? "Complete" : isActive ? "Current" : "Upcoming";
@@ -512,8 +512,8 @@ export default function AdminSidebar({
         </nav>
       </header>
 
-      <aside className="admin-sidebar fixed inset-y-0 left-0 z-40 hidden w-[var(--admin-sidebar-width)] flex-col overflow-hidden bg-zinc-800 px-3 py-5 text-white shadow-2xl shadow-black/20 dark:bg-black min-[1180px]:px-4 min-[1180px]:py-6 lg:flex">
-        <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/10 px-3 pb-4">
+      <aside className="admin-sidebar fixed inset-y-0 left-0 z-40 hidden w-[var(--admin-sidebar-width)] flex-col overflow-hidden bg-zinc-800 px-3 py-4 text-white shadow-2xl shadow-black/20 dark:bg-black lg:flex">
+        <div className="mb-3 flex items-center justify-between gap-3 border-b border-white/10 px-2 pb-3">
           {isSetupIncomplete ? (
             <Link href={setupLandingHref} className="flex min-w-0 items-center gap-3">
               <Image

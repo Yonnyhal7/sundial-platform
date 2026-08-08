@@ -147,6 +147,26 @@ describe("offline school snapshots", () => {
     expect(isValidSchoolOfflineSnapshot(snapshot)).toBe(false);
   });
 
+  it("requires explicit Quick Link state for cached resources", () => {
+    const snapshot = createSnapshot();
+    snapshot.data.resources = [
+      {
+        id: "resource-1",
+        school_id: "school-deloro",
+        title: "ParentVUE",
+        description: null,
+        url: "https://example.com",
+        file_url: null,
+        category: "Families",
+        is_quick_link: true,
+      },
+    ];
+    expect(isValidSchoolOfflineSnapshot(snapshot)).toBe(true);
+
+    delete (snapshot.data.resources[0] as Partial<(typeof snapshot.data.resources)[number]>).is_quick_link;
+    expect(isValidSchoolOfflineSnapshot(snapshot)).toBe(false);
+  });
+
   it("rejects periods and calendar days that reference an unavailable tenant schedule", () => {
     const periodSnapshot = createSnapshot();
     periodSnapshot.data.periods[0].schedule_id = "schedule-liberty";

@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   filterPeriodReminderDevices,
+  formatPeriodReminderNextLabel,
+  getPeriodReminderAudienceSummary,
   getDuePeriodReminderCandidates,
   getNextPeriodReminder,
+  PERIOD_REMINDER_CUSTOM_MESSAGE_MAX_LENGTH,
   PERIOD_REMINDER_LEAD_MINUTES,
   processPeriodReminderSchoolsIndependently,
   resolvePeriodReminderCandidates,
@@ -19,6 +22,7 @@ const settings: PeriodReminderSettings = {
   period_reminders_enabled: true,
   period_reminder_minutes_before: PERIOD_REMINDER_LEAD_MINUTES,
   period_reminder_audiences: ["student", "staff"],
+  period_reminder_custom_message: null,
 };
 const day = {
   school_id: "school-a",
@@ -81,6 +85,32 @@ describe("period reminder schedule resolution", () => {
       periods: [{ ...periods[0], id: "rally-p2", start_time: "09:45:00" }],
     });
     expect(rally[0].body).toBe("Period 2 begins at 9:45 AM.");
+  });
+
+  it("uses an optional custom body while keeping the dynamic title", () => {
+    const [candidate] = candidates({
+      period_reminder_custom_message: "  Head to your next class.  ",
+    });
+    expect(candidate.title).toBe("Physics starts in 5 minutes");
+    expect(candidate.body).toBe("Head to your next class.");
+  });
+
+  it("uses the automatic body for null, empty, or whitespace-only overrides", () => {
+    for (const customMessage of [null, "", " \n\t "]) {
+      expect(
+        candidates({ period_reminder_custom_message: customMessage })[0].body,
+      ).toBe("Physics begins at 8:30 AM.");
+    }
+  });
+
+  it("normalizes and caps the custom body at the configured limit", () => {
+    const candidate = candidates({
+      period_reminder_custom_message: `First\n\t${"x".repeat(200)}`,
+    })[0];
+    expect(candidate.body).toMatch(/^First x+$/);
+    expect(candidate.body).toHaveLength(
+      PERIOD_REMINDER_CUSTOM_MESSAGE_MAX_LENGTH,
+    );
   });
 
   it("returns no reminders without an active school schedule", () => {
@@ -167,6 +197,24 @@ describe("period reminder schedule resolution", () => {
       getNextPeriodReminder(list, new Date(list[0].reminderAt.getTime() - 1))
         ?.periodId,
     ).toBe("p1");
+  });
+
+  it("formats shared audience and next-reminder summaries", () => {
+    expect(getPeriodReminderAudienceSummary(["student", "staff"])).toBe(
+      "Students + Staff",
+    );
+    expect(getPeriodReminderAudienceSummary(["parent"])).toBe("Parents");
+    expect(getPeriodReminderAudienceSummary(["parent", "staff"])).toBe(
+      "Staff + Parents",
+    );
+    const candidate = candidates()[0];
+    expect(
+      formatPeriodReminderNextLabel(
+        candidate,
+        new Date(candidate.reminderAt.getTime() - 60_000),
+        school.timezone,
+      ),
+    ).toContain("Physics · Today at 8:25 AM");
   });
 });
 

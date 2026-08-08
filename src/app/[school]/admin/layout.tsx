@@ -47,7 +47,7 @@ export default async function AdminLayout({
 
   return (
     <div
-      className="admin-theme min-h-screen bg-slate-50 dark:bg-black"
+      className="admin-theme admin-density min-h-screen bg-slate-50 dark:bg-black"
       style={
         {
           "--school-primary": schoolTheme.light.schoolColor,
@@ -86,7 +86,7 @@ export default async function AdminLayout({
       <div className="flex min-h-screen flex-col bg-slate-50 pt-[142px] dark:bg-black sm:pt-[132px] lg:pl-[var(--admin-sidebar-width)] lg:pt-0">
         <div className="flex-1">{children}</div>
 
-        <footer className="mt-auto px-6 pb-8 pt-10 lg:px-10">
+        <footer className="mt-auto px-6 pb-6 pt-8 lg:px-8">
           <div className="flex items-center justify-center gap-2 text-slate-500 opacity-70 dark:text-slate-400">
             <img
               src="/sundial-icon.png"

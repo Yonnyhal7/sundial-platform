@@ -95,7 +95,7 @@ body {
 }
 
 .admin-theme {
-  --admin-sidebar-width: clamp(13.75rem, 18vw, 17.5rem);
+  --admin-sidebar-width: clamp(12.75rem, 16vw, 15.5rem);
   --admin-bg: #f8fafc;
   --admin-surface: #ffffff;
   --admin-surface-muted: #f1f5f9;
@@ -108,6 +108,93 @@ body {
   --school-accent-visible-primary: var(--school-accent-visible-primary-light);
   background: var(--admin-bg);
   color: var(--admin-text);
+}
+
+/* Desktop density is scoped to the administrative shells. Mobile keeps its
+   existing touch sizing, and kiosk/app routes never inherit these rules. */
+@media (min-width: 64rem) {
+  .admin-density [class~="p-8"] {
+    padding: 1.5rem;
+  }
+
+  .admin-density [class~="p-6"] {
+    padding: 1.25rem;
+  }
+
+  .admin-density [class~="px-10"] {
+    padding-inline: 2rem;
+  }
+
+  .admin-density [class~="px-8"] {
+    padding-inline: 1.5rem;
+  }
+
+  .admin-density [class~="py-12"] {
+    padding-block: 2.25rem;
+  }
+
+  .admin-density [class~="py-10"] {
+    padding-block: 1.875rem;
+  }
+
+  .admin-density [class~="py-8"] {
+    padding-block: 1.5rem;
+  }
+
+  .admin-density [class~="gap-8"] {
+    gap: 1.25rem;
+  }
+
+  .admin-density [class~="gap-6"] {
+    gap: 1rem;
+  }
+
+  .admin-density [class~="text-5xl"] {
+    font-size: 2.5rem;
+    line-height: 1.08;
+  }
+
+  .admin-density [class~="text-4xl"] {
+    font-size: 2rem;
+    line-height: 1.12;
+  }
+
+  .admin-density [class~="text-3xl"] {
+    font-size: 1.625rem;
+    line-height: 1.18;
+  }
+
+  .admin-density input:not([type="checkbox"]):not([type="radio"]),
+  .admin-density select {
+    min-height: 2.5rem;
+    padding-block: 0.625rem;
+  }
+
+  .admin-density textarea {
+    padding-block: 0.625rem;
+  }
+
+  .marketing-density section[class~="py-20"],
+  .marketing-density section[class~="sm:py-24"] {
+    padding-block: 4rem;
+  }
+
+  .marketing-density [class~="mt-16"] {
+    margin-top: 3rem;
+  }
+
+  .marketing-density [class~="mt-12"] {
+    margin-top: 2.5rem;
+  }
+
+  .marketing-density [class~="gap-12"] {
+    gap: 2rem;
+  }
+
+  .marketing-density [class~="text-5xl"] {
+    font-size: 2.5rem;
+    line-height: 1.08;
+  }
 }
 
 .admin-theme main {
