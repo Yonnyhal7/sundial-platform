@@ -87,10 +87,10 @@ export async function fetchSchoolOfflineSnapshot(
       .returns<SchoolOfflineSnapshot["data"]["announcements"]>(),
     supabase
       .from("events")
-      .select("id, school_id, title, location, event_date, start_time, end_time, image_url")
+      .select("id, school_id, title, location, event_date, start_time, end_time, image_url, is_featured")
       .eq("school_id", school.id)
       .eq("is_active", true)
-      .gte("event_date", startDate)
+      .or(`event_date.gte.${startDate},is_featured.eq.true`)
       .order("event_date", { ascending: true })
       .limit(50)
       .returns<SchoolOfflineSnapshot["data"]["events"]>(),

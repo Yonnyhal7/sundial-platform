@@ -1,6 +1,6 @@
 import type { SchedulePeriod } from "@/lib/scheduleTime";
 
-export const SCHOOL_OFFLINE_SCHEMA_VERSION = 3;
+export const SCHOOL_OFFLINE_SCHEMA_VERSION = 4;
 
 export type OfflineSchoolProfile = {
   id: string;
@@ -51,6 +51,7 @@ export type OfflineEvent = {
   start_time: string | null;
   end_time: string | null;
   image_url: string | null;
+  is_featured: boolean;
 };
 
 export type OfflineResource = {

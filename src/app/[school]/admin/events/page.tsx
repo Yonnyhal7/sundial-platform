@@ -47,10 +47,36 @@ export default async function AdminEventsPage({
     }
     revalidatePath(`/${school}/admin/events`);
   }
+
+  async function setFeaturedEvent(formData: FormData) {
+    "use server";
+
+    const { supabase } = await requireAdminSectionAccess(
+      schoolId,
+      "events",
+      school
+    );
+    const eventId = String(formData.get("event_id") || "");
+    const featured = formData.get("featured") === "true";
+
+    const { error } = await supabase.rpc("set_school_featured_event", {
+      p_school_id: schoolId,
+      p_event_id: eventId,
+      p_featured: featured,
+    });
+
+    if (error) {
+      console.error("Set featured event error:", JSON.stringify(error, null, 2));
+      return;
+    }
+
+    revalidatePath(`/${school}/admin/events`);
+    revalidatePath(`/${school}/app/events`);
+  }
   const { data: events, error } = await supabase
     .from("events")
     .select(
-        "id, title, description, location, event_date, start_time, end_time, image_url, is_active, created_at"
+        "id, title, description, location, event_date, start_time, end_time, image_url, is_active, is_featured, created_at"
     )
     .eq("school_id", schoolId)
     .order("event_date", { ascending: true });
@@ -104,7 +130,7 @@ export default async function AdminEventsPage({
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <h3 className="text-xl font-semibold">{event.title}</h3>
 
                       {event.is_active && (
@@ -112,6 +138,39 @@ export default async function AdminEventsPage({
                           Active
                         </span>
                       )}
+
+                      <form action={setFeaturedEvent}>
+                        <input type="hidden" name="event_id" value={event.id} />
+                        <input
+                          type="hidden"
+                          name="featured"
+                          value={event.is_featured ? "false" : "true"}
+                        />
+                        <button
+                          type="submit"
+                          disabled={!event.is_active && !event.is_featured}
+                          aria-label={
+                            event.is_featured
+                              ? `Remove ${event.title} as the featured event`
+                              : `Make ${event.title} the featured event`
+                          }
+                          title={
+                            !event.is_active
+                              ? "Inactive events cannot be featured"
+                              : event.is_featured
+                                ? "Remove Featured"
+                                : "Make Featured"
+                          }
+                          className={`cursor-pointer rounded-full px-3 py-1 text-xs font-semibold ring-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                            event.is_featured
+                              ? "bg-amber-500/15 text-amber-800 ring-amber-500/35 hover:bg-amber-500/25 dark:text-amber-300"
+                              : "bg-slate-100 text-slate-600 ring-slate-300 hover:bg-amber-500/10 hover:text-amber-800 hover:ring-amber-500/35 dark:bg-black/30 dark:text-slate-300 dark:ring-slate-600 dark:hover:text-amber-300"
+                          }`}
+                        >
+                          <span aria-hidden="true">{event.is_featured ? "★" : "☆"}</span>{" "}
+                          {event.is_featured ? "Featured" : "Make Featured"}
+                        </button>
+                      </form>
                     </div>
 
                     <p className="mt-2 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">

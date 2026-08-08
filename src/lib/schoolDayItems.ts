@@ -5,6 +5,7 @@ export type SchoolDayEvent = {
   event_date: string;
   start_time: string | null;
   end_time: string | null;
+  is_featured?: boolean;
 };
 
 export type SchoolDayGame = {
@@ -33,6 +34,13 @@ export function getEventsForSchoolDate<T extends SchoolDayEvent>(events: T[], da
       if (left.start_time && !right.start_time) return 1;
       return timeSortKey(left.start_time).localeCompare(timeSortKey(right.start_time));
     });
+}
+
+export function getFeaturedEvent<T extends SchoolDayEvent>(events: T[], today: string) {
+  return (
+    events.find((event) => event.is_featured) ||
+    events.find((event) => (storedDateKey(event.event_date) || "") >= today)
+  );
 }
 
 export function getGamesForSchoolDate<T extends SchoolDayGame>(games: T[], date: string) {

@@ -6,7 +6,7 @@ import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatDateInTimeZone } from "@/lib/localDate";
 import { formatPeriodTime } from "@/lib/scheduleTime";
-import { getEventsForSchoolDate } from "@/lib/schoolDayItems";
+import { getEventsForSchoolDate, getFeaturedEvent } from "@/lib/schoolDayItems";
 
 export const metadata: Metadata = { title: "Events" };
 
@@ -18,6 +18,7 @@ type Event = {
   start_time: string | null;
   end_time: string | null;
   image_url: string | null;
+  is_featured: boolean;
 };
 
 function formatEventDate(date: string) {
@@ -52,16 +53,16 @@ export default async function MobileEventsPage({
   const { data: events } = await navTiming.query("events", () =>
     supabase
       .from("events")
-      .select("id, title, location, event_date, start_time, end_time, image_url")
+      .select("id, title, location, event_date, start_time, end_time, image_url, is_featured")
       .eq("school_id", schoolData.id)
       .eq("is_active", true)
-      .gte("event_date", today)
+      .or(`event_date.gte.${today},is_featured.eq.true`)
       .order("event_date", { ascending: true })
       .limit(12)
       .returns<Event[]>()
   );
 
-  const featured = events?.[0];
+  const featured = getFeaturedEvent(events || [], today);
   const todayEvents = getEventsForSchoolDate(events || [], today).filter((event) => event.id !== featured?.id);
   navTiming.log();
 

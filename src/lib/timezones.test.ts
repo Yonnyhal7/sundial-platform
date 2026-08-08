@@ -139,7 +139,7 @@ describe("timezone workflow contracts", () => {
   });
 
   it("versions tenant snapshots and avoids showing stale cached timezone data while online", () => {
-    expect(read("src/lib/offline/types.ts")).toContain("SCHOOL_OFFLINE_SCHEMA_VERSION = 3");
+    expect(read("src/lib/offline/types.ts")).toContain("SCHOOL_OFFLINE_SCHEMA_VERSION = 4");
     expect(read("src/lib/offline/fetchSchoolSnapshot.server.ts")).toContain("timezoneVersion");
     const runtime = read("src/components/offline/OfflineStudentAppRuntime.tsx");
     expect(runtime).not.toContain('syncState === "cached"');

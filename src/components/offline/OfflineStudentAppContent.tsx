@@ -26,7 +26,7 @@ import {
   getTodaySchedule,
 } from "@/lib/offline/snapshotSelectors";
 import type { SchoolOfflineSnapshot } from "@/lib/offline/types";
-import { getEventsForSchoolDate } from "@/lib/schoolDayItems";
+import { getEventsForSchoolDate, getFeaturedEvent } from "@/lib/schoolDayItems";
 
 function formatEventDate(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
@@ -207,7 +207,7 @@ function OfflineSchedulePage({
 function OfflineEventsPage({ snapshot }: { snapshot: SchoolOfflineSnapshot }) {
   const events = snapshot.data.events;
   const today = getTodayDateKey(snapshot.data.school.timezone);
-  const featured = events.find((event) => event.event_date >= today);
+  const featured = getFeaturedEvent(events, today);
   const todayEvents = getEventsForSchoolDate(events, today).filter((event) => event.id !== featured?.id);
 
   return (

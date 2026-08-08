@@ -64,6 +64,7 @@ export default async function EditEventPage({
         start_time: startTime || null,
         end_time: endTime || null,
         is_active: isActive,
+        ...(!isActive ? { is_featured: false } : {}),
       })
       .eq("id", eventId)
       .eq("school_id", schoolId);

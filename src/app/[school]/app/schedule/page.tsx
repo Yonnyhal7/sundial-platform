@@ -127,7 +127,7 @@ export default async function MobileSchedulePage({
   );
 
   const [eventsResult, gamesResult, teamsResult, sportsResult] = await Promise.all([
-    navTiming.query("events", () => supabase.from("events").select("id, school_id, title, location, event_date, start_time, end_time, image_url").eq("school_id", schoolData.id).eq("is_active", true).gte("event_date", startDate).lte("event_date", endDate).order("event_date", { ascending: true }).returns<OfflineEvent[]>()),
+    navTiming.query("events", () => supabase.from("events").select("id, school_id, title, location, event_date, start_time, end_time, image_url, is_featured").eq("school_id", schoolData.id).eq("is_active", true).gte("event_date", startDate).lte("event_date", endDate).order("event_date", { ascending: true }).returns<OfflineEvent[]>()),
     navTiming.query("games", () => supabase.from("games").select("id, school_id, team_id, opponent, game_date, location, is_home").eq("school_id", schoolData.id).gte("game_date", startDate).lte("game_date", `${endDate}T23:59:59`).order("game_date", { ascending: true }).returns<OfflineGame[]>()),
     navTiming.query("teams", () => supabase.from("teams").select("id, school_id, sport_id, name, level, gender").eq("school_id", schoolData.id).eq("is_active", true).returns<OfflineTeam[]>()),
     navTiming.query("sports", () => supabase.from("sports").select("id, school_id, name, icon, icon_color").eq("school_id", schoolData.id).eq("is_active", true).returns<OfflineSport[]>()),
