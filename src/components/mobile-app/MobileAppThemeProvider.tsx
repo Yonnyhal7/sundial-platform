@@ -18,6 +18,11 @@ import {
   type Theme,
 } from "@/lib/themeScope";
 import { PWA_LAUNCH_VISUAL } from "@/lib/pwa/launchScreen";
+import {
+  applyMobileThemeSurface,
+  bindMobileThemeSurfaceLifecycle,
+} from "@/lib/pwa/mobileThemeSurface";
+import { recordPwaResumeDiagnostic } from "@/lib/pwa/resumeDiagnostics";
 
 type MobileAppThemeContextValue = {
   appearance: AppearancePreference;
@@ -28,19 +33,6 @@ type MobileAppThemeContextValue = {
 const MobileAppThemeContext = createContext<MobileAppThemeContextValue | null>(
   null
 );
-
-function updatePwaThemeColor(theme: Theme) {
-  const color =
-    theme === "dark"
-      ? PWA_LAUNCH_VISUAL.backgroundDark
-      : PWA_LAUNCH_VISUAL.background;
-
-  document.documentElement.style.backgroundColor = color;
-  document.body.style.backgroundColor = color;
-  document
-    .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
-    .forEach((meta) => meta.setAttribute("content", color));
-}
 
 export default function MobileAppThemeProvider({
   children,
@@ -71,19 +63,42 @@ export default function MobileAppThemeProvider({
       setAppearanceState(nextAppearance);
       setResolvedTheme(nextTheme);
       applyTheme(nextTheme, "app", nextAppearance);
-      updatePwaThemeColor(nextTheme);
+      applyMobileThemeSurface(nextTheme);
       setStoredAppearancePreference("app", nextAppearance, school);
     },
     [school]
   );
 
   useEffect(() => {
-    updatePwaThemeColor(resolvedTheme);
+    applyMobileThemeSurface(resolvedTheme);
   }, [resolvedTheme]);
+
+  useEffect(() => {
+    const reapplyResolvedTheme = (reason: string) => {
+      const nextTheme = resolveAppearanceTheme(appearance);
+
+      setResolvedTheme(nextTheme);
+      applyTheme(nextTheme, "app", appearance);
+      applyMobileThemeSurface(nextTheme);
+      const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+      const backdrop = document.querySelector<HTMLElement>("[data-pwa-status-bar-background]");
+      recordPwaResumeDiagnostic(
+        "theme_surface_applied",
+        `${reason};preference=${appearance};resolved=${nextTheme};html=${getComputedStyle(document.documentElement).backgroundColor};body=${getComputedStyle(document.body).backgroundColor};themeColor=${meta?.content || "missing"};themeColorCount=${document.querySelectorAll('meta[name="theme-color"]').length};safeArea=${backdrop ? getComputedStyle(backdrop).backgroundColor : "missing"}`
+      );
+    };
+
+    return bindMobileThemeSurfaceLifecycle({
+      documentTarget: document,
+      windowTarget: window,
+      apply: reapplyResolvedTheme,
+    });
+  }, [appearance]);
 
   useEffect(() => {
     return () => {
       document.documentElement.style.removeProperty("background-color");
+      document.documentElement.style.removeProperty("--pwa-theme-surface");
       document.body.style.removeProperty("background-color");
     };
   }, []);
@@ -97,7 +112,7 @@ export default function MobileAppThemeProvider({
       const nextTheme = event.matches ? "dark" : "light";
       setResolvedTheme(nextTheme);
       applyTheme(nextTheme, "app", appearance);
-      updatePwaThemeColor(nextTheme);
+      applyMobileThemeSurface(nextTheme);
     }
 
     mediaQuery.addEventListener("change", handleSystemThemeChange);
@@ -112,6 +127,7 @@ export default function MobileAppThemeProvider({
         className={`${className} ${resolvedTheme === "dark" ? "dark" : ""}`}
         data-app-appearance={appearance}
         data-app-resolved-theme={resolvedTheme}
+        data-mobile-app-theme-root=""
         suppressHydrationWarning
         style={style}
       >

@@ -12,6 +12,7 @@ describe("mobile app theme synchronization", () => {
   const rootLayout = read("src/app/layout.tsx");
   const drawer = read("src/components/mobile-app/OverlayDrawer.tsx");
   const globals = read("src/app/globals.css");
+  const lifecycle = read("src/lib/pwa/mobileThemeSurface.ts");
 
   it("uses one app-wide appearance owner for the open drawer and shell", () => {
     expect(layout).toContain("<MobileAppThemeProvider");
@@ -45,15 +46,23 @@ describe("mobile app theme synchronization", () => {
   });
 
   it("updates the installed-PWA theme color with the resolved theme", () => {
-    expect(provider).toContain('meta[name="theme-color"]');
+    expect(lifecycle).toContain('meta[name="theme-color"]');
     expect(provider).toContain("PWA_LAUNCH_VISUAL.backgroundDark");
-    expect(provider).toContain("updatePwaThemeColor(nextTheme)");
-    expect(provider).toContain("document.documentElement.style.backgroundColor");
-    expect(provider).toContain("document.body.style.backgroundColor");
+    expect(provider).toContain("applyMobileThemeSurface(nextTheme)");
+    expect(lifecycle).toContain("documentElement.style.backgroundColor");
+    expect(lifecycle).toContain("body.style.backgroundColor");
     expect(provider).toContain('data-pwa-status-bar-background=""');
     expect(provider).toContain("h-[env(safe-area-inset-top)]");
     expect(rootLayout).toContain('viewportFit: "cover"');
     expect(layout).toContain('viewportFit: "cover"');
+  });
+
+  it("re-resolves and reapplies every mobile theme surface after foreground restore", () => {
+    expect(provider).toContain("resolveAppearanceTheme(appearance)");
+    expect(provider).toContain("bindMobileThemeSurfaceLifecycle");
+    expect(lifecycle).toContain('documentTarget.addEventListener("visibilitychange"');
+    expect(lifecycle).toContain('windowTarget.addEventListener("pageshow"');
+    expect(lifecycle).not.toContain('addEventListener("focus"');
   });
 
   it("covers the safe area while keeping drawer content below it", () => {

@@ -16,6 +16,7 @@ export type PwaResumeDiagnosticType =
   | "theme_read"
   | "theme_class_applied"
   | "theme_bootstrap_executed"
+  | "theme_surface_applied"
   | "startup_timeout"
   | "prepaint_shell_shown"
   | "navigation_start"
