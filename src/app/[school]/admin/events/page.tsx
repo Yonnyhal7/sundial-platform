@@ -3,6 +3,10 @@ import { notFound } from "next/navigation";
 import { requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import AdminEventsList, {
+  type AdminEventListItem,
+  type FeaturedEventActionResult,
+} from "@/components/admin/AdminEventsList";
 
 export default async function AdminEventsPage({
   params,
@@ -48,7 +52,10 @@ export default async function AdminEventsPage({
     revalidatePath(`/${school}/admin/events`);
   }
 
-  async function setFeaturedEvent(formData: FormData) {
+  async function setFeaturedEvent(
+    eventId: string,
+    featured: boolean
+  ): Promise<FeaturedEventActionResult> {
     "use server";
 
     const { supabase } = await requireAdminSectionAccess(
@@ -56,9 +63,6 @@ export default async function AdminEventsPage({
       "events",
       school
     );
-    const eventId = String(formData.get("event_id") || "");
-    const featured = formData.get("featured") === "true";
-
     const { error } = await supabase.rpc("set_school_featured_event", {
       p_school_id: schoolId,
       p_event_id: eventId,
@@ -67,11 +71,16 @@ export default async function AdminEventsPage({
 
     if (error) {
       console.error("Set featured event error:", JSON.stringify(error, null, 2));
-      return;
+      return {
+        status: "error",
+        message: "Featured event could not be updated. Please try again.",
+      };
     }
 
-    revalidatePath(`/${school}/admin/events`);
-    revalidatePath(`/${school}/app/events`);
+    return {
+      status: "success",
+      message: featured ? "Featured event updated." : "Featured event removed.",
+    };
   }
   const { data: events, error } = await supabase
     .from("events")
@@ -114,121 +123,12 @@ export default async function AdminEventsPage({
           </div>
         </div>
 
-        <section className="space-y-4">
-          {!events || events.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
-              <h3 className="text-lg font-semibold">No events yet</h3>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                Once events are created, they will appear here.
-              </p>
-            </div>
-          ) : (
-            events.map((event) => (
-              <article
-                key={event.id}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <h3 className="text-xl font-semibold">{event.title}</h3>
-
-                      {event.is_active && (
-                        <span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-700 ring-1 ring-green-500/30 dark:text-green-300">
-                          Active
-                        </span>
-                      )}
-
-                      <form action={setFeaturedEvent}>
-                        <input type="hidden" name="event_id" value={event.id} />
-                        <input
-                          type="hidden"
-                          name="featured"
-                          value={event.is_featured ? "false" : "true"}
-                        />
-                        <button
-                          type="submit"
-                          disabled={!event.is_active && !event.is_featured}
-                          aria-label={
-                            event.is_featured
-                              ? `Remove ${event.title} as the featured event`
-                              : `Make ${event.title} the featured event`
-                          }
-                          title={
-                            !event.is_active
-                              ? "Inactive events cannot be featured"
-                              : event.is_featured
-                                ? "Remove Featured"
-                                : "Make Featured"
-                          }
-                          className={`cursor-pointer rounded-full px-3 py-1 text-xs font-semibold ring-1 transition disabled:cursor-not-allowed disabled:opacity-45 ${
-                            event.is_featured
-                              ? "bg-amber-500/15 text-amber-800 ring-amber-500/35 hover:bg-amber-500/25 dark:text-amber-300"
-                              : "bg-slate-100 text-slate-600 ring-slate-300 hover:bg-amber-500/10 hover:text-amber-800 hover:ring-amber-500/35 dark:bg-black/30 dark:text-slate-300 dark:ring-slate-600 dark:hover:text-amber-300"
-                          }`}
-                        >
-                          <span aria-hidden="true">{event.is_featured ? "★" : "☆"}</span>{" "}
-                          {event.is_featured ? "Featured" : "Make Featured"}
-                        </button>
-                      </form>
-                    </div>
-
-                    <p className="mt-2 line-clamp-2 text-sm text-slate-600 dark:text-slate-300">
-                      {event.description}
-                    </p>
-
-                    {event.location && (
-                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                        Location: {event.location}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="text-left text-sm text-slate-500 dark:text-slate-400 sm:text-right">
-                    <p>Starts</p>
-                    <p className="font-medium text-slate-900 dark:text-slate-200">
-                      {event.event_date
-                        ? new Date(`${event.event_date}T00:00:00`).toLocaleDateString()
-                        : "Not set"}
-                    </p>
-                    <p className="text-slate-600 dark:text-slate-300">
-                        {event.start_time
-                            ? new Date(`2000-01-01T${event.start_time}`).toLocaleTimeString([], {
-                                hour: "numeric",
-                                minute: "2-digit",
-                            })
-                            : ""}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-5 flex gap-3 border-t border-slate-200 pt-4 dark:border-[#3a3a3a]">
-                  <Link
-                    href={`/${school}/admin/events/${event.id}/edit`}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-white/10"
-                    >
-                    Edit
-                  </Link>
-
-                  <form action={deleteEvent}>
-                    <input
-                        type="hidden"
-                        name="event_id"
-                        value={event.id}
-                    />
-
-                    <button
-                        type="submit"
-                        className="cursor-pointer rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
-                    >
-                        Delete
-                    </button>
-                    </form>
-                </div>
-              </article>
-            ))
-          )}
-        </section>
+        <AdminEventsList
+          school={school}
+          events={(events || []) as AdminEventListItem[]}
+          setFeaturedAction={setFeaturedEvent}
+          deleteAction={deleteEvent}
+        />
       </div>
     </main>
   );

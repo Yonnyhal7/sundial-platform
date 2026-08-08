@@ -6,6 +6,7 @@ const read = (path: string) => readFileSync(path, "utf8");
 describe("featured event management", () => {
   const migration = read("sql/add_featured_event.sql");
   const admin = read("src/app/[school]/admin/events/page.tsx");
+  const adminList = read("src/components/admin/AdminEventsList.tsx");
   const edit = read("src/app/[school]/admin/events/[eventId]/edit/page.tsx");
   const online = read("src/app/[school]/app/events/page.tsx");
   const offline = read("src/components/offline/OfflineStudentAppContent.tsx");
@@ -29,9 +30,9 @@ describe("featured event management", () => {
 
   it("supports making and removing featured status from the list", () => {
     expect(admin).toContain('rpc("set_school_featured_event"');
-    expect(admin).toContain('event.is_featured ? "false" : "true"');
-    expect(admin).toContain('event.is_featured ? "Featured" : "Make Featured"');
-    expect(admin).toContain("Inactive events cannot be featured");
+    expect(adminList).toContain("updateFeatured(event.id, !featured)");
+    expect(adminList).toContain('featured ? "Featured" : "Make Featured"');
+    expect(adminList).toContain("Inactive events cannot be featured");
   });
 
   it("clears featured status when an event is deactivated and deletion needs no reference cleanup", () => {
