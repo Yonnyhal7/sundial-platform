@@ -2,7 +2,7 @@ export const NOTIFICATION_CATEGORIES = [
   "emergency", "closure_delay", "important_announcement",
   "calendar_schedule_change", "school_event", "athletics",
   "student_activity", "academic_testing", "first_period_reminder",
-  "period_change_reminder", "lunch_reminder", "end_of_day_reminder",
+  "period_change_reminder", "period_reminder", "lunch_reminder", "end_of_day_reminder",
   "staff_announcement", "staff_meeting", "staff_duty", "operational_update",
 ] as const;
 
@@ -22,6 +22,7 @@ export const NOTIFICATION_CATEGORY_LABELS: Record<NotificationCategory, string> 
   school_event: "School event", athletics: "Athletics",
   student_activity: "Club or student activity", academic_testing: "Academic or testing reminder",
   first_period_reminder: "First-period reminder", period_change_reminder: "Period-change reminder",
+  period_reminder: "Period reminders",
   lunch_reminder: "Lunch reminder", end_of_day_reminder: "End-of-day reminder",
   staff_announcement: "Staff announcement", staff_meeting: "Staff meeting",
   staff_duty: "Duty or supervision reminder", operational_update: "Operational update",
@@ -35,9 +36,9 @@ export const NOTIFICATION_CATEGORY_GROUPS = [
 ] as const satisfies ReadonlyArray<{ label: string; categories: readonly NotificationCategory[] }>;
 
 export const AUDIENCE_CATEGORY_DEFAULTS: Record<NotificationAudience, Partial<Record<NotificationCategory, boolean>>> = {
-  student: { emergency: true, closure_delay: true, important_announcement: true, calendar_schedule_change: true, first_period_reminder: true, period_change_reminder: false, lunch_reminder: false, end_of_day_reminder: false, school_event: true, athletics: false, student_activity: true, academic_testing: true },
-  parent: { emergency: true, closure_delay: true, important_announcement: true, calendar_schedule_change: true, school_event: true, athletics: false, student_activity: false, academic_testing: true },
-  staff: { emergency: true, closure_delay: true, important_announcement: true, calendar_schedule_change: true, staff_announcement: true, staff_meeting: true, staff_duty: true, operational_update: true, first_period_reminder: false, period_change_reminder: false, lunch_reminder: false, end_of_day_reminder: false, school_event: false },
+  student: { emergency: true, closure_delay: true, important_announcement: true, calendar_schedule_change: true, first_period_reminder: true, period_change_reminder: false, period_reminder: true, lunch_reminder: false, end_of_day_reminder: false, school_event: true, athletics: false, student_activity: true, academic_testing: true },
+  parent: { emergency: true, closure_delay: true, important_announcement: true, calendar_schedule_change: true, period_reminder: true, school_event: true, athletics: false, student_activity: false, academic_testing: true },
+  staff: { emergency: true, closure_delay: true, important_announcement: true, calendar_schedule_change: true, staff_announcement: true, staff_meeting: true, staff_duty: true, operational_update: true, first_period_reminder: false, period_change_reminder: false, period_reminder: true, lunch_reminder: false, end_of_day_reminder: false, school_event: false },
 };
 
 export const NOTIFICATION_TEMPLATES = {

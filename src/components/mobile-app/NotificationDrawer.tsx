@@ -4,6 +4,7 @@ import { useCallback, useState, type RefObject } from "react";
 import NotificationAudienceSummary from "@/components/mobile-app/NotificationAudienceSummary";
 import NotificationDetail from "@/components/mobile-app/NotificationDetail";
 import NotificationInbox from "@/components/mobile-app/NotificationInbox";
+import PeriodReminderPreference from "@/components/mobile-app/PeriodReminderPreference";
 import OverlayDrawer from "@/components/mobile-app/OverlayDrawer";
 import type { NotificationAudience } from "@/lib/notifications";
 
@@ -104,6 +105,7 @@ export default function NotificationDrawer({
               <section className="mt-4 rounded-3xl bg-[var(--school-primary)] p-5 text-[var(--school-primary-text)]">
                 <NotificationAudienceSummary audience={initialAudience} />
               </section>
+              <PeriodReminderPreference school={school} schoolId={schoolId} />
             </main>
           )}
         </div>

@@ -30,7 +30,8 @@ describe("notification UX integration contracts", () => {
     );
     const header = read("src/components/mobile-app/AppHeader.tsx");
     const startup = read("src/components/pwa/PwaStartupBoundary.tsx");
-    expect(settings).not.toContain("audience");
+    expect(settings).not.toContain("notificationAudience");
+    expect(settings).not.toContain("Who is using this device?");
     expect(header).not.toContain("<select value={notificationAudience}");
     expect(startup).toContain("display-mode: standalone");
     expect(startup).toContain('status: "transport_error"');

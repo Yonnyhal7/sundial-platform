@@ -67,8 +67,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ scho
   if (!ctx?.device) return NextResponse.json({ error: "Device unavailable" }, { status: 401 });
   const url = new URL(request.url);
   if (url.searchParams.get("view") === "preferences") {
-    const { data } = await ctx.db.from("notification_device_preferences").select("category,enabled,lead_time_minutes").eq("school_id", ctx.school.id).eq("device_id", ctx.device.id);
-    return NextResponse.json({ audience: ctx.device.audience, preferences: data || [] });
+    const [{ data }, { data: settings }] = await Promise.all([
+      ctx.db.from("notification_device_preferences").select("category,enabled,lead_time_minutes").eq("school_id", ctx.school.id).eq("device_id", ctx.device.id),
+      ctx.db.from("notification_school_settings").select("notifications_enabled,period_reminders_enabled,period_reminder_audiences").eq("school_id", ctx.school.id).maybeSingle(),
+    ]);
+    return NextResponse.json({
+      audience: ctx.device.audience,
+      preferences: data || [],
+      periodRemindersAvailable: Boolean(settings?.notifications_enabled && settings?.period_reminders_enabled && settings?.period_reminder_audiences?.includes(ctx.device.audience)),
+    });
   }
   const deliveryId = url.searchParams.get("id");
   if (deliveryId) {

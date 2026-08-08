@@ -6,7 +6,6 @@ import { revalidatePath } from "next/cache";
 import { getSchoolAdminPath, requireAdminSectionAccess } from "@/lib/auth/adminPermissions";
 import { getSchoolForSetup } from "@/lib/schools";
 import { isNotificationCategory, resolveNotificationAudiences, sanitizeNotificationDestination, sanitizeNotificationText, schoolLocalDateTimeToUtc } from "@/lib/notifications";
-import { createSupabaseServiceRoleClient } from "@/lib/supabase/serviceRole";
 
 async function authorized(school: string) {
   const schoolData = await getSchoolForSetup(school);
@@ -35,7 +34,7 @@ export async function createNotificationCampaignAction(school: string, formData:
   const scheduled = status === "scheduled" ? schoolLocalDateTimeToUtc(String(formData.get("scheduled_for") || ""), schoolTimeZone) : null;
   const title = sanitizeNotificationText(formData.get("title"), 60);
   const body = sanitizeNotificationText(formData.get("body"), 180);
-  if (!isNotificationCategory(category) || audiences.length === 0 || !title || !body || (status === "scheduled" && !scheduled)) {
+  if (!isNotificationCategory(category) || category === "period_reminder" || audiences.length === 0 || !title || !body || (status === "scheduled" && !scheduled)) {
     redirect(`${await getSchoolAdminPath(school)}/notifications/new?error=validation`);
   }
   const { data } = await admin.supabase.rpc("create_notification_campaign", {
@@ -230,12 +229,15 @@ export async function queueAnnouncementNotification(school: string, announcement
 
 export async function saveNotificationSettingsAction(school: string, version: number, formData: FormData) {
   const { schoolData, admin } = await authorized(school);
-  const db = createSupabaseServiceRoleClient();
-  await db.from("notification_school_settings").update({
-    notifications_enabled: formData.get("notifications_enabled") === "on",
-    scheduled_notifications_enabled: formData.get("scheduled_notifications_enabled") === "on",
-    sender_display_name: sanitizeNotificationText(formData.get("sender_display_name"), 80) || null,
-    updated_by: admin.profile.id, updated_at: new Date().toISOString(), version: version + 1,
-  }).eq("school_id", schoolData.id).eq("version", version);
+  const audiences = resolveNotificationAudiences(formData.getAll("period_reminder_audiences").map(String));
+  await admin.supabase.rpc("update_notification_school_settings", {
+    p_school_id: schoolData.id,
+    p_expected_version: version,
+    p_notifications_enabled: formData.get("notifications_enabled") === "on",
+    p_scheduled_notifications_enabled: formData.get("scheduled_notifications_enabled") === "on",
+    p_sender_display_name: sanitizeNotificationText(formData.get("sender_display_name"), 80) || null,
+    p_period_reminders_enabled: formData.get("period_reminders_enabled") === "on",
+    p_period_reminder_audiences: audiences,
+  });
   revalidatePath(`/${school}/admin/notifications/settings`);
 }
