@@ -33,7 +33,8 @@ const variantClasses: Record<SchoolLogoVariant, string> = {
   adminSidebar: "h-11 w-11 text-sm",
   appHeader:
     "h-[clamp(3rem,8vw,4rem)] w-[clamp(3rem,8vw,4rem)] rounded-[clamp(0.9rem,2.4vw,1.35rem)] text-xs",
-  kioskHeader: "h-[clamp(4.25rem,7dvh,7rem)] w-[clamp(4.25rem,7dvh,7rem)] text-lg",
+  kioskHeader:
+    "h-[clamp(4.25rem,7dvh,7rem)] w-[clamp(4.25rem,7dvh,7rem)] text-lg",
   websiteHeader: "h-16 w-16 text-lg",
   preview: "h-24 w-24 text-2xl",
 };
@@ -46,6 +47,42 @@ const artworkClasses: Record<SchoolLogoVariant, string> = {
   websiteHeader: "h-[84%] w-[84%]",
   preview: "h-[84%] w-[84%]",
 };
+
+const sizeImageSizes: Record<SchoolLogoSize, string> = {
+  sm: "32px",
+  md: "40px",
+  lg: "64px",
+  xl: "96px",
+};
+
+const variantImageSizes: Record<SchoolLogoVariant, string | null> = {
+  default: null,
+  adminSidebar: "35px",
+  appHeader: "(max-width: 480px) 37px, 49px",
+  kioskHeader: "96px",
+  websiteHeader: "54px",
+  preview: "(min-width: 1024px) 135px, 81px",
+};
+
+export function getSchoolLogoImageSizes(
+  variant: SchoolLogoVariant,
+  size: SchoolLogoSize,
+) {
+  return variantImageSizes[variant] || sizeImageSizes[size];
+}
+
+export function canOptimizeSchoolLogo(logoUrl: string) {
+  try {
+    const url = new URL(logoUrl);
+    return (
+      url.protocol === "https:" &&
+      url.hostname.endsWith(".supabase.co") &&
+      url.pathname.startsWith("/storage/v1/object/public/school-logos/")
+    );
+  } catch {
+    return false;
+  }
+}
 
 export function getSchoolInitials(schoolName: string) {
   return schoolName
@@ -68,6 +105,7 @@ export default function SchoolLogo({
   const [imageFailed, setImageFailed] = useState(false);
   const uploadedLogoUrl = !imageFailed && logoUrl ? logoUrl : null;
   const hasLogo = Boolean(uploadedLogoUrl);
+  const artworkClassName = artworkClasses[variant] || artworkClasses.default;
 
   return (
     <span
@@ -82,14 +120,17 @@ export default function SchoolLogo({
       ].join(" ")}
     >
       {uploadedLogoUrl ? (
-        <img
+        <Image
           src={uploadedLogoUrl}
           alt={`${schoolName} logo`}
+          width={160}
+          height={160}
+          sizes={getSchoolLogoImageSizes(variant, size)}
+          unoptimized={!canOptimizeSchoolLogo(uploadedLogoUrl)}
           onError={() => setImageFailed(true)}
-          className={[
-            "max-h-full max-w-full object-contain object-center",
-            artworkClasses[variant] || artworkClasses.default,
-          ].join(" ")}
+          className={["object-contain object-center", artworkClassName].join(
+            " ",
+          )}
         />
       ) : (
         <Image
@@ -98,10 +139,7 @@ export default function SchoolLogo({
           aria-hidden="true"
           width={640}
           height={696}
-          className={[
-            "object-contain",
-            artworkClasses[variant] || artworkClasses.default,
-          ].join(" ")}
+          className={["object-contain", artworkClassName].join(" ")}
         />
       )}
     </span>
