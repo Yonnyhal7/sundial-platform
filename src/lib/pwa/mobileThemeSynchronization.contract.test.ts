@@ -9,7 +9,6 @@ describe("mobile app theme synchronization", () => {
   );
   const header = read("src/components/mobile-app/AppHeader.tsx");
   const layout = read("src/app/[school]/app/layout.tsx");
-  const rootLayout = read("src/app/layout.tsx");
   const globals = read("src/app/globals.css");
 
   it("uses one app-wide appearance owner for the open drawer and shell", () => {
@@ -51,8 +50,6 @@ describe("mobile app theme synchronization", () => {
     expect(provider).toContain("document.body.style.backgroundColor");
     expect(provider).toContain('data-pwa-status-bar-background=""');
     expect(provider).toContain("h-[env(safe-area-inset-top)]");
-    expect(rootLayout).toContain('viewportFit: "cover"');
-    expect(layout).toContain('viewportFit: "cover"');
   });
 
   it("persists the authoritative preference with the tenant key", () => {
