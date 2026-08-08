@@ -35,4 +35,17 @@ describe("desktop UI density", () => {
     );
     expect(source("src/app/page.tsx")).toContain("marketing-density");
   });
+
+  it("defines a desktop admin typography hierarchy without changing mobile text", () => {
+    expect(styles).toContain(".admin-density [class~=\"text-xs\"]");
+    expect(styles).toContain("font-size: 0.8125rem");
+    expect(styles).toContain('.admin-density [class~="text-sm"]');
+    expect(styles).toContain("font-size: 0.9375rem");
+    expect(styles).toContain('.admin-density [class~="text-xl"]');
+    expect(styles).toContain("font-size: 1.1875rem");
+    expect(styles).toContain('.admin-density [class~="text-3xl"]');
+    expect(styles).toContain("font-size: 1.75rem");
+    expect(styles).toContain(".admin-density .admin-sidebar");
+    expect(styles).toContain("font-size: 0.875rem");
+  });
 });
