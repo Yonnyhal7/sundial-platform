@@ -35,6 +35,8 @@ function updatePwaThemeColor(theme: Theme) {
       ? PWA_LAUNCH_VISUAL.backgroundDark
       : PWA_LAUNCH_VISUAL.background;
 
+  document.documentElement.style.backgroundColor = color;
+  document.body.style.backgroundColor = color;
   document
     .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
     .forEach((meta) => meta.setAttribute("content", color));
@@ -80,6 +82,13 @@ export default function MobileAppThemeProvider({
   }, [resolvedTheme]);
 
   useEffect(() => {
+    return () => {
+      document.documentElement.style.removeProperty("background-color");
+      document.body.style.removeProperty("background-color");
+    };
+  }, []);
+
+  useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     function handleSystemThemeChange(event: MediaQueryListEvent) {
@@ -106,6 +115,17 @@ export default function MobileAppThemeProvider({
         suppressHydrationWarning
         style={style}
       >
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-x-0 top-0 z-[79] h-[env(safe-area-inset-top)]"
+          data-pwa-status-bar-background=""
+          style={{
+            backgroundColor:
+              resolvedTheme === "dark"
+                ? PWA_LAUNCH_VISUAL.backgroundDark
+                : PWA_LAUNCH_VISUAL.background,
+          }}
+        />
         {children}
       </div>
     </MobileAppThemeContext.Provider>

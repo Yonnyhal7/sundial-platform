@@ -46,6 +46,10 @@ describe("mobile app theme synchronization", () => {
     expect(provider).toContain('meta[name="theme-color"]');
     expect(provider).toContain("PWA_LAUNCH_VISUAL.backgroundDark");
     expect(provider).toContain("updatePwaThemeColor(nextTheme)");
+    expect(provider).toContain("document.documentElement.style.backgroundColor");
+    expect(provider).toContain("document.body.style.backgroundColor");
+    expect(provider).toContain('data-pwa-status-bar-background=""');
+    expect(provider).toContain("h-[env(safe-area-inset-top)]");
   });
 
   it("persists the authoritative preference with the tenant key", () => {
