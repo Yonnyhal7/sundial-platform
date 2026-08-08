@@ -6,6 +6,7 @@ import { createNavDiagnostics } from "@/lib/navDiagnostics";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatDateInTimeZone } from "@/lib/localDate";
 import { formatPeriodTime } from "@/lib/scheduleTime";
+import { getEventsForSchoolDate } from "@/lib/schoolDayItems";
 
 export const metadata: Metadata = { title: "Events" };
 
@@ -47,20 +48,21 @@ export default async function MobileEventsPage({
     navTiming.query("school", () => requireMobileAppSchool(school)),
   ]);
 
+  const today = formatDateInTimeZone(new Date(), schoolData.timezone);
   const { data: events } = await navTiming.query("events", () =>
     supabase
       .from("events")
       .select("id, title, location, event_date, start_time, end_time, image_url")
       .eq("school_id", schoolData.id)
       .eq("is_active", true)
-      .gte("event_date", formatDateInTimeZone(new Date(), schoolData.timezone))
+      .gte("event_date", today)
       .order("event_date", { ascending: true })
       .limit(12)
       .returns<Event[]>()
   );
 
   const featured = events?.[0];
-  const upcoming = featured ? events?.slice(1) || [] : events || [];
+  const todayEvents = getEventsForSchoolDate(events || [], today).filter((event) => event.id !== featured?.id);
   navTiming.log();
 
   return (
@@ -123,10 +125,10 @@ export default async function MobileEventsPage({
 
       <section className="space-y-3">
         <h2 className="text-lg font-black text-slate-950 dark:text-white">
-          Upcoming Events
+          Today&apos;s Events
         </h2>
 
-        {upcoming.map((event) => (
+        {todayEvents.map((event) => (
           <article
             key={event.id}
             className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]"
@@ -140,7 +142,7 @@ export default async function MobileEventsPage({
                   {event.title}
                 </h3>
                 <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
-                  {formatEventDate(event.event_date)} at {formatEventTime(event)}
+                  {formatEventTime(event)}
                 </p>
                 {event.location && (
                   <p className="mt-2 flex items-center gap-1 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
@@ -152,6 +154,11 @@ export default async function MobileEventsPage({
             </div>
           </article>
         ))}
+        {todayEvents.length === 0 && (
+          <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
+            <p className="text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">No events today</p>
+          </section>
+        )}
       </section>
     </main>
   );

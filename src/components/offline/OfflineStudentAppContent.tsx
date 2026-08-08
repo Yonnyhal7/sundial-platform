@@ -22,9 +22,11 @@ import {
   getCalendarScheduleDays,
   getMonthQuery,
   getPeriodsByScheduleId,
+  getTodayDateKey,
   getTodaySchedule,
 } from "@/lib/offline/snapshotSelectors";
 import type { SchoolOfflineSnapshot } from "@/lib/offline/types";
+import { getEventsForSchoolDate } from "@/lib/schoolDayItems";
 
 function formatEventDate(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
@@ -193,6 +195,10 @@ function OfflineSchedulePage({
           },
         ]}
         timeZone={snapshot.data.school.timezone || "America/Los_Angeles"}
+        events={snapshot.data.events}
+        games={snapshot.data.games}
+        sports={snapshot.data.sports}
+        teams={snapshot.data.teams}
       />
     </main>
   );
@@ -200,8 +206,9 @@ function OfflineSchedulePage({
 
 function OfflineEventsPage({ snapshot }: { snapshot: SchoolOfflineSnapshot }) {
   const events = snapshot.data.events;
-  const featured = events[0];
-  const upcoming = featured ? events.slice(1) : events;
+  const today = getTodayDateKey(snapshot.data.school.timezone);
+  const featured = events.find((event) => event.event_date >= today);
+  const todayEvents = getEventsForSchoolDate(events, today).filter((event) => event.id !== featured?.id);
 
   return (
     <main className="space-y-5">
@@ -250,9 +257,9 @@ function OfflineEventsPage({ snapshot }: { snapshot: SchoolOfflineSnapshot }) {
 
       <section className="space-y-3">
         <h2 className="text-lg font-black text-slate-950 dark:text-white">
-          Upcoming Events
+          Today&apos;s Events
         </h2>
-        {upcoming.map((event) => (
+        {todayEvents.map((event) => (
           <article key={event.id} className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
             <div className="flex gap-3">
               <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--school-primary)_12%,white)] text-[var(--school-primary)] dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,#242424)]">
@@ -261,7 +268,7 @@ function OfflineEventsPage({ snapshot }: { snapshot: SchoolOfflineSnapshot }) {
               <div className="min-w-0 flex-1">
                 <h3 className="font-black text-slate-950 dark:text-white">{event.title}</h3>
                 <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
-                  {formatEventDate(event.event_date)} at {formatEventTime(event)}
+                  {formatEventTime(event)}
                 </p>
                 {event.location && (
                   <p className="mt-2 flex items-center gap-1 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
@@ -273,6 +280,7 @@ function OfflineEventsPage({ snapshot }: { snapshot: SchoolOfflineSnapshot }) {
             </div>
           </article>
         ))}
+        {todayEvents.length === 0 && <EmptyCard>No events today</EmptyCard>}
       </section>
     </main>
   );

@@ -8,7 +8,9 @@ import {
   type PointerEvent,
 } from "react";
 import { useRouter } from "next/navigation";
-import { CheckIcon } from "@/components/mobile-app/AppIcons";
+import { CalendarIcon, CheckIcon } from "@/components/mobile-app/AppIcons";
+import SportIcon from "@/components/SportIcon";
+import { formatGameTime } from "@/lib/athletics";
 import { getCalendarDayAccessibleLabel } from "@/lib/calendarDayAccessibility";
 import {
   getAdjacentCalendarMonthKey,
@@ -28,6 +30,8 @@ import {
 } from "@/lib/scheduleTime";
 import { getScheduleCalendarColor, getScheduleDotStyle } from "@/lib/scheduleColors";
 import { hasMeaningfulCalendarDayStatus } from "@/lib/calendarDaySchedule";
+import { getEventsForSchoolDate, getGamesForSchoolDate } from "@/lib/schoolDayItems";
+import type { OfflineEvent, OfflineGame, OfflineSport, OfflineTeam } from "@/lib/offline/types";
 
 export type CalendarScheduleDay = {
   date: string;
@@ -56,6 +60,10 @@ type CalendarScheduleClientProps = {
   today: string;
   months: CalendarScheduleMonth[];
   timeZone: string;
+  events: OfflineEvent[];
+  games: OfflineGame[];
+  sports: OfflineSport[];
+  teams: OfflineTeam[];
 };
 
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -65,6 +73,10 @@ export default function CalendarScheduleClient({
   today,
   months,
   timeZone,
+  events,
+  games,
+  sports,
+  teams,
 }: CalendarScheduleClientProps) {
   const router = useRouter();
   const { snapshot } = useOfflineSchoolData();
@@ -137,6 +149,14 @@ export default function CalendarScheduleClient({
   }, [currentMonthKey, localMonths, router, snapshot, today]);
 
   const selectedIsToday = selectedDay?.date === today;
+  const calendarEvents = snapshot?.data.events || events;
+  const calendarGames = snapshot?.data.games || games;
+  const calendarTeams = snapshot?.data.teams || teams;
+  const calendarSports = snapshot?.data.sports || sports;
+  const selectedEvents = selectedDay ? getEventsForSchoolDate(calendarEvents, selectedDay.date) : [];
+  const selectedGames = selectedDay ? getGamesForSchoolDate(calendarGames, selectedDay.date) : [];
+  const teamById = new Map(calendarTeams.map((team) => [team.id, team]));
+  const sportById = new Map(calendarSports.map((sport) => [sport.id, sport]));
   const scheduleState = useMemo(() => {
     if (!selectedIsToday || !now || !selectedDay) {
       return getTodayScheduleState([], new Date(), { timeZone });
@@ -366,6 +386,8 @@ export default function CalendarScheduleClient({
             </p>
           </div>
 
+          <div className="space-y-3">
+            <h3 className="text-lg font-black text-slate-950 dark:text-white">Schedule</h3>
           {selectedDay.isSchoolDay === false ? (
             <EmptyScheduleMessage title="No School" body={selectedDay.label || "Enjoy your day."} />
           ) : !selectedDay.scheduleName ? (
@@ -439,10 +461,44 @@ export default function CalendarScheduleClient({
               })}
             </div>
           )}
+          </div>
+
+          <div className="mt-8 space-y-3">
+            <h3 className="text-lg font-black text-slate-950 dark:text-white">Events</h3>
+            {selectedEvents.map((event) => (
+              <div key={event.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-[#3a3a3a] dark:bg-[#181818]">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[color-mix(in_srgb,var(--school-primary)_12%,white)] text-[var(--school-primary)] dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,#242424)]"><CalendarIcon className="h-5 w-5" /></div>
+                <div><p className="font-black text-slate-950 dark:text-white">{event.title}</p><p className="mt-1 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">{formatCalendarEventTime(event)}{event.location ? ` · ${event.location}` : ""}</p></div>
+              </div>
+            ))}
+            {selectedEvents.length === 0 && <DayEmptyState>{selectedIsToday ? "No events today" : "No events scheduled"}</DayEmptyState>}
+          </div>
+
+          <div className="mt-8 space-y-3">
+            <h3 className="text-lg font-black text-slate-950 dark:text-white">Sports</h3>
+            {selectedGames.map((game) => {
+              const team = teamById.get(game.team_id || "");
+              const sport = sportById.get(team?.sport_id || "");
+              return <div key={game.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-[#3a3a3a] dark:bg-[#181818]">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[color-mix(in_srgb,var(--school-primary)_12%,white)] text-[var(--school-primary)] dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,#242424)]"><SportIcon icon={sport?.icon} color={sport?.icon_color} className="h-5 w-5" /></div>
+                <div><p className="font-black text-slate-950 dark:text-white">{team?.name || "Team"} vs {game.opponent}</p><p className="mt-1 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">{formatGameTime(game.game_date)} · {game.is_home ? "Home" : "Away"}{game.location ? ` · ${game.location}` : ""}</p></div>
+              </div>;
+            })}
+            {selectedGames.length === 0 && <DayEmptyState>{selectedIsToday ? "No games today" : "No games scheduled"}</DayEmptyState>}
+          </div>
         </section>
       )}
     </div>
   );
+}
+
+function formatCalendarEventTime(event: OfflineEvent) {
+  if (!event.start_time) return "All day";
+  return event.end_time ? `${formatPeriodTime(event.start_time)} - ${formatPeriodTime(event.end_time)}` : formatPeriodTime(event.start_time);
+}
+
+function DayEmptyState({ children }: { children: string }) {
+  return <p className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500 dark:bg-[#181818] dark:text-[#a3a3a3]">{children}</p>;
 }
 
 function getDefaultSelectedDate(days: CalendarScheduleDay[], today: string) {
