@@ -17,6 +17,7 @@ import {
   type AppearancePreference,
   type Theme,
 } from "@/lib/themeScope";
+import { PWA_LAUNCH_VISUAL } from "@/lib/pwa/launchScreen";
 
 type MobileAppThemeContextValue = {
   appearance: AppearancePreference;
@@ -27,6 +28,17 @@ type MobileAppThemeContextValue = {
 const MobileAppThemeContext = createContext<MobileAppThemeContextValue | null>(
   null
 );
+
+function updatePwaThemeColor(theme: Theme) {
+  const color =
+    theme === "dark"
+      ? PWA_LAUNCH_VISUAL.backgroundDark
+      : PWA_LAUNCH_VISUAL.background;
+
+  document
+    .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
+    .forEach((meta) => meta.setAttribute("content", color));
+}
 
 export default function MobileAppThemeProvider({
   children,
@@ -57,10 +69,15 @@ export default function MobileAppThemeProvider({
       setAppearanceState(nextAppearance);
       setResolvedTheme(nextTheme);
       applyTheme(nextTheme, "app", nextAppearance);
+      updatePwaThemeColor(nextTheme);
       setStoredAppearancePreference("app", nextAppearance, school);
     },
     [school]
   );
+
+  useEffect(() => {
+    updatePwaThemeColor(resolvedTheme);
+  }, [resolvedTheme]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -71,6 +88,7 @@ export default function MobileAppThemeProvider({
       const nextTheme = event.matches ? "dark" : "light";
       setResolvedTheme(nextTheme);
       applyTheme(nextTheme, "app", appearance);
+      updatePwaThemeColor(nextTheme);
     }
 
     mediaQuery.addEventListener("change", handleSystemThemeChange);

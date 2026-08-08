@@ -9,6 +9,7 @@ describe("mobile app theme synchronization", () => {
   );
   const header = read("src/components/mobile-app/AppHeader.tsx");
   const layout = read("src/app/[school]/app/layout.tsx");
+  const globals = read("src/app/globals.css");
 
   it("uses one app-wide appearance owner for the open drawer and shell", () => {
     expect(layout).toContain("<MobileAppThemeProvider");
@@ -32,6 +33,19 @@ describe("mobile app theme synchronization", () => {
     expect(provider).toContain("resolveAppearanceTheme(nextAppearance)");
     expect(provider).toContain('appearance !== "system"');
     expect(provider).toContain('event.matches ? "dark" : "light"');
+  });
+
+  it("invalidates mounted shell styles without waiting for the root class repaint", () => {
+    expect(globals).toContain('[data-app-resolved-theme="dark"] *');
+    expect(globals).toContain(
+      '.mobile-app-theme[data-app-resolved-theme="dark"]'
+    );
+  });
+
+  it("updates the installed-PWA theme color with the resolved theme", () => {
+    expect(provider).toContain('meta[name="theme-color"]');
+    expect(provider).toContain("PWA_LAUNCH_VISUAL.backgroundDark");
+    expect(provider).toContain("updatePwaThemeColor(nextTheme)");
   });
 
   it("persists the authoritative preference with the tenant key", () => {

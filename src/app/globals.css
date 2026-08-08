@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant dark (&:where(.dark, .dark *, [data-app-resolved-theme="dark"], [data-app-resolved-theme="dark"] *));
 
 :root {
   --background: #ffffff;
@@ -318,7 +318,8 @@ body {
   --school-accent-visible-primary: var(--school-accent-visible-primary-light);
 }
 
-.dark .mobile-app-theme {
+.dark .mobile-app-theme,
+.mobile-app-theme[data-app-resolved-theme="dark"] {
   --school-accent-visible: var(--school-accent-visible-dark);
   --school-accent-visible-card: var(--school-accent-visible-card-dark);
   --school-accent-visible-primary: var(--school-accent-visible-primary-dark);
