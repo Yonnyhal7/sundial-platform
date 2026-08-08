@@ -153,7 +153,7 @@ export default function OverlayDrawer({
         aria-label={label}
         tabIndex={-1}
         data-drawer-side={side}
-        className={`absolute inset-y-0 flex h-full w-3/4 min-w-0 max-w-md flex-col overflow-hidden bg-slate-50 text-slate-950 shadow-2xl transition-transform duration-[250ms] ease-out focus:outline-none motion-reduce:transition-none dark:bg-black dark:text-white ${
+        className={`absolute inset-y-0 box-border flex h-full w-3/4 min-w-0 max-w-md flex-col overflow-hidden bg-slate-50 text-slate-950 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-2xl transition-transform duration-[250ms] ease-out focus:outline-none motion-reduce:transition-none dark:bg-black dark:text-white ${
           side === "right"
             ? `right-0 rounded-l-[1.75rem] shadow-[-18px_0_36px_rgb(0_0_0/0.24)] ${
                 visible ? "translate-x-0" : "translate-x-full"

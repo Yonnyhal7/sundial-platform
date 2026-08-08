@@ -9,6 +9,8 @@ describe("mobile app theme synchronization", () => {
   );
   const header = read("src/components/mobile-app/AppHeader.tsx");
   const layout = read("src/app/[school]/app/layout.tsx");
+  const rootLayout = read("src/app/layout.tsx");
+  const drawer = read("src/components/mobile-app/OverlayDrawer.tsx");
   const globals = read("src/app/globals.css");
 
   it("uses one app-wide appearance owner for the open drawer and shell", () => {
@@ -50,6 +52,16 @@ describe("mobile app theme synchronization", () => {
     expect(provider).toContain("document.body.style.backgroundColor");
     expect(provider).toContain('data-pwa-status-bar-background=""');
     expect(provider).toContain("h-[env(safe-area-inset-top)]");
+    expect(rootLayout).toContain('viewportFit: "cover"');
+    expect(layout).toContain('viewportFit: "cover"');
+  });
+
+  it("covers the safe area while keeping drawer content below it", () => {
+    expect(drawer).toContain("fixed inset-0");
+    expect(drawer).toContain("absolute inset-y-0");
+    expect(drawer).toContain("pt-[env(safe-area-inset-top)]");
+    expect(drawer).toContain("pb-[env(safe-area-inset-bottom)]");
+    expect(drawer).toContain("box-border");
   });
 
   it("persists the authoritative preference with the tenant key", () => {
