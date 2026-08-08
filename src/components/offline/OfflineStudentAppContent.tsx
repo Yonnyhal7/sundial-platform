@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import AppScheduleDashboard from "@/components/mobile-app/AppScheduleDashboard";
+import AthleticsExperience from "@/components/mobile-app/AthleticsExperience";
 import BellScheduleClient from "@/components/mobile-app/BellScheduleClient";
 import CalendarScheduleClient from "@/components/mobile-app/CalendarScheduleClient";
 import {
@@ -14,8 +15,6 @@ import {
   LinkIcon,
   MapPinIcon,
 } from "@/components/mobile-app/AppIcons";
-import SportIcon from "@/components/SportIcon";
-import { formatGameDateTime } from "@/lib/athletics";
 import { getScheduleCalendarColor } from "@/lib/scheduleColors";
 import { formatPeriodTime } from "@/lib/scheduleTime";
 import {
@@ -105,7 +104,12 @@ export default function OfflineStudentAppContent({
   }
 
   if (section === "athletics") {
-    return <OfflineAthleticsPage school={school} snapshot={snapshot} activeTab={searchParams.get("tab") === "teams" ? "teams" : "games"} />;
+    return (
+      <OfflineAthleticsPage
+        snapshot={snapshot}
+        activeTab={searchParams.get("tab") === "teams" ? "teams" : "games"}
+      />
+    );
   }
 
   if (section === "resources") {
@@ -287,96 +291,21 @@ function OfflineEventsPage({ snapshot }: { snapshot: SchoolOfflineSnapshot }) {
 }
 
 function OfflineAthleticsPage({
-  school,
   snapshot,
   activeTab,
 }: {
-  school: string;
   snapshot: SchoolOfflineSnapshot;
   activeTab: "games" | "teams";
 }) {
-  const sportById = new Map(snapshot.data.sports.map((sport) => [sport.id, sport]));
-  const teamById = new Map(snapshot.data.teams.map((team) => [team.id, team]));
-
   return (
-    <main className="space-y-5">
-      <SectionHeader eyebrow="Athletics" title="Games and Teams" />
-      <nav className="grid grid-cols-2 rounded-[1.25rem] border border-slate-200 bg-white p-1 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
-        {[
-          ["games", "Games"],
-          ["teams", "Teams"],
-        ].map(([value, label]) => {
-          const active = activeTab === value;
-
-          return (
-            <Link
-              key={value}
-              href={`/${school}/app/athletics${value === "teams" ? "?tab=teams" : ""}`}
-              className={`rounded-2xl px-4 py-3 text-center text-sm font-black transition ${
-                active
-                  ? "bg-[var(--school-primary)] text-white"
-                  : "text-slate-500 dark:text-[#a3a3a3]"
-              }`}
-            >
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      {activeTab === "games" ? (
-        <section className="space-y-3">
-          <h2 className="text-lg font-black text-slate-950 dark:text-white">
-            Upcoming Games
-          </h2>
-          {snapshot.data.games.map((game) => {
-            const team = teamById.get(game.team_id || "");
-            const sport = sportById.get(team?.sport_id || "");
-
-            return (
-              <article key={game.id} className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
-                <div className="flex gap-3">
-                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[color-mix(in_srgb,var(--school-primary)_12%,white)] text-sm font-black text-[var(--school-primary)] dark:bg-[color-mix(in_srgb,var(--school-primary)_18%,#242424)]">
-                    <SportIcon icon={sport?.icon} color={sport?.icon_color} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-black text-slate-950 dark:text-white">
-                      {team?.name || "Team"} vs {game.opponent}
-                    </h3>
-                    <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
-                      {formatGameDateTime(game.game_date)}
-                    </p>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-          {snapshot.data.games.length === 0 && <EmptyCard>No upcoming games are posted yet.</EmptyCard>}
-        </section>
-      ) : (
-        <section className="space-y-3">
-          <h2 className="text-lg font-black text-slate-950 dark:text-white">Teams</h2>
-          {snapshot.data.teams.map((team) => {
-            const sport = sportById.get(team.sport_id || "");
-
-            return (
-              <article key={team.id} className="flex items-center gap-3 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-[#3a3a3a] dark:bg-[#242424]">
-                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-sm font-black text-slate-600 dark:bg-[#181818] dark:text-[#d4d4d4]">
-                  <SportIcon icon={sport?.icon} color={sport?.icon_color} className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="font-black text-slate-950 dark:text-white">{team.name}</h3>
-                  <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-[#a3a3a3]">
-                    {sport?.name || "Sport"}
-                  </p>
-                </div>
-              </article>
-            );
-          })}
-          {snapshot.data.teams.length === 0 && <EmptyCard>No active teams are posted yet.</EmptyCard>}
-        </section>
-      )}
-    </main>
+    <AthleticsExperience
+      schoolId={snapshot.schoolId}
+      sports={snapshot.data.sports}
+      teams={snapshot.data.teams}
+      games={snapshot.data.games}
+      today={getTodayDateKey(snapshot.data.school.timezone)}
+      initialTab={activeTab}
+    />
   );
 }
 

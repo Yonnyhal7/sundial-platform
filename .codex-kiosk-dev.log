@@ -10,3 +10,4 @@
   · proxyClientMaxBodySize: "25mb"
 
  GET /davids/kiosk 200 in 1618ms (next.js: 1002ms, proxy.ts: 108ms, application-code: 508ms)
+✓ Compiled in 623ms
